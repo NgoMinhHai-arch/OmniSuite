@@ -4,6 +4,8 @@
  */
 
 const { spawn, exec } = require('child_process');
+const util = require('util');
+const execAsync = util.promisify(exec);
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
@@ -74,7 +76,7 @@ async function ensureDependencies() {
   const hasNode = await checkCommand('node');
   if (!hasNode) {
     log('err', 'KHONG TIM THAY NODE.JS!');
-    log('info', 'Vui long cai dat tu: https://nodejs.org/');
+    log('info', 'Chay lai file 01_BAT_DAU_OMNISUITE.bat (tu dong cai bang winget), hoac tai: https://nodejs.org/');
     return false;
   }
   log('ok', 'Node.js OK');
@@ -83,12 +85,95 @@ async function ensureDependencies() {
   const hasPython = await checkCommand('python');
   if (!hasPython) {
     log('err', 'KHONG TIM THAY PYTHON!');
-    log('info', 'Vui long cai dat tu: https://www.python.org/downloads/');
+    log('info', 'Chay lai file 01_BAT_DAU_OMNISUITE.bat (tu dong cai bang winget), hoac tai: https://www.python.org/downloads/');
     return false;
   }
   log('ok', 'Python OK');
   
   return true;
+}
+
+/**
+ * Dong bo ma nguon tu GitHub / may chu xa:
+ * - Can thu muc .git + phan mem "Git for Windows" (lenh git tren may) — KHONG phai trang web GitHub.
+ * - fetch + pull neu working tree sach; khong ghi de file ban da sua chua commit.
+ */
+async function trySyncGitUpdates() {
+  const gitDir = path.join(PROJECT_DIR, '.git');
+  if (!fs.existsSync(gitDir)) {
+    log('info', 'Khong co .git — bo qua tai ban moi (thuong la ban ZIP, khong ket noi may chu ma nguon).');
+    return;
+  }
+
+  const hasGit = await checkCommand('git');
+  if (!hasGit) {
+    log('warn', 'Chua cai Git-for-Windows (phan mem lenh "git") — bo qua tai ban moi tu internet.');
+    log('info', 'Git-for-Windows tai: https://git-scm.com/download/win — khac GitHub (website luu code).');
+    return;
+  }
+
+  log('step', 'Kiem tra ban moi tu may chu ma nguon (GitHub) — lenh git fetch...');
+
+  try {
+    await execAsync('git fetch origin', {
+      cwd: PROJECT_DIR,
+      windowsHide: true,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+  } catch {
+    log('warn', 'Khong fetch duoc origin (offline hoac loi mang?). Tiep tuc chay app.');
+    return;
+  }
+
+  try {
+    const { stdout: porcelain } = await execAsync('git status --porcelain', {
+      cwd: PROJECT_DIR,
+      windowsHide: true,
+      maxBuffer: 1024 * 1024,
+    });
+
+    if ((porcelain || '').trim()) {
+      log('warn', 'Ban co file thay doi chua commit/luu — BO QUA lenh git pull (tranhs mat ban sua).');
+      log('info', 'Muon tai ban moi tu GitHub: commit hoac hoan tac roi chay lai 01_BAT_DAU.');
+      return;
+    }
+
+    const { stdout: branchOut } = await execAsync('git rev-parse --abbrev-ref HEAD', {
+      cwd: PROJECT_DIR,
+      windowsHide: true,
+      maxBuffer: 1024 * 1024,
+    });
+    const branch = (branchOut || '').trim();
+    if (!branch || branch === 'HEAD') {
+      log('warn', 'Detached HEAD - bo qua pull.');
+      return;
+    }
+
+    let nBehind = 0;
+    try {
+      const { stdout: cnt } = await execAsync(`git rev-list --count HEAD..origin/${branch}`, {
+        cwd: PROJECT_DIR,
+        windowsHide: true,
+        maxBuffer: 1024 * 1024,
+      });
+      nBehind = parseInt((cnt || '').trim(), 10) || 0;
+    } catch {
+      log('warn', `Khong so sanh duoc voi origin/${branch} - bo qua pull.`);
+      return;
+    }
+
+    if (nBehind === 0) {
+      log('ok', `Da la ban moi nhat (nhanh ${branch}).`);
+      return;
+    }
+
+    log('info', `Phat hien ${nBehind} commit moi tren may chu — dang git pull...`);
+    await runCommand('git', ['pull', '--no-edit', 'origin', branch], { silent: false });
+    log('ok', 'Da tai code moi tu may chu (vi du GitHub) bang lenh git.');
+  } catch (e) {
+    log('warn', `Dong bo bang git khong thanh cong: ${e.message}`);
+    log('info', 'Ban van co the chay app - kiem tra conflict hoac mang.');
+  }
 }
 
 async function installDependencies() {
@@ -223,7 +308,10 @@ async function main() {
     await new Promise(r => process.stdin.once('data', r));
     process.exit(1);
   }
-  
+
+  // 1b. Tu dong tai ban moi tu may chu ma nguon (vd GitHub) neu co .git + Git-for-Windows + khong file sua doi
+  await trySyncGitUpdates();
+
   // 2. CÃ i Ä‘áº·t dependencies
   const depsOk = await installDependencies();
   if (!depsOk) {
