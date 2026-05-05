@@ -143,8 +143,18 @@ export default function ContentEngine() {
       setConnectedProviders(connected);
 
       const defaultProvider = parsed.default_provider || 'Gemini';
-      setSelectedProvider(defaultProvider);
-      if (parsed.default_model) setModelName(parsed.default_model);
+      // Ensure provider shown in UI is actually connected; otherwise fallback.
+      const resolvedProvider = connected.includes(defaultProvider)
+        ? defaultProvider
+        : (connected[0] || defaultProvider);
+      setSelectedProvider(resolvedProvider);
+
+      // Keep default model only for its matching provider to avoid stale disabled state.
+      if (parsed.default_model && resolvedProvider === defaultProvider) {
+        setModelName(parsed.default_model);
+      } else {
+        setModelName('');
+      }
     }
   }, []);
 
