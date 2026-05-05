@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Image as ImageIcon, 
   Search, 
@@ -37,6 +38,15 @@ import Typography from '@/shared/ui/Typography';
 
 const SETTINGS_KEY = 'omnisuite_settings';
 
+type FilterStrength = 'default' | 'precise' | 'advanced';
+
+type FilterStrengthCursorTip = { x: number; y: number; lines: string[] };
+
+function parseFilterStrength(value: unknown): FilterStrength {
+  if (value === 'precise' || value === 'advanced' || value === 'default') return value;
+  return 'default';
+}
+
 interface ImageData {
   url: string;
   thumbnail: string;
@@ -66,6 +76,9 @@ export default function ImagesDashboard() {
   const [premiumProvider, setPremiumProvider] = useState('serpapi');
   const [excludeTerms, setExcludeTerms] = useState('');
   const [limit, setLimit] = useState(24);
+  const [filterStrength, setFilterStrength] = useState<FilterStrength>('default');
+  const [filterStrengthCursorTip, setFilterStrengthCursorTip] = useState<FilterStrengthCursorTip | null>(null);
+  const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<ImageData[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -90,6 +103,7 @@ export default function ImagesDashboard() {
           setExcludeTerms(cache.excludeTerms || '');
           setResults(cache.results || []);
           setLimit(cache.limit || 24);
+          if (cache.filterStrength != null) setFilterStrength(parseFilterStrength(cache.filterStrength));
           if (cache.premiumProvider) setPremiumProvider(cache.premiumProvider);
           if (cache.usePremiumApi) setUsePremiumApi(cache.usePremiumApi);
         }
@@ -108,10 +122,48 @@ export default function ImagesDashboard() {
   useEffect(() => {
     if (results.length > 0 || keyword || location || placeTypeLabel || excludeTerms) {
       sessionStorage.setItem(IMAGES_CACHE_KEY, JSON.stringify({
-        keyword, location, placeTypeLabel, excludeTerms, results, limit, premiumProvider, usePremiumApi
+        keyword, location, placeTypeLabel, excludeTerms, results, limit, filterStrength, premiumProvider, usePremiumApi
       }));
     }
-  }, [keyword, location, placeTypeLabel, excludeTerms, results, limit, premiumProvider, usePremiumApi]);
+  }, [keyword, location, placeTypeLabel, excludeTerms, results, limit, filterStrength, premiumProvider, usePremiumApi]);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const filterStrengthHoverLines = useCallback((hoveredId: FilterStrength): string[] => {
+    switch (hoveredId) {
+      case 'default':
+        return ['Nhanh • Chất lượng tốt'];
+      case 'precise':
+        return ['Lâu hơn • Chất lượng cao'];
+      case 'advanced': {
+        const lines = ['Lâu nhất • Chính xác nhất'];
+        if (filterStrength === 'advanced') {
+          lines.push('Mất thêm vài giây vì pool ảnh lớn hơn và ngưỡng lọc cao hơn.');
+        }
+        return lines;
+      }
+      default:
+        return [];
+    }
+  }, [filterStrength]);
+
+  const showFilterStrengthTip = (hoveredId: FilterStrength, e: React.MouseEvent) => {
+    setFilterStrengthCursorTip({
+      x: e.clientX,
+      y: e.clientY,
+      lines: filterStrengthHoverLines(hoveredId),
+    });
+  };
+
+  const moveFilterStrengthTip = (e: React.MouseEvent) => {
+    setFilterStrengthCursorTip((prev) =>
+      prev ? { ...prev, x: e.clientX, y: e.clientY } : null
+    );
+  };
+
+  const hideFilterStrengthTip = () => setFilterStrengthCursorTip(null);
 
   const getApiKey = (keyName: string) => {
     if (typeof window === 'undefined') return '';
@@ -237,6 +289,11 @@ export default function ImagesDashboard() {
     if (abortControllerRef.current) abortControllerRef.current.abort();
     abortControllerRef.current = new AbortController();
 
+    setIsLimitOpen(false);
+    setIsPlaceTypeOpen(false);
+    setIsModelOpen(false);
+    hideFilterStrengthTip();
+
     setLoading(true); setError(null); setProgressMsg(null);
     try {
       const topics = keyword.split(',').map(t => t.trim()).filter(Boolean).slice(0, 10);
@@ -270,7 +327,8 @@ export default function ImagesDashboard() {
             aiFilterEnabled, 
             aiModel: aiModel === 'system' ? '' : aiModel, 
             aiProvider: selectedProvider,
-            aiApiKey: selectedProvider === 'system' ? '' : getApiKey(`${selectedProvider}_api_key`)
+            aiApiKey: selectedProvider === 'system' ? '' : getApiKey(`${selectedProvider}_api_key`),
+            filterStrength
           }),
           signal: abortControllerRef.current.signal
         });
@@ -379,8 +437,12 @@ export default function ImagesDashboard() {
 
       {/* Control Panel */}
       <div className="px-8 lg:px-12 mb-10 relative z-50">
-        <Card className="relative">
-          <div className="flex flex-col space-y-8">
+        <Card className="relative !overflow-visible">
+          <div className="flex flex-col space-y-8" aria-busy={loading}>
+            {/* Row 1–2: locked while scrape runs */}
+            <div
+              className={`space-y-8 transition-opacity duration-200 ${loading ? 'pointer-events-none select-none opacity-[0.68]' : ''}`}
+            >
             {/* Row 1: Search Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pb-2">
               <div className="space-y-2">
@@ -391,9 +453,10 @@ export default function ImagesDashboard() {
                     type="text"
                     placeholder="Nhập chủ đề (cách nhau bằng dấu phẩy)..."
                     value={keyword}
+                    disabled={loading}
                     onChange={(e) => setKeyword(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleScrape()}
-                    className="flex-1 bg-transparent py-4 outline-none text-sm font-medium"
+                    onKeyDown={(e) => e.key === 'Enter' && !loading && handleScrape()}
+                    className="flex-1 bg-transparent py-4 outline-none text-sm font-medium disabled:cursor-not-allowed disabled:opacity-70"
                     style={{ color: 'var(--text-primary)' }}
                   />
                 </div>
@@ -406,9 +469,10 @@ export default function ImagesDashboard() {
                     type="text"
                     placeholder="Hà Nội, Quận 1..."
                     value={location}
+                    disabled={loading}
                     onChange={(e) => setLocation(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleScrape()}
-                    className="flex-1 bg-transparent py-4 outline-none text-sm font-medium"
+                    onKeyDown={(e) => e.key === 'Enter' && !loading && handleScrape()}
+                    className="flex-1 bg-transparent py-4 outline-none text-sm font-medium disabled:cursor-not-allowed disabled:opacity-70"
                     style={{ color: 'var(--text-primary)' }}
                   />
                 </div>
@@ -422,13 +486,14 @@ export default function ImagesDashboard() {
                       type="text"
                       placeholder="Chọn loại hình..."
                       value={placeTypeLabel}
-                      onChange={(e) => { setPlaceTypeLabel(e.target.value); setIsPlaceTypeOpen(true); }}
-                      className="flex-1 bg-transparent py-4 outline-none text-sm font-medium"
+                      disabled={loading}
+                      onChange={(e) => { setPlaceTypeLabel(e.target.value); if (!loading) setIsPlaceTypeOpen(true); }}
+                      className="flex-1 bg-transparent py-4 outline-none text-sm font-medium disabled:cursor-not-allowed disabled:opacity-70"
                       style={{ color: 'var(--text-primary)' }}
                     />
                    </div>
                   <AnimatePresence>
-                    {isPlaceTypeOpen && (
+                    {isPlaceTypeOpen && !loading && (
                       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="absolute top-full left-0 right-0 mt-2 z-[100] border rounded-2xl shadow-2xl max-h-[250px] overflow-y-auto custom-scrollbar" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
                          <div className="sticky top-0 p-2 flex justify-end border-b" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
                            <button onClick={() => setIsPlaceTypeOpen(false)} className="p-1.5 hover:bg-white/10 rounded-lg" style={{ color: 'var(--text-muted)' }}><X size={14} /></button>
@@ -453,9 +518,10 @@ export default function ImagesDashboard() {
                     type="text"
                     placeholder="VD: Logo, Mờ..."
                     value={excludeTerms}
+                    disabled={loading}
                     onChange={(e) => setExcludeTerms(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleScrape()}
-                    className="flex-1 bg-transparent py-4 outline-none text-sm font-medium"
+                    onKeyDown={(e) => e.key === 'Enter' && !loading && handleScrape()}
+                    className="flex-1 bg-transparent py-4 outline-none text-sm font-medium disabled:cursor-not-allowed disabled:opacity-70"
                     style={{ color: 'var(--text-primary)' }}
                   />
                 </div>
@@ -463,47 +529,74 @@ export default function ImagesDashboard() {
               <div className="space-y-3">
                 <Typography variant="label" className="px-1" style={{ color: '#f43f5e' }}><LayoutGrid size={14} style={{ color: '#f43f5e' }} /> Giới hạn</Typography>
                 <div className="relative">
-                  <button onClick={() => setIsLimitOpen(!isLimitOpen)} className="w-full rounded-2xl py-4 px-6 text-sm flex items-center justify-between font-bold transition-all" style={{ backgroundColor: 'var(--hover-bg)', border: '1px solid rgba(244,63,94,0.2)', color: 'var(--text-primary)' }}>
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => !loading && setIsLimitOpen(!isLimitOpen)}
+                    className="w-full rounded-2xl py-4 px-6 text-sm flex items-center justify-between font-bold transition-all disabled:cursor-not-allowed disabled:opacity-60"
+                    style={{ backgroundColor: 'var(--hover-bg)', border: '1px solid rgba(244,63,94,0.2)', color: 'var(--text-primary)' }}
+                  >
                     <span>{limit} ảnh</span>
                     <ChevronDown size={18} className={`transition-transform ${isLimitOpen ? 'rotate-180 text-rose-500' : 'text-rose-500/50'}`} />
                   </button>
                   <AnimatePresence>
-                    {isLimitOpen && (
-                      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="absolute top-full left-0 right-0 mt-2 z-[100] border rounded-2xl shadow-2xl max-h-[250px] overflow-y-auto custom-scrollbar" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+                    {isLimitOpen && !loading && (
+                      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="absolute top-full left-0 right-0 mt-2 z-[100] border rounded-2xl shadow-2xl max-h-[min(20rem,calc(100vh-12rem))] overflow-y-auto scroll-pb-3 pb-1 custom-scrollbar" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
                         {[12, 24, 48, 60, 100].map(v => ( <button key={v} onClick={() => { setLimit(v); setIsLimitOpen(false); }} className="w-full p-4 text-left text-sm hover:bg-white/5 border-b last:border-0 font-bold transition-all" style={{ borderColor: 'var(--border-color)' }}>{v} ảnh</button> ))}
                       </motion.div>
                     )}
                   </AnimatePresence>
                 </div>
               </div>
-              <div className="space-y-4">
-                        <Typography variant="label" style={{ color: '#f43f5e' }}>ĐỘ MẠNH CỦA BỘ LỌC AI</Typography>
-                        <div className="p-6 rounded-3xl space-y-4" style={{ backgroundColor: 'var(--hover-bg)', border: '1px solid rgba(244,63,94,0.2)' }}>
-                           <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>
-                              <span>Mặc định</span>
-                              <span style={{ color: '#f43f5e' }}>Chính xác</span>
-                           </div>
-                        </div>
+              <div className="space-y-3">
+                <Typography variant="label" style={{ color: '#f43f5e' }}>ĐỘ MẠNH CỦA BỘ LỌC AI</Typography>
+                <div className="p-4 rounded-3xl" style={{ backgroundColor: 'var(--hover-bg)', border: '1px solid rgba(244,63,94,0.2)' }}>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    {([
+                      { id: 'default' as const, title: 'Mặc định' },
+                      { id: 'precise' as const, title: 'Chính xác' },
+                      { id: 'advanced' as const, title: 'Nâng cao' },
+                    ]).map((opt) => {
+                      const active = filterStrength === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          disabled={loading}
+                          onClick={() => !loading && setFilterStrength(opt.id)}
+                          onMouseEnter={(e) => !loading && showFilterStrengthTip(opt.id, e)}
+                          onMouseMove={(e) => !loading && moveFilterStrengthTip(e)}
+                          onMouseLeave={hideFilterStrengthTip}
+                          className={`flex-1 rounded-2xl px-3 py-3 text-center sm:text-left transition-all border outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40 disabled:cursor-not-allowed disabled:opacity-60 ${active ? 'bg-rose-500/15 border-rose-500/40 shadow-[0_0_20px_rgba(244,63,94,0.12)]' : 'border-transparent hover:bg-white/5'}`}
+                          style={{ color: active ? 'var(--text-primary)' : 'var(--text-muted)' }}
+                        >
+                          <span className="text-[10px] font-black uppercase tracking-widest">{opt.title}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
+            </div>
 
-            {/* Row 3: Action Actions */}
+            {/* Row 3: Action Actions — AI & Premium locked during scrape; nút tìm vẫn hiển thị trạng thái loading */}
             <div className="flex flex-col lg:flex-row items-stretch lg:items-end justify-between gap-6 pt-4">
               {/* Left: AI Analysis Pill */}
-              <div className="flex-[1.5] flex flex-col space-y-2 min-w-0">
+              <div className={`flex-[1.5] flex flex-col space-y-2 min-w-0 transition-opacity duration-200 ${loading ? 'pointer-events-none select-none opacity-[0.68]' : ''}`}>
                 <Typography variant="label" className="px-1" style={{ color: '#f43f5e' }}>
                    <MagicIcon size={14} className={aiFilterEnabled ? "text-rose-500 animate-pulse" : "text-rose-500/50"} />
                   Trí tuệ AI
                 </Typography>
                 <div className={`flex items-center border rounded-full h-[64px] relative transition-all duration-500 ${aiFilterEnabled ? 'ring-4' : ''}`} style={{ backgroundColor: 'var(--hover-bg)', borderColor: aiFilterEnabled ? 'rgba(244,63,94,0.3)' : 'var(--border-color)', boxShadow: aiFilterEnabled ? '0 0 20px rgba(244,63,94,0.1)' : 'none' }}>
                   <div className="px-6 flex items-center gap-4 border-r h-full" style={{ borderColor: 'var(--border-color)' }}>
-                    <button onClick={() => setAiFilterEnabled(!aiFilterEnabled)} className={`w-12 h-6 rounded-full relative flex items-center px-1 transition-colors shrink-0 ${aiFilterEnabled ? 'bg-rose-500' : ''}`} style={!aiFilterEnabled ? { backgroundColor: 'var(--border-color)' } : {}}>
+                    <button type="button" disabled={loading} onClick={() => !loading && setAiFilterEnabled(!aiFilterEnabled)} className={`w-12 h-6 rounded-full relative flex items-center px-1 transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-70 ${aiFilterEnabled ? 'bg-rose-500' : ''}`} style={!aiFilterEnabled ? { backgroundColor: 'var(--border-color)' } : {}}>
                       <motion.div animate={{ x: aiFilterEnabled ? 24 : 0 }} className="w-4 h-4 bg-white rounded-full shadow-lg" />
                     </button>
                     <span className="text-[10px] font-bold hidden md:block" style={{ color: aiFilterEnabled ? '#f43f5e' : 'var(--text-muted)' }}>{aiFilterEnabled ? 'BẬT' : 'TẮT'}</span>
                   </div>
                   
-                  <div className={`flex-1 flex items-center px-6 cursor-pointer hover:bg-white/5 transition-all rounded-r-full h-full relative min-w-0 ${!aiFilterEnabled ? 'opacity-30 pointer-events-none' : ''}`} onClick={() => setIsModelOpen(!isModelOpen)}>
+                  <div className={`flex-1 flex items-center px-6 cursor-pointer hover:bg-white/5 transition-all rounded-r-full h-full relative min-w-0 ${!aiFilterEnabled || loading ? 'opacity-30 pointer-events-none' : ''}`} onClick={() => !loading && aiFilterEnabled && setIsModelOpen(!isModelOpen)}>
                     <div className="flex items-center gap-3 w-full min-w-0">
                       <Cpu size={16} className="text-indigo-400 shrink-0" />
                       <div className="flex flex-col items-start translate-y-[1px] min-w-0">
@@ -514,7 +607,7 @@ export default function ImagesDashboard() {
                     </div>
 
                     <AnimatePresence>
-                      {isModelOpen && (
+                      {isModelOpen && !loading && (
                         <>
                           <motion.div 
                             initial={{ opacity: 0 }} 
@@ -661,13 +754,13 @@ export default function ImagesDashboard() {
               </div>
 
               {/* Middle: Premium Mode Block */}
-              <div className="flex-1 flex flex-col space-y-2">
+              <div className={`flex-1 flex flex-col space-y-2 transition-opacity duration-200 ${loading ? 'pointer-events-none select-none opacity-[0.68]' : ''}`}>
                  <Typography variant="label" className="px-1">
                     <Zap size={14} className={usePremiumApi ? "text-amber-400 animate-pulse" : "text-slate-500"} /> 
                     Premium
                  </Typography>
                  <div className={`flex items-center gap-4 border rounded-full py-2 px-6 h-[64px] transition-all duration-500 ${usePremiumApi ? 'bg-amber-600/5 border-amber-500/30' : ''}`} style={usePremiumApi ? {} : { backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
-                    <button onClick={() => setUsePremiumApi(!usePremiumApi)} className={`w-12 h-6 rounded-full relative flex items-center px-1 transition-all shrink-0 ${usePremiumApi ? 'bg-amber-500' : ''}`} style={usePremiumApi ? {} : { backgroundColor: 'var(--hover-bg)' }}>
+                    <button type="button" disabled={loading} onClick={() => !loading && setUsePremiumApi(!usePremiumApi)} className={`w-12 h-6 rounded-full relative flex items-center px-1 transition-all shrink-0 disabled:cursor-not-allowed disabled:opacity-70 ${usePremiumApi ? 'bg-amber-500' : ''}`} style={usePremiumApi ? {} : { backgroundColor: 'var(--hover-bg)' }}>
                         <motion.div animate={{ x: usePremiumApi ? 24 : 0 }} className="w-4 h-4 bg-white rounded-full shadow-lg" />
                     </button>
                     
@@ -675,7 +768,7 @@ export default function ImagesDashboard() {
                       {usePremiumApi && (
                         <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="flex items-center gap-2 border-l border-white/10 pl-4 whitespace-nowrap overflow-hidden">
                            {['serpapi'].map(p => (
-                             <button key={p} onClick={() => setPremiumProvider(p)} className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase transition-all ${premiumProvider === p ? 'bg-amber-500 text-white shadow-xl scale-105' : 'bg-white/5 text-slate-500 hover:text-white'}`}>
+                             <button key={p} type="button" disabled={loading} onClick={() => !loading && setPremiumProvider(p)} className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase transition-all disabled:cursor-not-allowed disabled:opacity-70 ${premiumProvider === p ? 'bg-amber-500 text-white shadow-xl scale-105' : 'bg-white/5 text-slate-500 hover:text-white'}`}>
                                {p}
                              </button>
                            ))}
@@ -686,11 +779,12 @@ export default function ImagesDashboard() {
               </div>
 
               {/* Right: Scan Button */}
-              <div className="flex-col space-y-2 hidden lg:flex">
+              <div className="flex-col space-y-2 hidden lg:flex shrink-0">
                    <Button 
                       className="w-full h-20 text-xl font-bold tracking-widest uppercase rounded-3xl" 
                       onClick={handleScrape}
                       isLoading={loading}
+                      disabled={loading}
                       variant="primary"
                       leftIcon={<ImagePlus size={28} />}
                    >
@@ -699,7 +793,7 @@ export default function ImagesDashboard() {
               </div>
 
               {/* Mobile Scan Button */}
-              <Button onClick={handleScrape} isLoading={loading} className="lg:hidden w-full py-4 rounded-2xl" leftIcon={<Search />}>
+              <Button onClick={handleScrape} isLoading={loading} disabled={loading} className="lg:hidden w-full py-4 rounded-2xl shrink-0" leftIcon={<Search />}>
                 Tìm kiếm
               </Button>
             </div>
@@ -850,6 +944,42 @@ export default function ImagesDashboard() {
           </>
         )}
       </AnimatePresence>
+
+      {mounted &&
+        filterStrengthCursorTip &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          (() => {
+            const pad = 10;
+            const offset = 18;
+            const maxW = 260;
+            const lineH = 18;
+            const estH = filterStrengthCursorTip.lines.length * lineH + 20;
+            let left = filterStrengthCursorTip.x + offset;
+            let top = filterStrengthCursorTip.y + offset;
+            const vw = typeof window !== 'undefined' ? window.innerWidth : left + maxW;
+            const vh = typeof window !== 'undefined' ? window.innerHeight : top + estH;
+            left = Math.min(Math.max(pad, left), vw - maxW - pad);
+            top = Math.min(Math.max(pad, top), vh - estH - pad);
+            return (
+              <div
+                role="tooltip"
+                className="pointer-events-none fixed z-[280] max-w-[260px] rounded-xl border border-rose-500/25 bg-[rgba(18,18,24,0.96)] px-3 py-2 shadow-2xl shadow-black/50 backdrop-blur-md"
+                style={{ left, top }}
+              >
+                {filterStrengthCursorTip.lines.map((line, i) => (
+                  <p
+                    key={i}
+                    className={`text-[10px] font-semibold leading-snug ${i > 0 ? 'mt-1.5 text-white/75' : 'text-white/95'}`}
+                  >
+                    {line}
+                  </p>
+                ))}
+              </div>
+            );
+          })(),
+          document.body
+        )}
     </div>
   );
 }

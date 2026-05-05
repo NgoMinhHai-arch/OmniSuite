@@ -57,6 +57,14 @@ class SearchReq(BaseModel):
     limit: int = 24
     use_premium: bool = False
     serpapi_key: str = ''
+    filter_strength: str = 'default'  # default | precise | advanced
+
+# Bing/DDG pool sizes and CLIP primary threshold per strength (fallback logic unchanged).
+STRENGTH_CONFIG = {
+    'default': {'bing': 50, 'ddg': 50, 'threshold': 0.30, 'expand': False},
+    'precise': {'bing': 80, 'ddg': 80, 'threshold': 0.35, 'expand': False},
+    'advanced': {'bing': 150, 'ddg': 150, 'threshold': 0.40, 'expand': True},
+}
 
 def fetch_bing_urls(keyword, location='', limit=50):
     query = f"{keyword} {location}".strip()
@@ -182,7 +190,21 @@ async def search(req: SearchReq, authenticated: bool = Depends(verify_token)):
         ]
         
         full_query = queries[0]
-        print(f"\n--- DEEP HYBRID SEARCH: {full_query} (Premium: {req.use_premium}) ---")
+        fs = (req.filter_strength or 'default').strip().lower()
+        if fs not in STRENGTH_CONFIG:
+            fs = 'default'
+        cfg = STRENGTH_CONFIG[fs]
+        score_threshold = cfg['threshold']
+        bing_n = cfg['bing']
+        ddg_n = cfg['ddg']
+
+        # Primary fetch uses keyword + location; advanced adds second query variant for broader pool.
+        search_pairs = [(req.keyword, req.location)]
+        if cfg['expand']:
+            expand_kw = f"real photo of {req.keyword} {req.location}".strip()
+            search_pairs.append((expand_kw, ''))
+
+        print(f"\n--- DEEP HYBRID SEARCH: {full_query} (Premium: {req.use_premium}, Strength: {fs}) ---")
         
         # Sources Tracking for Trust Scoring
         source_map = {} # url -> source_type
@@ -199,22 +221,17 @@ async def search(req: SearchReq, authenticated: bool = Depends(verify_token)):
                     source_map[norm_u] = source_type
             return urls
 
-        # Parallel Fetching
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            # Source 1: Bing
-            f_bing = executor.submit(fetch_bing_urls, req.keyword, req.location, 50)
-            # Source 2: DuckDuckGo (NEW)
-            f_ddg = executor.submit(fetch_duckduckgo_urls, req.keyword, req.location, 50)
-            
-            futures = {f_bing: "bing", f_ddg: "ddg"}
-            
-            if req.use_premium:
-                # Source 3: Google Images
-                f_imgs = executor.submit(fetch_google_images, req.keyword, req.location, req.serpapi_key, 30)
-                # Source 4: Google Maps
-                f_maps = executor.submit(fetch_google_maps, req.keyword, req.location, req.serpapi_key, 25)
-                futures[f_imgs] = "google"
-                futures[f_maps] = "maps"
+        # Parallel Fetching (multiple query variants when advanced)
+        jobs_per_variant = 2 + (2 if req.use_premium else 0)
+        pool_workers = min(16, max(5, len(search_pairs) * jobs_per_variant))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=pool_workers) as executor:
+            futures = {}
+            for kw, loc in search_pairs:
+                futures[executor.submit(fetch_bing_urls, kw, loc, bing_n)] = "bing"
+                futures[executor.submit(fetch_duckduckgo_urls, kw, loc, ddg_n)] = "ddg"
+                if req.use_premium:
+                    futures[executor.submit(fetch_google_images, kw, loc, req.serpapi_key, 30)] = "google"
+                    futures[executor.submit(fetch_google_maps, kw, loc, req.serpapi_key, 25)] = "maps"
                 
             for future in concurrent.futures.as_completed(futures):
                 stype = futures[future]
@@ -281,8 +298,8 @@ async def search(req: SearchReq, authenticated: bool = Depends(verify_token)):
                 }
                 scored_candidates.append(candidate)
 
-                # Filtering Threshold nghiêm ngặt cho chất lượng cao
-                if score > 0.3:
+                # Filtering threshold by strength (fallback below still fills to req.limit when possible)
+                if score > score_threshold:
                     final_results.append(candidate)
             except Exception:
                 continue

@@ -153,8 +153,9 @@ function generateInternalToken() {
   return `omni_${crypto.randomBytes(24).toString('hex')}`;
 }
 
-function ensureInternalToken() {
+function ensureEnvTokens() {
   let envContent = '';
+  let modified = false;
 
   if (fs.existsSync(ENV_PATH)) {
     envContent = fs.readFileSync(ENV_PATH, 'utf8');
@@ -165,27 +166,47 @@ function ensureInternalToken() {
     log('warn', 'Khong tim thay .env va .env.example, se tao .env moi');
   }
 
+  // Ensure INTERNAL_TOKEN
   const tokenRegex = /^INTERNAL_TOKEN=(.*)$/m;
-  const match = envContent.match(tokenRegex);
-  const existing = match ? (match[1] || '').trim() : '';
-  let token = existing;
+  const tokenMatch = envContent.match(tokenRegex);
+  const existingToken = tokenMatch ? (tokenMatch[1] || '').trim() : '';
+  let token = existingToken;
 
   if (!token) {
     token = generateInternalToken();
-    if (match) {
+    if (tokenMatch) {
       envContent = envContent.replace(tokenRegex, `INTERNAL_TOKEN=${token}`);
     } else {
       if (envContent.length && !envContent.endsWith('\n')) envContent += '\n';
       envContent += `INTERNAL_TOKEN=${token}\n`;
     }
+    modified = true;
+  }
+
+  // Ensure NEXTAUTH_SECRET
+  const secretRegex = /^NEXTAUTH_SECRET=(.*)$/m;
+  const secretMatch = envContent.match(secretRegex);
+  const existingSecret = secretMatch ? (secretMatch[1] || '').trim() : '';
+  let secret = existingSecret;
+
+  if (!secret) {
+    secret = `omnisuite_${crypto.randomBytes(32).toString('hex')}`;
+    if (secretMatch) {
+      envContent = envContent.replace(secretRegex, `NEXTAUTH_SECRET=${secret}`);
+    } else {
+      if (envContent.length && !envContent.endsWith('\n')) envContent += '\n';
+      envContent += `NEXTAUTH_SECRET=${secret}\n`;
+    }
+    modified = true;
+  }
+
+  if (modified || !fs.existsSync(ENV_PATH)) {
     fs.writeFileSync(ENV_PATH, envContent, 'utf8');
-    log('ok', 'Da tao/cap nhat INTERNAL_TOKEN trong .env');
-  } else if (!fs.existsSync(ENV_PATH)) {
-    fs.writeFileSync(ENV_PATH, envContent, 'utf8');
-    log('ok', 'Da tao file .env tu .env.example');
+    log('ok', 'Da tao/cap nhat INTERNAL_TOKEN va NEXTAUTH_SECRET trong .env');
   }
 
   process.env.INTERNAL_TOKEN = token;
+  process.env.NEXTAUTH_SECRET = secret;
 }
 async function main() {
   console.clear();
@@ -211,7 +232,7 @@ async function main() {
     process.exit(1);
   }
 
-  ensureInternalToken();
+  ensureEnvTokens();
   
   // 3. Khá»Ÿi Ä‘á»™ng cÃ¡c services
   console.log('\n');

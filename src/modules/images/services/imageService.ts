@@ -19,6 +19,8 @@ export interface ImageResult {
   score?: number;
 }
 
+export type ImageFilterStrength = 'default' | 'precise' | 'advanced';
+
 /**
  * Main service to scrape and filter images using the AI Pipeline
  */
@@ -34,6 +36,7 @@ export async function scrapeImages(
   aiModel: string = 'system',
   aiProvider: string = 'system',
   aiApiKey: string = '',
+  filterStrength: ImageFilterStrength = 'default',
   onProgress?: (msg: string) => void
 ) {
   try {
@@ -52,6 +55,10 @@ export async function scrapeImages(
       throw new Error("Không thể khởi động Lõi AI. Vui lòng kiểm tra môi trường Python.");
     }
 
+    const fs: ImageFilterStrength =
+      filterStrength === 'precise' || filterStrength === 'advanced' ? filterStrength : 'default';
+    const pipelineTimeoutMs = fs === 'advanced' ? 240000 : 150000;
+
     const sourceStatus = usePremium ? "Hybrid (Bing + Google + Maps)" : "Bing Only";
     if (onProgress) onProgress(`🧠 Đang lọc ảnh chất lượng cao từ ${sourceStatus}...`);
 
@@ -62,8 +69,9 @@ export async function scrapeImages(
       limit: limit,
       use_premium: usePremium,
       serpapi_key: serpapi_key,
+      filter_strength: fs,
     }, {
-      timeout: 150000,
+      timeout: pipelineTimeoutMs,
       headers: {
         'X-Internal-Token': INTERNAL_TOKEN
       }

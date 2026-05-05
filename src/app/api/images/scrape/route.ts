@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
-import { scrapeImages } from '@/modules/images/services/imageService';
+import { scrapeImages, type ImageFilterStrength } from '@/modules/images/services/imageService';
+
+function normalizeFilterStrength(v: unknown): ImageFilterStrength {
+  if (v === 'precise' || v === 'advanced' || v === 'default') return v;
+  return 'default';
+}
 
 export async function POST(req: Request) {
   try {
@@ -14,8 +19,11 @@ export async function POST(req: Request) {
       aiFilterEnabled = false,
       aiModel = 'system',
       aiProvider = 'system',
-      aiApiKey = ''
+      aiApiKey = '',
+      filterStrength: rawFilterStrength = 'default'
     } = await req.json();
+
+    const filterStrength = normalizeFilterStrength(rawFilterStrength);
 
     if (!keyword && !location && !placeTypeLabel) {
       return NextResponse.json({ success: false, error: 'Vui lòng cung cấp ít nhất một thông tin tìm kiếm.' }, { status: 400 });
@@ -33,7 +41,8 @@ export async function POST(req: Request) {
       aiFilterEnabled,
       aiModel,
       aiProvider,
-      aiApiKey
+      aiApiKey,
+      filterStrength
     );
 
     return NextResponse.json({ success: true, count: urls.length, data: urls });
