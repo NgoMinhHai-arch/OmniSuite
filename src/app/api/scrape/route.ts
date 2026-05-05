@@ -469,7 +469,17 @@ export async function POST(req: NextRequest) {
       }
     };
 
-    const collectImagesWithPlaywright = async (targetUrl: string): Promise<Array<{ src: string; alt: string; title: string }>> => {
+    type RenderedMeta = {
+      title: string;
+      h1: string;
+      canonical: string;
+      robots: string;
+    };
+    type PlaywrightCollectResult = {
+      images: Array<{ src: string; alt: string; title: string }>;
+      rendered: RenderedMeta | null;
+    };
+    const collectImagesWithPlaywright = async (targetUrl: string): Promise<PlaywrightCollectResult> => {
       let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
       try {
         browser = await chromium.launch({
@@ -489,7 +499,7 @@ export async function POST(req: NextRequest) {
           window.scrollTo(0, 0);
         });
         await page.waitForTimeout(700);
-        const images = await page.evaluate(() => {
+        const collected = await page.evaluate(() => {
           const out: Array<{ src: string; alt: string; title: string }> = [];
           const pickTitle = (el: Element): string => {
             const v =
@@ -534,17 +544,41 @@ export async function POST(req: NextRequest) {
             out.push({ src: first, alt: '', title: pickTitle(pic) });
           });
 
-          return out;
+          const titleEl = document.querySelector('title');
+          const h1El = document.querySelector('h1');
+          const canonicalEl = document.querySelector('link[rel="canonical"]');
+          const robotsEl = document.querySelector('meta[name="robots"]');
+
+          return {
+            images: out,
+            rendered: {
+              title: (titleEl?.textContent || '').trim(),
+              h1: (h1El?.textContent || '').trim(),
+              canonical: (canonicalEl?.getAttribute('href') || '').trim(),
+              robots: (robotsEl?.getAttribute('content') || '').trim(),
+            } as { title: string; h1: string; canonical: string; robots: string },
+          };
         });
-        return images.map((img) => {
+        const images = collected.images.map((img) => {
           try {
             return { ...img, src: new URL(img.src, targetUrl).href };
           } catch {
             return img;
           }
         });
+        let rendered: RenderedMeta | null = null;
+        if (collected.rendered) {
+          let canonical = collected.rendered.canonical;
+          if (canonical) {
+            try {
+              canonical = new URL(canonical, targetUrl).href;
+            } catch {}
+          }
+          rendered = { ...collected.rendered, canonical };
+        }
+        return { images, rendered };
       } catch {
-        return [];
+        return { images: [], rendered: null };
       } finally {
         if (browser) await browser.close();
       }
@@ -678,7 +712,9 @@ export async function POST(req: NextRequest) {
 
         // Prefer Playwright-rendered DOM for image completeness (human/bot visible),
         // fallback to static Cheerio extraction if Playwright is unavailable.
-        const playwrightImages = await collectImagesWithPlaywright(url);
+        const playwrightResult = await collectImagesWithPlaywright(url);
+        const playwrightImages = playwrightResult.images;
+        const renderedMeta = playwrightResult.rendered;
         if (playwrightImages.length) {
           images = playwrightImages.map((img) => ({
             src: img.src,
@@ -694,12 +730,19 @@ export async function POST(req: NextRequest) {
         }
 
         // Enrich image rows with file size and dimensions for UI details modal.
-        const IMAGE_META_LIMIT = 20;
-        for (const img of images.slice(0, IMAGE_META_LIMIT)) {
-          const meta = await enrichImageMeta(img.src);
-          img.sizeKb = meta.sizeKb;
-          img.width = meta.width;
-          img.height = meta.height;
+        const IMAGE_META_LIMIT = 500;
+        const META_CONCURRENCY = 8;
+        const enrichTargets = images.slice(0, IMAGE_META_LIMIT);
+        for (let i = 0; i < enrichTargets.length; i += META_CONCURRENCY) {
+          const batch = enrichTargets.slice(i, i + META_CONCURRENCY);
+          const metas = await Promise.allSettled(batch.map((img) => enrichImageMeta(img.src)));
+          metas.forEach((result, idx) => {
+            if (result.status === 'fulfilled') {
+              batch[idx].sizeKb = result.value.sizeKb;
+              batch[idx].width = result.value.width;
+              batch[idx].height = result.value.height;
+            }
+          });
         }
 
         // --- PROFESSIONAL SEO LINK AUDIT ENGINE (V3.0) ---
@@ -727,28 +770,69 @@ export async function POST(req: NextRequest) {
         const affiliateDomains = new Set<string>();
         const baseHostname = new URL(url).hostname.replace('www.', '');
 
+        type LinkRow = {
+          source: string;
+          target: string;
+          anchor: string;
+          rel: string;
+          bucket: 'internal' | 'external';
+          follow: 'nofollow' | 'dofollow' | 'unknown';
+          linkType: 'anchor' | 'resource';
+        };
+        const linkRows: LinkRow[] = [];
+        const LINK_ROWS_LIMIT = 1000;
+
         const normalizeRelTokens = (relRaw: string): Set<string> => {
           return new Set((relRaw || '').toLowerCase().split(/\s+/).map((token) => token.trim()).filter(Boolean));
         };
 
-        const processUrl = (hrefRaw: string, rel: string = '', bucket: 'anchor' | 'resource' = 'anchor') => {
+        const pushLinkRow = (row: LinkRow) => {
+          if (linkRows.length < LINK_ROWS_LIMIT) linkRows.push(row);
+        };
+
+        const processUrl = (
+          hrefRaw: string,
+          rel: string = '',
+          bucket: 'anchor' | 'resource' = 'anchor',
+          anchor: string = '',
+        ) => {
           const href = hrefRaw.trim();
           if (!href) return;
           const relTokens = normalizeRelTokens(rel);
-          const hasRel = relTokens.size > 0;
+          const follow: 'nofollow' | 'dofollow' | 'unknown' = relTokens.has('nofollow')
+            ? 'nofollow'
+            : 'dofollow';
           try {
             if (href.startsWith('#') || href.startsWith('javascript:')) {
               linkBuckets[bucket].internal++;
+              pushLinkRow({
+                source: url,
+                target: href,
+                anchor,
+                rel,
+                bucket: 'internal',
+                follow,
+                linkType: bucket,
+              });
               return;
             }
             if (href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('sms:')) {
               linkBuckets[bucket].external++;
-              if (hasRel && relTokens.has('nofollow')) linkBuckets[bucket].nofollow++;
-              else if (hasRel) linkBuckets[bucket].dofollow++;
+              if (follow === 'nofollow') linkBuckets[bucket].nofollow++;
+              else if (follow === 'dofollow') linkBuckets[bucket].dofollow++;
               else linkBuckets[bucket].unknown++;
+              pushLinkRow({
+                source: url,
+                target: href,
+                anchor,
+                rel,
+                bucket: 'external',
+                follow,
+                linkType: bucket,
+              });
               return;
             }
-            
+
             const absoluteUrl = new URL(href, url);
             const isInternal = absoluteUrl.hostname.replace('www.', '') === baseHostname;
             if (isInternal) {
@@ -761,21 +845,31 @@ export async function POST(req: NextRequest) {
               externalDomains.add(domain);
               if (COMMON_AFFILIATE_PATTERNS.some(p => domain.includes(p))) affiliateDomains.add(domain);
             }
-            if (hasRel && relTokens.has('nofollow')) linkBuckets[bucket].nofollow++;
-            else if (hasRel) linkBuckets[bucket].dofollow++;
+            if (follow === 'nofollow') linkBuckets[bucket].nofollow++;
+            else if (follow === 'dofollow') linkBuckets[bucket].dofollow++;
             else linkBuckets[bucket].unknown++;
+            pushLinkRow({
+              source: url,
+              target: absoluteUrl.href,
+              anchor,
+              rel,
+              bucket: isInternal ? 'internal' : 'external',
+              follow,
+              linkType: bucket,
+            });
           } catch (e) {}
         };
 
         // 1. Anchor Tags (<a>) - Main Navigation
         $('a').each((i, el) => {
-          processUrl($(el).attr('href') || '', $(el).attr('rel') || '', 'anchor');
+          const anchorText = ($(el).text() || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+          processUrl($(el).attr('href') || '', $(el).attr('rel') || '', 'anchor', anchorText);
         });
 
         // 2-7. Resource Links
         $('link, form, iframe, img, script, area').each((i, el) => {
           const href = $(el).attr('href') || $(el).attr('src') || $(el).attr('action') || $(el).attr('data-src') || '';
-          if (href) processUrl(href, $(el).attr('rel') || '', 'resource');
+          if (href) processUrl(href, $(el).attr('rel') || '', 'resource', '');
         });
 
         // Schema JSON-LD & Date Extraction from Schema
@@ -1067,6 +1161,42 @@ export async function POST(req: NextRequest) {
 
         const favicon = $('link[rel="icon"], link[rel="shortcut icon"]').attr('href') || '/favicon.ico';
 
+        // Indexability analysis for Googlebot's Eye
+        const xRobotsTag = (response.headers.get('x-robots-tag') || '').trim();
+        const robotsMetaLower = (robots || '').toLowerCase();
+        const xRobotsLower = xRobotsTag.toLowerCase();
+        const noindexInMeta = /\bnoindex\b/.test(robotsMetaLower);
+        const noindexInHeader = /\bnoindex\b/.test(xRobotsLower);
+        let canonicalSelf = false;
+        try {
+          const canonicalNorm = new URL(canonical || url, url).href.replace(/\/$/, '');
+          const finalNorm = new URL(url).href.replace(/\/$/, '');
+          canonicalSelf = canonicalNorm === finalNorm;
+        } catch {
+          canonicalSelf = !canonical || canonical === url;
+        }
+        let jsRenderedDiff:
+          | { titleChanged: boolean; h1Changed: boolean; canonicalChanged: boolean; noindexChanged: boolean }
+          | undefined;
+        if (renderedMeta) {
+          const renderedNoindex = /\bnoindex\b/.test((renderedMeta.robots || '').toLowerCase());
+          const renderedCanonical = renderedMeta.canonical || '';
+          jsRenderedDiff = {
+            titleChanged: (renderedMeta.title || '') !== (title || ''),
+            h1Changed: (renderedMeta.h1 || '') !== (h1 || ''),
+            canonicalChanged: renderedCanonical !== (canonical || ''),
+            noindexChanged: renderedNoindex !== noindexInMeta,
+          };
+        }
+        const indexability = {
+          xRobotsTag,
+          noindexInMeta,
+          noindexInHeader,
+          metaRobots: robots,
+          canonicalSelf,
+          jsRenderedDiff,
+        };
+
         const result = { 
           url, 
           statusCode, 
@@ -1131,6 +1261,7 @@ export async function POST(req: NextRequest) {
               external: Array.from(linkBuckets.resource.externalUrls),
             },
           },
+          linkRows,
           totalLinks: linkBuckets.anchor.internal + linkBuckets.anchor.external + linkBuckets.resource.internal + linkBuckets.resource.external,
           publishDate,
           wordCount, 
@@ -1166,6 +1297,7 @@ export async function POST(req: NextRequest) {
             },
           }),
           textPreview,
+          indexability,
           status: 'success' 
         };
 
@@ -1202,6 +1334,7 @@ export async function POST(req: NextRequest) {
           imageStats: { total: 0, missingAlt: 0, missingTitle: 0, sizeKB: 0 },
           linkStats: { internal: 0, external: 0, nofollow: 0, dofollow: 0 },
           collectedLinks: { internal: [], external: [], anchorLinks: { internal: [], external: [] }, resourceLinks: { internal: [], external: [] } },
+          linkRows: [],
           totalLinks: 0,
           wordCount: 0,
           urlDepth: 0,
@@ -1225,6 +1358,14 @@ export async function POST(req: NextRequest) {
               message: 'Không thể cào dữ liệu từ URL này.',
             },
           ],
+          indexability: {
+            xRobotsTag: '',
+            noindexInMeta: false,
+            noindexInHeader: false,
+            metaRobots: 'N/A',
+            canonicalSelf: false,
+            jsRenderedDiff: undefined,
+          },
           status: 'error' 
         };
       }

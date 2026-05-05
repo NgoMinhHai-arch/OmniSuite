@@ -16,6 +16,10 @@ import {
   Bot,
   Trash2,
   Search,
+  Eye,
+  Gauge,
+  ShieldAlert,
+  FileSearch,
 } from 'lucide-react';
 import { useTasks } from '@/shared/lib/context/TaskContext';
 
@@ -45,12 +49,15 @@ type LinkAuditRow = {
   anchor: string;
   rel: string;
   bucket: 'internal' | 'external';
+  follow: 'nofollow' | 'dofollow' | 'unknown';
+  linkType?: 'anchor' | 'resource';
 };
 
 type ScrapeResult = {
   url: string;
   statusCode?: number;
   title?: string;
+  description?: string;
   canonical?: string;
   robots?: string;
   h1?: string;
@@ -76,7 +83,101 @@ type ScrapeResult = {
     anchorLinks?: { internal?: string[]; external?: string[] };
     resourceLinks?: { internal?: string[]; external?: string[] };
   };
+  linkRows?: Array<{
+    source: string;
+    target: string;
+    anchor: string;
+    rel: string;
+    bucket: 'internal' | 'external';
+    follow: 'nofollow' | 'dofollow' | 'unknown';
+    linkType: 'anchor' | 'resource';
+  }>;
+  indexability?: {
+    xRobotsTag?: string;
+    noindexInMeta?: boolean;
+    noindexInHeader?: boolean;
+    metaRobots?: string;
+    canonicalSelf?: boolean;
+    jsRenderedDiff?: {
+      titleChanged: boolean;
+      h1Changed: boolean;
+      canonicalChanged: boolean;
+      noindexChanged: boolean;
+    };
+  };
+  og?: {
+    title?: string;
+    description?: string;
+    image?: string;
+    url?: string;
+    type?: string;
+    siteName?: string;
+  };
+  twitter?: {
+    card?: string;
+    title?: string;
+    description?: string;
+  };
   issues?: SeoIssue[];
+};
+
+type RobotsSitemapData = {
+  domain: string;
+  robots: {
+    exists: boolean;
+    statusCode: number;
+    sitemapRefs: string[];
+    crawlDelay: number | null;
+    blocksGooglebot: boolean;
+    blocksAiBots: { name: string; blocked: boolean }[];
+    raw: string;
+  };
+  sitemap: {
+    found: boolean;
+    url: string | null;
+    statusCode: number;
+    urlCount: number;
+    domainMismatchCount: number;
+    sampleUrls: string[];
+    urls: string[];
+  };
+};
+
+type CwvRecord = {
+  url: string;
+  ok: boolean;
+  error?: string;
+  LCP: number | null;
+  CLS: number | null;
+  FCP: number | null;
+  TTFB: number | null;
+  scoreLCP: 'good' | 'needs-improvement' | 'poor' | null;
+  scoreCLS: 'good' | 'needs-improvement' | 'poor' | null;
+  scoreFCP: 'good' | 'needs-improvement' | 'poor' | null;
+  scoreTTFB: 'good' | 'needs-improvement' | 'poor' | null;
+  overall: 'good' | 'needs-improvement' | 'poor' | 'unknown';
+};
+
+type FullAuditRuleResult = {
+  ruleId: string;
+  status: 'pass' | 'warn' | 'fail' | 'info';
+  message: string;
+  score?: number;
+};
+
+type FullAuditCategory = {
+  categoryId: string;
+  score: number;
+  passCount: number;
+  warnCount: number;
+  failCount: number;
+  results: FullAuditRuleResult[];
+};
+
+type FullAuditResult = {
+  url: string;
+  overallScore: number;
+  categoryResults: FullAuditCategory[];
 };
 
 const BRAND = {
@@ -100,8 +201,20 @@ export default function WebsiteCheckupPage() {
   const [imageQuery, setImageQuery] = useState('');
   const [imageFilter, setImageFilter] = useState<'all' | 'missing_alt' | 'missing_title'>('all');
   const [linkQuery, setLinkQuery] = useState('');
-  const [linkFilter, setLinkFilter] = useState<'all' | 'internal' | 'external' | 'nofollow'>('all');
+  const [linkFilter, setLinkFilter] = useState<'all' | 'internal' | 'external' | 'nofollow' | 'dofollow'>('all');
   const [imageDetailGroup, setImageDetailGroup] = useState<ImageAuditGroup | null>(null);
+  const [robotsSitemapByDomain, setRobotsSitemapByDomain] = useState<Record<string, RobotsSitemapData>>({});
+  const [robotsLoadingDomains, setRobotsLoadingDomains] = useState<Record<string, boolean>>({});
+  const [robotsRawModal, setRobotsRawModal] = useState<RobotsSitemapData | null>(null);
+  const [cwvByUrl, setCwvByUrl] = useState<Record<string, CwvRecord>>({});
+  const [cwvRunning, setCwvRunning] = useState(false);
+  const [cwvProgress, setCwvProgress] = useState({ done: 0, total: 0 });
+  const [cwvAutoOn, setCwvAutoOn] = useState(false);
+  const [fullAuditRunning, setFullAuditRunning] = useState(false);
+  const [fullAuditIncludeCwv, setFullAuditIncludeCwv] = useState(false);
+  const [fullAuditResult, setFullAuditResult] = useState<FullAuditResult | null>(null);
+  const [fullAuditError, setFullAuditError] = useState('');
+  const [fullAuditExporting, setFullAuditExporting] = useState(false);
   const activeDashboardLabel =
     activeDashboard === 'images'
       ? 'Hình ảnh'
@@ -183,20 +296,37 @@ export default function WebsiteCheckupPage() {
   }, [imageFilter, imageQuery, imageGroups]);
   const linkRows = useMemo<LinkAuditRow[]>(
     () =>
-      results.flatMap((row) => {
-        const internal = (row.collectedLinks?.internal || []).map((target) => ({
+      results.flatMap((row): LinkAuditRow[] => {
+        if (Array.isArray(row.linkRows) && row.linkRows.length > 0) {
+          return row.linkRows
+            .filter((r) => r.linkType === 'anchor')
+            .map((r) => ({
+              source: r.source,
+              target: r.target,
+              anchor: r.anchor || '-',
+              rel: r.rel || '',
+              bucket: r.bucket,
+              follow: r.follow,
+              linkType: r.linkType,
+            }));
+        }
+        const internal: LinkAuditRow[] = (row.collectedLinks?.internal || []).map((target) => ({
           source: row.url,
           target,
           anchor: '-',
-          rel: 'unknown',
+          rel: '',
           bucket: 'internal' as const,
+          follow: 'unknown' as const,
+          linkType: 'anchor' as const,
         }));
-        const external = (row.collectedLinks?.external || []).map((target) => ({
+        const external: LinkAuditRow[] = (row.collectedLinks?.external || []).map((target) => ({
           source: row.url,
           target,
           anchor: '-',
-          rel: 'unknown',
+          rel: '',
           bucket: 'external' as const,
+          follow: 'unknown' as const,
+          linkType: 'anchor' as const,
         }));
         return [...internal, ...external];
       }),
@@ -208,7 +338,8 @@ export default function WebsiteCheckupPage() {
         linkFilter === 'all' ||
         (linkFilter === 'internal' && row.bucket === 'internal') ||
         (linkFilter === 'external' && row.bucket === 'external') ||
-        (linkFilter === 'nofollow' && row.rel.toLowerCase().includes('nofollow'));
+        (linkFilter === 'nofollow' && row.follow === 'nofollow') ||
+        (linkFilter === 'dofollow' && row.follow === 'dofollow');
       const query = linkQuery.trim().toLowerCase();
       const byQuery =
         !query ||
@@ -218,39 +349,433 @@ export default function WebsiteCheckupPage() {
       return byFilter && byQuery;
     });
   }, [linkFilter, linkQuery, linkRows]);
-  const googlebotRows = useMemo(
-    () =>
-      results.map((row) => {
-        const robotsText = (row.robots || '').toLowerCase();
-        const isNoindex = robotsText.includes('noindex');
-        const statusCode = row.statusCode || 0;
-        const status =
-          statusCode >= 500 || isNoindex ? 'fail' : statusCode >= 400 || !row.canonical ? 'warn' : 'pass';
-        return {
-          url: row.url,
-          statusCode,
-          robots: row.robots || 'index, follow',
-          canonical: row.canonical || '-',
-          status,
-          note:
-            status === 'fail'
-              ? 'URL lỗi hoặc bị noindex'
-              : status === 'warn'
-                ? 'Cần kiểm tra canonical/status'
-                : 'Sẵn sàng cho crawl/index',
-        };
-      }),
-    [results],
-  );
-  const googlebotSummary = useMemo(
+  const getOriginFromUrl = (raw: string): string | null => {
+    try {
+      const u = new URL(raw);
+      return `${u.protocol}//${u.host}`;
+    } catch {
+      return null;
+    }
+  };
+
+  const getRobotsPathVerdict = (
+    robotsRaw: string,
+    targetUrl: string,
+  ): { blocked: boolean; matchedRule: string | null } => {
+    if (!robotsRaw.trim()) return { blocked: false, matchedRule: null };
+    let pathname = '/';
+    try {
+      pathname = new URL(targetUrl).pathname || '/';
+    } catch {
+      // keep default
+    }
+    const lines = robotsRaw.split(/\r?\n/);
+    const blocks: Array<{ userAgents: string[]; allow: string[]; disallow: string[] }> = [];
+    let current: { userAgents: string[]; allow: string[]; disallow: string[] } | null = null;
+
+    for (const rawLine of lines) {
+      const line = rawLine.replace(/#.*$/, '').trim();
+      if (!line) continue;
+      const idx = line.indexOf(':');
+      if (idx <= 0) continue;
+      const key = line.slice(0, idx).trim().toLowerCase();
+      const value = line.slice(idx + 1).trim();
+      if (key === 'user-agent') {
+        const ua = value.toLowerCase();
+        if (!current || current.allow.length > 0 || current.disallow.length > 0) {
+          current = { userAgents: [ua], allow: [], disallow: [] };
+          blocks.push(current);
+        } else {
+          current.userAgents.push(ua);
+        }
+        continue;
+      }
+      if (!current) continue;
+      if (key === 'allow') current.allow.push(value);
+      if (key === 'disallow') current.disallow.push(value);
+    }
+
+    const selected =
+      blocks.find((b) => b.userAgents.includes('googlebot')) ||
+      blocks.find((b) => b.userAgents.includes('*')) ||
+      null;
+    if (!selected) return { blocked: false, matchedRule: null };
+
+    const matches = (rule: string) => {
+      if (!rule) return false;
+      if (rule === '/') return true;
+      const clean = rule.replace(/\*$/g, '');
+      return pathname.startsWith(clean);
+    };
+
+    const matchedAllow = selected.allow
+      .filter(matches)
+      .sort((a, b) => b.length - a.length)[0];
+    const matchedDisallow = selected.disallow
+      .filter(matches)
+      .sort((a, b) => b.length - a.length)[0];
+
+    if (matchedDisallow && (!matchedAllow || matchedDisallow.length > matchedAllow.length)) {
+      return { blocked: true, matchedRule: matchedDisallow };
+    }
+    if (matchedAllow) return { blocked: false, matchedRule: matchedAllow };
+    return { blocked: false, matchedRule: null };
+  };
+
+  const computeIndexability = (input: {
+    statusCode: number;
+    noindexInMeta: boolean;
+    noindexInHeader: boolean;
+    canonical: string;
+    canonicalSelf: boolean;
+    inSitemap: boolean | null;
+    robotsPathVerdict: { blocked: boolean; matchedRule: string | null };
+    jsStable: boolean | null;
+  }): { verdict: 'CAN_INDEX' | 'WARN' | 'BLOCKED'; reasons: string[] } => {
+    const {
+      statusCode,
+      noindexInMeta,
+      noindexInHeader,
+      canonical,
+      canonicalSelf,
+      inSitemap,
+      robotsPathVerdict,
+      jsStable,
+    } = input;
+
+    const reasons: string[] = [];
+    let verdict: 'CAN_INDEX' | 'WARN' | 'BLOCKED' = 'CAN_INDEX';
+
+    if (statusCode >= 500) {
+      verdict = 'BLOCKED';
+      reasons.push(`HTTP ${statusCode}`);
+      return { verdict, reasons };
+    }
+    if (statusCode === 404 || statusCode === 410) {
+      verdict = 'BLOCKED';
+      reasons.push(`HTTP ${statusCode}`);
+      return { verdict, reasons };
+    }
+    if (noindexInMeta || noindexInHeader) {
+      verdict = 'BLOCKED';
+      if (noindexInMeta) reasons.push('meta robots noindex');
+      if (noindexInHeader) reasons.push('X-Robots-Tag noindex');
+      return { verdict, reasons };
+    }
+    if (robotsPathVerdict.blocked) {
+      verdict = 'BLOCKED';
+      reasons.push(
+        robotsPathVerdict.matchedRule
+          ? `robots.txt disallow (${robotsPathVerdict.matchedRule})`
+          : 'robots.txt disallow',
+      );
+      return { verdict, reasons };
+    }
+
+    if (canonical && !canonicalSelf) {
+      verdict = 'WARN';
+      reasons.push('canonical points elsewhere');
+    }
+    if (inSitemap === false) {
+      if (verdict === 'CAN_INDEX') verdict = 'WARN';
+      reasons.push('not in sitemap');
+    }
+    if (jsStable === false) {
+      if (verdict === 'CAN_INDEX') verdict = 'WARN';
+      reasons.push('JS rendered drift');
+    }
+    if (statusCode >= 300 && statusCode < 400) {
+      if (verdict === 'CAN_INDEX') verdict = 'WARN';
+      reasons.push(`HTTP ${statusCode} redirect`);
+    }
+    return { verdict, reasons };
+  };
+
+  const indexabilityRows = useMemo(() => {
+    return results.map((row) => {
+      const statusCode = row.statusCode || 0;
+      const indexability = row.indexability || {};
+      const metaRobots = (indexability.metaRobots ?? row.robots ?? '').trim() || '-';
+      const xRobots = (indexability.xRobotsTag ?? '').trim();
+      const canonical = (row.canonical || '').trim();
+      const origin = getOriginFromUrl(row.url);
+      const robotsData = origin ? robotsSitemapByDomain[origin] : undefined;
+      const sitemapUrls = robotsData?.sitemap?.urls || [];
+      const inSitemap = sitemapUrls.length > 0 ? sitemapUrls.includes(row.url) : null;
+      const robotsPathVerdict = robotsData
+        ? getRobotsPathVerdict(robotsData.robots.raw || '', row.url)
+        : { blocked: false, matchedRule: null as string | null };
+      const aiBots = robotsData?.robots?.blocksAiBots || [];
+      const aiBlocked = aiBots.filter((b) => b.blocked).map((b) => b.name);
+      const noindexInMeta = !!indexability.noindexInMeta;
+      const noindexInHeader = !!indexability.noindexInHeader;
+      const canonicalSelf = !!indexability.canonicalSelf;
+      const jsDiff = indexability.jsRenderedDiff;
+      const jsStable = jsDiff
+        ? !(jsDiff.titleChanged || jsDiff.h1Changed || jsDiff.canonicalChanged || jsDiff.noindexChanged)
+        : null;
+
+      const { verdict, reasons } = computeIndexability({
+        statusCode,
+        noindexInMeta,
+        noindexInHeader,
+        canonical,
+        canonicalSelf,
+        inSitemap,
+        robotsPathVerdict,
+        jsStable,
+      });
+
+      return {
+        url: row.url,
+        statusCode,
+        metaRobots,
+        xRobots,
+        canonical: canonical || '-',
+        canonicalSelf,
+        inSitemap,
+        robotsPathVerdict,
+        aiBlocked,
+        jsStable,
+        jsDiff,
+        verdict,
+        reasons,
+      };
+    });
+  }, [results, robotsSitemapByDomain]);
+
+  const indexabilitySummary = useMemo(
     () => ({
-      pass: googlebotRows.filter((r) => r.status === 'pass').length,
-      warn: googlebotRows.filter((r) => r.status === 'warn').length,
-      fail: googlebotRows.filter((r) => r.status === 'fail').length,
-      total: googlebotRows.length,
+      total: indexabilityRows.length,
+      canIndex: indexabilityRows.filter((r) => r.verdict === 'CAN_INDEX').length,
+      warn: indexabilityRows.filter((r) => r.verdict === 'WARN').length,
+      blocked: indexabilityRows.filter((r) => r.verdict === 'BLOCKED').length,
     }),
-    [googlebotRows],
+    [indexabilityRows],
   );
+
+  const uniqueDomains = useMemo(() => {
+    const set = new Set<string>();
+    results.forEach((r) => {
+      const origin = getOriginFromUrl(r.url);
+      if (origin) set.add(origin);
+    });
+    return Array.from(set);
+  }, [results]);
+
+  const metaTagRows = useMemo(() => {
+    const SOCIAL_HOSTS: Array<{ host: string; label: string }> = [
+      { host: 'facebook.com', label: 'facebook' },
+      { host: 'fb.com', label: 'facebook' },
+      { host: 'm.facebook.com', label: 'facebook' },
+      { host: 'zalo.me', label: 'zalo' },
+      { host: 'zaloapp.com', label: 'zalo' },
+      { host: 'tiktok.com', label: 'tiktok' },
+      { host: 'instagram.com', label: 'instagram' },
+      { host: 'youtube.com', label: 'youtube' },
+      { host: 'youtu.be', label: 'youtube' },
+      { host: 'linkedin.com', label: 'linkedin' },
+      { host: 'twitter.com', label: 'twitter' },
+      { host: 'x.com', label: 'x' },
+      { host: 'pinterest.com', label: 'pinterest' },
+      { host: 'threads.net', label: 'threads' },
+      { host: 'telegram.me', label: 'telegram' },
+      { host: 't.me', label: 'telegram' },
+    ];
+
+    return results.map((row) => {
+      let siteName = (row.og?.siteName || '').trim();
+      if (!siteName) {
+        try {
+          const hostname = new URL(row.url).hostname.replace(/^www\./i, '');
+          const parts = hostname.split('.');
+          siteName = parts[0] || hostname || '-';
+        } catch {
+          siteName = '-';
+        }
+      }
+
+      const socialLinkMap = new Map<string, string>();
+      (row.linkRows || []).forEach((lr) => {
+        if (!lr?.target) return;
+        try {
+          const host = new URL(lr.target).hostname.toLowerCase();
+          const matched = SOCIAL_HOSTS.find((s) => host === s.host || host.endsWith(`.${s.host}`));
+          if (matched && !socialLinkMap.has(matched.label)) {
+            socialLinkMap.set(matched.label, lr.target);
+          }
+        } catch {
+          // ignore non-http links
+        }
+      });
+
+      return {
+        sourceUrl: row.url,
+        title: row.og?.title || row.title || '-',
+        description: row.og?.description || row.description || '-',
+        image: row.og?.image || '-',
+        url: row.og?.url || row.canonical || row.url || '-',
+        type: row.og?.type || '-',
+        siteName,
+        cardLinks: Array.from(socialLinkMap.entries()).map(([platform, link]) => ({
+          platform,
+          link,
+        })),
+      };
+    });
+  }, [results]);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('googlebot_eye_cwv_auto');
+      if (stored === '1') setCwvAutoOn(true);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('googlebot_eye_cwv_auto', cwvAutoOn ? '1' : '0');
+    } catch {}
+  }, [cwvAutoOn]);
+
+  useEffect(() => {
+    if (activeDashboard !== 'googlebot') return;
+    const pending = uniqueDomains.filter((d) => !robotsSitemapByDomain[d] && !robotsLoadingDomains[d]);
+    if (!pending.length) return;
+    pending.forEach(async (domain) => {
+      setRobotsLoadingDomains((prev) => ({ ...prev, [domain]: true }));
+      try {
+        const res = await fetch('/api/seo/robots-sitemap', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ domain }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as RobotsSitemapData;
+          setRobotsSitemapByDomain((prev) => ({ ...prev, [domain]: data }));
+        }
+      } catch {
+        // ignore
+      } finally {
+        setRobotsLoadingDomains((prev) => {
+          const next = { ...prev };
+          delete next[domain];
+          return next;
+        });
+      }
+    });
+  }, [activeDashboard, uniqueDomains, robotsSitemapByDomain, robotsLoadingDomains]);
+
+  const runCwvForUrls = async (urls: string[]) => {
+    if (!urls.length || cwvRunning) return;
+    setCwvRunning(true);
+    setCwvProgress({ done: 0, total: urls.length });
+    const concurrency = 2;
+    let cursor = 0;
+    let done = 0;
+    const next = async (): Promise<void> => {
+      const idx = cursor;
+      cursor += 1;
+      if (idx >= urls.length) return;
+      const url = urls[idx];
+      try {
+        const res = await fetch('/api/seo/cwv', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as CwvRecord;
+          setCwvByUrl((prev) => ({ ...prev, [url]: data }));
+        }
+      } catch {
+        // ignore
+      } finally {
+        done += 1;
+        setCwvProgress({ done, total: urls.length });
+        await next();
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, urls.length) }, () => next()));
+    setCwvRunning(false);
+  };
+
+  const runFullAudit = async (targetUrl: string) => {
+    if (!targetUrl || fullAuditRunning) return;
+    setFullAuditRunning(true);
+    setFullAuditError('');
+    try {
+      const res = await fetch('/api/seo/full-audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: targetUrl,
+          includeCwv: fullAuditIncludeCwv,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Full audit failed');
+      setFullAuditResult((data?.data || data) as FullAuditResult);
+    } catch (err: any) {
+      setFullAuditError(err?.message || 'Full audit failed');
+    } finally {
+      setFullAuditRunning(false);
+    }
+  };
+
+  const exportFullAudit = async (format: 'json' | 'html' | 'markdown' | 'llm') => {
+    const targetUrl = results[0]?.url || '';
+    if (!targetUrl || fullAuditExporting) return;
+    setFullAuditExporting(true);
+    setFullAuditError('');
+    try {
+      const res = await fetch('/api/seo/full-audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: targetUrl,
+          includeCwv: fullAuditIncludeCwv,
+          format,
+          exportFile: true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `Export ${format} failed`);
+      const content = String(data?.content || '');
+      const fileName =
+        data?.fileName ||
+        `full-audit.${format === 'markdown' ? 'md' : format === 'llm' ? 'txt' : format}`;
+      const mime =
+        format === 'html'
+          ? 'text/html'
+          : format === 'json'
+            ? 'application/json'
+            : 'text/plain';
+      const blob = new Blob([content], { type: mime });
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+    } catch (err: any) {
+      setFullAuditError(err?.message || `Export ${format} failed`);
+    } finally {
+      setFullAuditExporting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!cwvAutoOn) return;
+    if (activeDashboard !== 'googlebot') return;
+    if (!results.length) return;
+    const todo = results.map((r) => r.url).filter((u) => !cwvByUrl[u]);
+    if (!todo.length) return;
+    runCwvForUrls(todo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cwvAutoOn, activeDashboard, results]);
 
   useEffect(() => {
     const saved = sessionStorage.getItem('website_checkup_state');
@@ -680,7 +1205,7 @@ export default function WebsiteCheckupPage() {
           </div>
           <div className="rounded-full border border-violet-300/30 bg-violet-500/15 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-violet-100">Live data</div>
         </div>
-        <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
           <div className="rounded-xl border border-white/10 bg-black/20 p-3">
             <p className="text-[10px] uppercase tracking-wider text-slate-400">Tổng links</p>
             <p className="mt-1 text-xl font-black text-violet-100">{linkRows.length}</p>
@@ -693,10 +1218,16 @@ export default function WebsiteCheckupPage() {
             <p className="text-[10px] uppercase tracking-wider text-amber-200">External</p>
             <p className="mt-1 text-xl font-black text-amber-100">{linkRows.filter((x) => x.bucket === 'external').length}</p>
           </div>
+          <div className="rounded-xl border border-sky-300/20 bg-sky-500/10 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-sky-200">Dofollow</p>
+            <p className="mt-1 text-xl font-black text-sky-100">
+              {linkRows.filter((x) => x.follow === 'dofollow').length}
+            </p>
+          </div>
           <div className="rounded-xl border border-rose-300/20 bg-rose-500/10 p-3">
             <p className="text-[10px] uppercase tracking-wider text-rose-200">Nofollow</p>
             <p className="mt-1 text-xl font-black text-rose-100">
-              {results.reduce((sum, row) => sum + (row.linkStats?.nofollow || 0), 0)}
+              {linkRows.filter((x) => x.follow === 'nofollow').length}
             </p>
           </div>
         </div>
@@ -714,11 +1245,12 @@ export default function WebsiteCheckupPage() {
             { id: 'all', label: 'Tất cả' },
             { id: 'internal', label: 'Internal' },
             { id: 'external', label: 'External' },
+            { id: 'dofollow', label: 'Dofollow' },
             { id: 'nofollow', label: 'Nofollow' },
           ].map((item) => (
             <button
               key={item.id}
-              onClick={() => setLinkFilter(item.id as 'all' | 'internal' | 'external' | 'nofollow')}
+              onClick={() => setLinkFilter(item.id as 'all' | 'internal' | 'external' | 'nofollow' | 'dofollow')}
               className={`rounded-lg border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider ${
                 linkFilter === item.id
                   ? 'border-violet-300/40 bg-violet-500/20 text-violet-100'
@@ -730,94 +1262,693 @@ export default function WebsiteCheckupPage() {
           ))}
         </div>
         <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-white/10">
-          <table className="w-full min-w-[1000px] text-left text-xs">
+          <table className="w-full min-w-[1100px] text-left text-xs">
             <thead className="bg-white/[0.03] uppercase text-slate-400">
               <tr>
                 <th className="p-2">Source</th>
                 <th className="p-2">Target</th>
                 <th className="p-2">Anchor</th>
                 <th className="p-2">Rel</th>
+                <th className="p-2">Follow</th>
                 <th className="p-2">Bucket</th>
               </tr>
             </thead>
             <tbody>
-              {filteredLinkRows.map((row, idx) => (
-                <tr key={`${row.source}-${row.target}-${idx}`} className="border-t border-white/5">
-                  <td className="p-2 text-slate-300">{row.source}</td>
-                  <td className="p-2 text-slate-300">{row.target}</td>
-                  <td className="p-2 text-slate-200">{row.anchor}</td>
-                  <td className="p-2 text-slate-200">{row.rel}</td>
-                  <td className="p-2">
-                    <span className={`rounded px-2 py-0.5 font-bold ${row.bucket === 'internal' ? 'bg-emerald-500/20 text-emerald-200' : 'bg-amber-500/20 text-amber-200'}`}>
-                      {row.bucket}
-                    </span>
+              {filteredLinkRows.map((row, idx) => {
+                const followClass =
+                  row.follow === 'dofollow'
+                    ? 'bg-sky-500/20 text-sky-200'
+                    : row.follow === 'nofollow'
+                      ? 'bg-rose-500/20 text-rose-200'
+                      : 'bg-white/10 text-slate-300';
+                return (
+                  <tr key={`${row.source}-${row.target}-${idx}`} className="border-t border-white/5">
+                    <td className="p-2 text-slate-300">{row.source}</td>
+                    <td className="p-2 text-slate-300">{row.target}</td>
+                    <td className="p-2 text-slate-200">{row.anchor || '-'}</td>
+                    <td className="p-2 text-slate-200">{row.rel || '-'}</td>
+                    <td className="p-2">
+                      <span className={`rounded px-2 py-0.5 font-bold ${followClass}`}>
+                        {row.follow}
+                      </span>
+                    </td>
+                    <td className="p-2">
+                      <span className={`rounded px-2 py-0.5 font-bold ${row.bucket === 'internal' ? 'bg-emerald-500/20 text-emerald-200' : 'bg-amber-500/20 text-amber-200'}`}>
+                        {row.bucket}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+              {filteredLinkRows.length === 0 && (
+                <tr className="border-t border-white/5">
+                  <td colSpan={6} className="p-4 text-center text-slate-400">
+                    Không có link nào khớp bộ lọc hiện tại.
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
       </section>
       ) : (
-      <section className={`rounded-3xl border p-6 ${BRAND.panel}`}>
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-black uppercase tracking-wider text-slate-100">Googlebot</h2>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
-              crawlability từ URL đã quét
-            </p>
+      <div className="space-y-6">
+        <section className={`rounded-3xl border p-6 ${BRAND.panel}`}>
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-black uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                <Eye size={16} className="text-violet-300" />
+                Googlebot's Eye
+              </h2>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
+                Indexability + Robots/Sitemap + AI Bot Access + CWV
+              </p>
+            </div>
+            <div className="rounded-full border border-violet-300/30 bg-violet-500/15 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-violet-100">Live data</div>
           </div>
-          <div className="rounded-full border border-violet-300/30 bg-violet-500/15 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-violet-100">Live data</div>
-        </div>
-        <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-            <p className="text-[10px] uppercase tracking-wider text-slate-400">Tổng URL</p>
-            <p className="mt-1 truncate text-sm font-black text-violet-100">{googlebotSummary.total}</p>
+          <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+              <p className="text-[10px] uppercase tracking-wider text-slate-400">Tổng URL</p>
+              <p className="mt-1 truncate text-sm font-black text-violet-100">{indexabilitySummary.total}</p>
+            </div>
+            <div className="rounded-xl border border-emerald-300/20 bg-emerald-500/10 p-3">
+              <p className="text-[10px] uppercase tracking-wider text-emerald-200">CAN INDEX</p>
+              <p className="mt-1 truncate text-sm font-black text-emerald-100">{indexabilitySummary.canIndex}</p>
+            </div>
+            <div className="rounded-xl border border-amber-300/20 bg-amber-500/10 p-3">
+              <p className="text-[10px] uppercase tracking-wider text-amber-200">WARN</p>
+              <p className="mt-1 truncate text-sm font-black text-amber-100">{indexabilitySummary.warn}</p>
+            </div>
+            <div className="rounded-xl border border-rose-300/20 bg-rose-500/10 p-3">
+              <p className="text-[10px] uppercase tracking-wider text-rose-200">BLOCKED</p>
+              <p className="mt-1 truncate text-sm font-black text-rose-100">{indexabilitySummary.blocked}</p>
+            </div>
           </div>
-          <div className="rounded-xl border border-emerald-300/20 bg-emerald-500/10 p-3">
-            <p className="text-[10px] uppercase tracking-wider text-emerald-200">PASS</p>
-            <p className="mt-1 truncate text-sm font-black text-emerald-100">{googlebotSummary.pass}</p>
+        </section>
+
+        {(uniqueDomains.length > 0 || metaTagRows.length > 0) && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {uniqueDomains.length > 0 && (
+              <section className={`rounded-3xl border p-6 ${BRAND.panel}`}>
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                      <ShieldAlert size={14} className="text-violet-300" />
+                      Robots.txt &amp; Sitemap
+                    </h3>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
+                      Phân tích theo domain ({uniqueDomains.length})
+                    </p>
+                  </div>
+                </div>
+                <div className="grid gap-4">
+                  {uniqueDomains.map((domain) => {
+                    const data = robotsSitemapByDomain[domain];
+                    const loading = !!robotsLoadingDomains[domain];
+                    if (!data) {
+                      return (
+                        <div key={domain} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                          <p className="truncate text-xs font-bold text-slate-200">{domain}</p>
+                          <p className="mt-2 text-[11px] text-slate-400">
+                            {loading ? 'Đang phân tích robots.txt + sitemap…' : 'Chưa có dữ liệu'}
+                          </p>
+                        </div>
+                      );
+                    }
+                    const robotsOk = data.robots.exists && data.robots.statusCode === 200;
+                    const blockedAi = data.robots.blocksAiBots.filter((b) => b.blocked);
+                    return (
+                      <div key={domain} className="space-y-3 rounded-2xl border border-white/10 bg-black/20 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="truncate text-xs font-bold text-slate-200" title={domain}>
+                            {domain}
+                          </p>
+                          <button
+                            onClick={() => setRobotsRawModal(data)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-violet-300/20 bg-violet-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-violet-200"
+                          >
+                            <FileSearch size={11} /> Xem chi tiết
+                          </button>
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">robots.txt</p>
+                            <p className="mt-1 text-xs font-black text-slate-100">
+                              {robotsOk ? `HTTP ${data.robots.statusCode}` : data.robots.statusCode ? `HTTP ${data.robots.statusCode}` : 'Không có'}
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-1 text-[10px] font-bold">
+                              <span className={`rounded px-1.5 py-0.5 ${data.robots.blocksGooglebot ? 'bg-rose-500/20 text-rose-200' : 'bg-emerald-500/20 text-emerald-200'}`}>
+                                {data.robots.blocksGooglebot ? 'BLOCK Googlebot' : 'Allow Googlebot'}
+                              </span>
+                              {data.robots.crawlDelay !== null && (
+                                <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-amber-200">
+                                  crawl-delay: {data.robots.crawlDelay}s
+                                </span>
+                              )}
+                              {data.robots.sitemapRefs.length > 0 && (
+                                <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-sky-200">
+                                  sitemap ref: {data.robots.sitemapRefs.length}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-1 text-[10px] font-bold">
+                              {blockedAi.length > 0 ? (
+                                blockedAi.map((b) => (
+                                  <span key={b.name} className="rounded bg-rose-500/20 px-1.5 py-0.5 text-rose-200">
+                                    BLOCK {b.name}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-emerald-200">
+                                  Allow AI bots
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">sitemap</p>
+                            <p className="mt-1 text-xs font-black text-slate-100">
+                              {data.sitemap.found ? `${data.sitemap.urlCount} URL` : 'Không tìm thấy'}
+                            </p>
+                            {data.sitemap.url && (
+                              <p className="mt-1 truncate text-[10px] text-slate-400" title={data.sitemap.url}>
+                                {data.sitemap.url}
+                              </p>
+                            )}
+                            {data.sitemap.domainMismatchCount > 0 && (
+                              <p className="mt-1 text-[10px] font-bold text-amber-200">
+                                ⚠ Domain mismatch: {data.sitemap.domainMismatchCount}
+                              </p>
+                            )}
+                            {data.sitemap.sampleUrls.length > 0 && (
+                              <ul className="mt-2 space-y-0.5 text-[10px] text-slate-400">
+                                {data.sitemap.sampleUrls.slice(0, 5).map((u) => (
+                                  <li key={u} className="truncate" title={u}>
+                                    · {u}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+            <section className={`rounded-3xl border p-6 ${BRAND.panel}`}>
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-100">
+                    Meta Tags
+                  </h3>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
+                    title · description · image · url · type · site_name · card
+                  </p>
+                </div>
+              </div>
+              <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-white/10">
+                <table className="w-full min-w-[900px] text-left text-xs">
+                  <thead className="bg-white/[0.03] uppercase text-slate-400">
+                    <tr>
+                      <th className="p-2">URL</th>
+                      <th className="p-2">title</th>
+                      <th className="p-2">description</th>
+                      <th className="p-2">image</th>
+                      <th className="p-2">url</th>
+                      <th className="p-2">type</th>
+                      <th className="p-2">site_name</th>
+                      <th className="p-2">card</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metaTagRows.map((row) => (
+                      <tr key={row.sourceUrl} className="border-t border-white/5">
+                        <td className="p-2 text-slate-300 max-w-[180px] truncate" title={row.sourceUrl}>{row.sourceUrl}</td>
+                        <td className="p-2 text-slate-200 max-w-[160px] truncate" title={row.title}>{row.title}</td>
+                        <td className="p-2 text-slate-200 max-w-[220px] truncate" title={row.description}>{row.description}</td>
+                        <td className="p-2 text-slate-300 max-w-[180px] truncate" title={row.image}>{row.image}</td>
+                        <td className="p-2 text-slate-300 max-w-[180px] truncate" title={row.url}>{row.url}</td>
+                        <td className="p-2 text-slate-300">{row.type}</td>
+                        <td className="p-2 text-slate-300">{row.siteName}</td>
+                        <td className="p-2 text-slate-300">
+                          {row.cardLinks.length > 0 ? (
+                            <div className="space-y-1">
+                              {row.cardLinks.map((item) => (
+                                <a
+                                  key={`${row.sourceUrl}-${item.platform}-${item.link}`}
+                                  href={item.link}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="block truncate text-[11px] text-sky-300 hover:text-sky-200 hover:underline"
+                                  title={`${item.platform}: ${item.link}`}
+                                >
+                                  {item.platform}: {item.link}
+                                </a>
+                              ))}
+                            </div>
+                          ) : (
+                            '-'
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {metaTagRows.length === 0 && (
+                      <tr className="border-t border-white/5">
+                        <td colSpan={8} className="p-4 text-center text-slate-400">
+                          Chưa có dữ liệu meta tags.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
           </div>
-          <div className="rounded-xl border border-amber-300/20 bg-amber-500/10 p-3">
-            <p className="text-[10px] uppercase tracking-wider text-amber-200">WARN</p>
-            <p className="mt-1 truncate text-sm font-black text-amber-100">{googlebotSummary.warn}</p>
+        )}
+
+        <section className={`rounded-3xl border p-6 ${BRAND.panel}`}>
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                <Bot size={14} className="text-violet-300" />
+                Indexability per URL
+              </h3>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
+                HTTP · Meta Robots · X-Robots-Tag · Canonical · Sitemap · AI Bot · JS Rendered
+              </p>
+            </div>
           </div>
-          <div className="rounded-xl border border-rose-300/20 bg-rose-500/10 p-3">
-            <p className="text-[10px] uppercase tracking-wider text-rose-200">FAIL</p>
-            <p className="mt-1 truncate text-sm font-black text-rose-100">{googlebotSummary.fail}</p>
-          </div>
-        </div>
-        <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-white/10">
-          <table className="w-full min-w-[900px] text-left text-xs">
-            <thead className="bg-white/[0.03] uppercase text-slate-400">
-              <tr>
-                <th className="p-2">URL</th>
-                <th className="p-2">HTTP</th>
-                <th className="p-2">Meta Robots</th>
-                <th className="p-2">Canonical</th>
-                <th className="p-2">Verdict</th>
-                <th className="p-2">Note</th>
-              </tr>
-            </thead>
-            <tbody>
-              {googlebotRows.map((row) => (
-                <tr key={row.url} className="border-t border-white/5">
-                  <td className="p-2 text-slate-300">{row.url}</td>
-                  <td className="p-2 text-slate-200">{row.statusCode || '--'}</td>
-                  <td className="p-2 text-slate-200">{row.robots}</td>
-                  <td className="p-2 text-slate-200">{row.canonical}</td>
-                  <td className="p-2">
-                    <span className={`rounded px-2 py-0.5 font-bold ${row.status === 'pass' ? 'bg-emerald-500/20 text-emerald-200' : row.status === 'warn' ? 'bg-amber-500/20 text-amber-200' : 'bg-rose-500/20 text-rose-200'}`}>
-                      {row.status.toUpperCase()}
-                    </span>
-                  </td>
-                  <td className="p-2 text-slate-300">{row.note}</td>
+          <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-white/10">
+            <table className="w-full min-w-[1400px] text-left text-xs">
+              <thead className="bg-white/[0.03] uppercase text-slate-400">
+                <tr>
+                  <th className="p-2">URL</th>
+                  <th className="p-2">HTTP</th>
+                  <th className="p-2">Meta Robots</th>
+                  <th className="p-2">X-Robots-Tag</th>
+                  <th className="p-2">Canonical</th>
+                  <th className="p-2">In Sitemap</th>
+                  <th className="p-2">Robots.txt</th>
+                  <th className="p-2">AI Bot</th>
+                  <th className="p-2">JS Rendered</th>
+                  <th className="p-2">Verdict</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+              </thead>
+              <tbody>
+                {indexabilityRows.map((row) => {
+                  const httpClass =
+                    row.statusCode >= 200 && row.statusCode < 300
+                      ? 'bg-emerald-500/20 text-emerald-200'
+                      : row.statusCode >= 300 && row.statusCode < 400
+                        ? 'bg-sky-500/20 text-sky-200'
+                        : row.statusCode >= 400
+                          ? 'bg-rose-500/20 text-rose-200'
+                          : 'bg-white/10 text-slate-300';
+                  const verdictClass =
+                    row.verdict === 'CAN_INDEX'
+                      ? 'bg-emerald-500/20 text-emerald-200'
+                      : row.verdict === 'WARN'
+                        ? 'bg-amber-500/20 text-amber-200'
+                        : 'bg-rose-500/20 text-rose-200';
+                  const tooltip = row.reasons.length ? row.reasons.join(' • ') : 'OK';
+                  return (
+                    <tr key={row.url} className="border-t border-white/5">
+                      <td className="p-2 text-slate-300 max-w-[260px] truncate" title={row.url}>{row.url}</td>
+                      <td className="p-2">
+                        <span className={`rounded px-2 py-0.5 font-bold ${httpClass}`}>
+                          {row.statusCode || '--'}
+                        </span>
+                      </td>
+                      <td className="p-2 text-slate-200 max-w-[160px] truncate" title={row.metaRobots}>{row.metaRobots}</td>
+                      <td className="p-2 text-slate-200 max-w-[140px] truncate" title={row.xRobots || '-'}>
+                        {row.xRobots || <span className="text-slate-500">-</span>}
+                      </td>
+                      <td className="p-2 text-slate-200 max-w-[200px]">
+                        <div className="flex items-center gap-1">
+                          {row.canonicalSelf ? (
+                            <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-200">self</span>
+                          ) : row.canonical && row.canonical !== '-' ? (
+                            <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-200">other</span>
+                          ) : (
+                            <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">-</span>
+                          )}
+                          <span className="truncate text-[10px] text-slate-400" title={row.canonical}>{row.canonical}</span>
+                        </div>
+                      </td>
+                      <td className="p-2">
+                        {row.inSitemap === null ? (
+                          <span className="text-slate-500">--</span>
+                        ) : row.inSitemap ? (
+                          <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-200">✓</span>
+                        ) : (
+                          <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-200">✗</span>
+                        )}
+                      </td>
+                      <td className="p-2">
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${row.robotsPathVerdict.blocked ? 'bg-rose-500/20 text-rose-200' : 'bg-emerald-500/20 text-emerald-200'}`}
+                          title={row.robotsPathVerdict.matchedRule || undefined}
+                        >
+                          {row.robotsPathVerdict.blocked
+                            ? `disallow ${row.robotsPathVerdict.matchedRule || ''}`.trim()
+                            : row.robotsPathVerdict.matchedRule
+                              ? `allow ${row.robotsPathVerdict.matchedRule}`
+                              : 'allow'}
+                        </span>
+                      </td>
+                      <td className="p-2">
+                        {row.aiBlocked.length === 0 ? (
+                          <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-200">open</span>
+                        ) : (
+                          <span
+                            className="rounded bg-rose-500/20 px-1.5 py-0.5 text-[10px] font-bold text-rose-200"
+                            title={row.aiBlocked.join(', ')}
+                          >
+                            {row.aiBlocked.length} blocked
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-2">
+                        {row.jsStable === null ? (
+                          <span className="text-slate-500">--</span>
+                        ) : row.jsStable ? (
+                          <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-200">STABLE</span>
+                        ) : (
+                          <span
+                            className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-200"
+                            title={
+                              row.jsDiff
+                                ? [
+                                    row.jsDiff.titleChanged && 'title',
+                                    row.jsDiff.h1Changed && 'h1',
+                                    row.jsDiff.canonicalChanged && 'canonical',
+                                    row.jsDiff.noindexChanged && 'noindex',
+                                  ]
+                                    .filter(Boolean)
+                                    .join(', ')
+                                : ''
+                            }
+                          >
+                            DRIFT
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-2">
+                        <span className={`rounded px-2 py-0.5 font-bold ${verdictClass}`} title={tooltip}>
+                          {row.verdict.replace('_', ' ')}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {indexabilityRows.length === 0 && (
+                  <tr className="border-t border-white/5">
+                    <td colSpan={10} className="p-4 text-center text-slate-400">
+                      Chưa có URL nào được phân tích.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className={`rounded-3xl border p-6 ${BRAND.panel}`}>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                <Gauge size={14} className="text-violet-300" />
+                Core Web Vitals (Lighthouse-lite)
+              </h3>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
+                LCP / CLS / FCP / TTFB · mặc định tắt vì chậm
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-[11px] font-bold text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={cwvAutoOn}
+                  onChange={(e) => setCwvAutoOn(e.target.checked)}
+                  className="accent-violet-400"
+                />
+                Auto run on next scan
+              </label>
+              <button
+                onClick={() => runCwvForUrls(results.map((r) => r.url).filter((u) => !cwvByUrl[u]))}
+                disabled={cwvRunning || results.length === 0}
+                className="inline-flex items-center gap-1 rounded-lg border border-violet-300/30 bg-violet-500/15 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-violet-100 disabled:opacity-40"
+              >
+                <Gauge size={12} /> {cwvRunning ? `Running ${cwvProgress.done}/${cwvProgress.total}` : 'Run CWV (slow)'}
+              </button>
+              {Object.keys(cwvByUrl).length > 0 && !cwvRunning && (
+                <button
+                  onClick={() => setCwvByUrl({})}
+                  className="inline-flex items-center gap-1 rounded-lg border border-rose-300/20 bg-rose-500/10 px-3 py-1.5 text-[11px] font-bold text-rose-200"
+                >
+                  <Trash2 size={11} /> Clear
+                </button>
+              )}
+            </div>
+          </div>
+          {cwvRunning && (
+            <div className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-white/5">
+              <div
+                className="h-full bg-violet-400 transition-all"
+                style={{
+                  width: cwvProgress.total ? `${(cwvProgress.done / cwvProgress.total) * 100}%` : '0%',
+                }}
+              />
+            </div>
+          )}
+          <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-white/10">
+            <table className="w-full min-w-[1000px] text-left text-xs">
+              <thead className="bg-white/[0.03] uppercase text-slate-400">
+                <tr>
+                  <th className="p-2">URL</th>
+                  <th className="p-2">LCP (ms)</th>
+                  <th className="p-2">CLS</th>
+                  <th className="p-2">FCP (ms)</th>
+                  <th className="p-2">TTFB (ms)</th>
+                  <th className="p-2">Overall</th>
+                </tr>
+              </thead>
+              <tbody>
+                {results.map((r) => {
+                  const cwv = cwvByUrl[r.url];
+                  const cls = (s: 'good' | 'needs-improvement' | 'poor' | null) =>
+                    s === 'good'
+                      ? 'bg-emerald-500/20 text-emerald-200'
+                      : s === 'needs-improvement'
+                        ? 'bg-amber-500/20 text-amber-200'
+                        : s === 'poor'
+                          ? 'bg-rose-500/20 text-rose-200'
+                          : 'bg-white/10 text-slate-400';
+                  return (
+                    <tr key={r.url} className="border-t border-white/5">
+                      <td className="p-2 text-slate-300 max-w-[280px] truncate" title={r.url}>{r.url}</td>
+                      <td className="p-2">
+                        {cwv ? (
+                          <span className={`rounded px-2 py-0.5 font-bold ${cls(cwv.scoreLCP)}`}>
+                            {cwv.LCP ?? '--'}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">--</span>
+                        )}
+                      </td>
+                      <td className="p-2">
+                        {cwv ? (
+                          <span className={`rounded px-2 py-0.5 font-bold ${cls(cwv.scoreCLS)}`}>
+                            {cwv.CLS ?? '--'}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">--</span>
+                        )}
+                      </td>
+                      <td className="p-2">
+                        {cwv ? (
+                          <span className={`rounded px-2 py-0.5 font-bold ${cls(cwv.scoreFCP)}`}>
+                            {cwv.FCP ?? '--'}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">--</span>
+                        )}
+                      </td>
+                      <td className="p-2">
+                        {cwv ? (
+                          <span className={`rounded px-2 py-0.5 font-bold ${cls(cwv.scoreTTFB)}`}>
+                            {cwv.TTFB ?? '--'}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">--</span>
+                        )}
+                      </td>
+                      <td className="p-2">
+                        {cwv ? (
+                          <span
+                            className={`rounded px-2 py-0.5 font-bold ${
+                              cwv.overall === 'good'
+                                ? 'bg-emerald-500/20 text-emerald-200'
+                                : cwv.overall === 'needs-improvement'
+                                  ? 'bg-amber-500/20 text-amber-200'
+                                  : cwv.overall === 'poor'
+                                    ? 'bg-rose-500/20 text-rose-200'
+                                    : 'bg-white/10 text-slate-300'
+                            }`}
+                          >
+                            {cwv.overall === 'unknown'
+                              ? cwv.error || 'unknown'
+                              : cwv.overall.replace('-', ' ')}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">{cwvRunning ? '…' : 'not run'}</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {results.length === 0 && (
+                  <tr className="border-t border-white/5">
+                    <td colSpan={6} className="p-4 text-center text-slate-400">
+                      Chưa có URL nào.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className={`rounded-3xl border p-6 ${BRAND.panel}`}>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-wider text-slate-100">
+                Full SEO Audit (1:1 SEOmator - 251 rules)
+              </h3>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
+                Core · Performance · Security · Crawlability · Schema · JS Render · Accessibility · v.v.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-[11px] font-bold text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={fullAuditIncludeCwv}
+                  onChange={(e) => setFullAuditIncludeCwv(e.target.checked)}
+                  className="accent-violet-400"
+                />
+                Include CWV/INP
+              </label>
+              <button
+                onClick={() => runFullAudit(results[0]?.url || '')}
+                disabled={fullAuditRunning || results.length === 0}
+                className="inline-flex items-center gap-1 rounded-lg border border-violet-300/30 bg-violet-500/15 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-violet-100 disabled:opacity-40"
+              >
+                {fullAuditRunning ? 'Running full audit…' : 'Run 1:1 full audit'}
+              </button>
+              <button
+                onClick={() => exportFullAudit('json')}
+                disabled={fullAuditRunning || fullAuditExporting || results.length === 0}
+                className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-200 disabled:opacity-40"
+              >
+                JSON
+              </button>
+              <button
+                onClick={() => exportFullAudit('html')}
+                disabled={fullAuditRunning || fullAuditExporting || results.length === 0}
+                className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-200 disabled:opacity-40"
+              >
+                HTML
+              </button>
+              <button
+                onClick={() => exportFullAudit('markdown')}
+                disabled={fullAuditRunning || fullAuditExporting || results.length === 0}
+                className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-200 disabled:opacity-40"
+              >
+                Markdown
+              </button>
+              <button
+                onClick={() => exportFullAudit('llm')}
+                disabled={fullAuditRunning || fullAuditExporting || results.length === 0}
+                className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-200 disabled:opacity-40"
+              >
+                LLM
+              </button>
+            </div>
+          </div>
+          {fullAuditError ? (
+            <div className="mb-3 rounded-lg border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+              {fullAuditError}
+            </div>
+          ) : null}
+          {fullAuditResult ? (
+            <>
+              <div className="mb-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400">Overall score</p>
+                  <p className="mt-1 text-xl font-black text-violet-100">{fullAuditResult.overallScore}</p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400">Categories</p>
+                  <p className="mt-1 text-xl font-black text-violet-100">{fullAuditResult.categoryResults.length}</p>
+                </div>
+                <div className="rounded-xl border border-emerald-300/20 bg-emerald-500/10 p-3">
+                  <p className="text-[10px] uppercase tracking-wider text-emerald-200">Total pass</p>
+                  <p className="mt-1 text-xl font-black text-emerald-100">
+                    {fullAuditResult.categoryResults.reduce((sum, c) => sum + c.passCount, 0)}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-rose-300/20 bg-rose-500/10 p-3">
+                  <p className="text-[10px] uppercase tracking-wider text-rose-200">Total fail</p>
+                  <p className="mt-1 text-xl font-black text-rose-100">
+                    {fullAuditResult.categoryResults.reduce((sum, c) => sum + c.failCount, 0)}
+                  </p>
+                </div>
+              </div>
+              <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-white/10">
+                <table className="w-full min-w-[900px] text-left text-xs">
+                  <thead className="bg-white/[0.03] uppercase text-slate-400">
+                    <tr>
+                      <th className="p-2">Category</th>
+                      <th className="p-2">Score</th>
+                      <th className="p-2">Pass</th>
+                      <th className="p-2">Warn</th>
+                      <th className="p-2">Fail</th>
+                      <th className="p-2">Top fail rules</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fullAuditResult.categoryResults.map((cat) => {
+                      const topFails = cat.results.filter((r) => r.status === 'fail').slice(0, 3);
+                      return (
+                        <tr key={cat.categoryId} className="border-t border-white/5">
+                          <td className="p-2 text-slate-300">{cat.categoryId}</td>
+                          <td className="p-2 text-slate-200">{cat.score}</td>
+                          <td className="p-2 text-emerald-200">{cat.passCount}</td>
+                          <td className="p-2 text-amber-200">{cat.warnCount}</td>
+                          <td className="p-2 text-rose-200">{cat.failCount}</td>
+                          <td className="p-2 text-slate-300">
+                            {topFails.length
+                              ? topFails.map((f) => `${f.ruleId}: ${f.message}`).join(' | ')
+                              : '-'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-slate-400">
+              Chưa chạy full audit. Nhấn “Run 1:1 full audit” để chạy toàn bộ rule engine từ
+              seo-audit-skill.
+            </p>
+          )}
+        </section>
+      </div>
       )}
 
       {activeDashboard === 'structure' ? (
@@ -1007,6 +2138,59 @@ export default function WebsiteCheckupPage() {
                   )}
                 </div>
               ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {robotsRawModal ? (
+        <div className="fixed inset-0 z-[96] bg-black/70 p-6 backdrop-blur-sm">
+          <div className="mx-auto flex h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-violet-400/30 bg-slate-950">
+            <div className="flex items-center justify-between border-b border-white/10 p-4">
+              <div>
+                <p className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                  <ShieldAlert size={14} className="text-violet-300" />
+                  robots.txt — {robotsRawModal.domain}
+                </p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
+                  HTTP {robotsRawModal.robots.statusCode || 'N/A'} · sitemap refs: {robotsRawModal.robots.sitemapRefs.length}
+                </p>
+              </div>
+              <button onClick={() => setRobotsRawModal(null)} className="rounded-full p-2 text-slate-300 hover:bg-white/10">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto custom-scrollbar-indigo p-4">
+              <div className="mb-3 flex flex-wrap gap-1 text-[10px] font-bold">
+                <span className={`rounded px-1.5 py-0.5 ${robotsRawModal.robots.blocksGooglebot ? 'bg-rose-500/20 text-rose-200' : 'bg-emerald-500/20 text-emerald-200'}`}>
+                  {robotsRawModal.robots.blocksGooglebot ? 'BLOCK Googlebot' : 'Allow Googlebot'}
+                </span>
+                {robotsRawModal.robots.blocksAiBots.map((b) => (
+                  <span
+                    key={b.name}
+                    className={`rounded px-1.5 py-0.5 ${b.blocked ? 'bg-rose-500/20 text-rose-200' : 'bg-emerald-500/20 text-emerald-200'}`}
+                  >
+                    {b.blocked ? 'BLOCK' : 'Allow'} {b.name}
+                  </span>
+                ))}
+              </div>
+              <pre className="whitespace-pre-wrap break-all rounded-2xl border border-white/10 bg-black/40 p-4 text-[11px] leading-relaxed text-slate-200">
+                {(robotsRawModal.robots.raw || '').split('\n').map((line, idx) => {
+                  const lower = line.toLowerCase();
+                  let cls = 'text-slate-300';
+                  if (lower.startsWith('user-agent')) cls = 'text-violet-300 font-bold';
+                  else if (lower.startsWith('disallow')) cls = 'text-rose-300';
+                  else if (lower.startsWith('allow')) cls = 'text-emerald-300';
+                  else if (lower.startsWith('sitemap')) cls = 'text-sky-300';
+                  else if (lower.startsWith('crawl-delay')) cls = 'text-amber-300';
+                  else if (lower.startsWith('#')) cls = 'text-slate-500 italic';
+                  return (
+                    <div key={idx} className={cls}>
+                      {line || '\u00A0'}
+                    </div>
+                  );
+                })}
+              </pre>
             </div>
           </div>
         </div>
