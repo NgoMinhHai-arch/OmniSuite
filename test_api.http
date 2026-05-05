@@ -1,0 +1,46 @@
+### OMNITOOLAI - REST API TESTS
+### Bộ công cụ kiểm thử nhanh backend bằng REST Client
+
+@baseUrl = http://localhost:8082
+
+### 1. Kiểm tra trạng thái hệ thống (Health Check)
+# Kiểm tra xem Python Engine có đang online hay không.
+GET {{baseUrl}}/
+Accept: application/json
+
+###
+
+### 2. Phân tích SEO chuyên sâu (SEO Analyze)
+# Gửi một URL để cào dữ liệu và phân tích Headings, Keywords, Images.
+POST {{baseUrl}}/api/seo/analyze
+Content-Type: application/json
+
+{
+    "url": "https://www.google.com",
+    "keyword": "google search"
+}
+
+###
+
+### 3. Quét từ khóa Deep Scan (Keywords)
+# Quét từ khóa ngách bằng cơ chế Playwright/Puppeteer.
+POST {{baseUrl}}/api/keywords/deep-scan
+Content-Type: application/json
+
+{
+    "keyword": "ai marketing tool"
+}
+
+###
+
+### 4. Tối ưu Schema AI (Expert)
+# Sử dụng AI để sinh Schema JSON-LD hoàn chỉnh cho website.
+POST {{baseUrl}}/api/seo/improve-schema
+Content-Type: application/json
+
+{
+    "raw_schema": "{}",
+    "target_keyword": "seo agent",
+    "target_domain": "omnitool.ai",
+    "gemini_api_key": ""
+}
