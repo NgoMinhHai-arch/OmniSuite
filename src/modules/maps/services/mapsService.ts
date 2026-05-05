@@ -1,5 +1,6 @@
 import { chromium } from 'playwright';
 import axios from 'axios';
+import { PLAYWRIGHT_HEADLESS, PLAYWRIGHT_LAUNCH_ARGS } from '@/shared/lib/playwright/config';
 
 export interface MapsRow {
   keyword: string;
@@ -280,8 +281,8 @@ export async function scrapeGoogleMapsPlaywright({
   onLog: (msg: string) => void 
 }) {
   const browser = await chromium.launch({ 
-    headless: true,
-    args: ['--disable-setuid-sandbox', '--no-sandbox', '--disable-dev-shm-usage'] 
+    headless: PLAYWRIGHT_HEADLESS,
+    args: PLAYWRIGHT_LAUNCH_ARGS, 
   });
   const context = await browser.newContext({
     viewport: { width: 1280, height: 800 },

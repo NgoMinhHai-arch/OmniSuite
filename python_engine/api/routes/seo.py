@@ -54,6 +54,7 @@ async def extract_keywords_endpoint(request: KeywordExtractionRequest):
     """
     try:
         top_kws = []
+        phrase_keywords = []
         # Ưu tiên 1: Jina Reader (Dùng URL)
         if request.url:
             top_kws = await seo_scraper.extract_keywords_jina(request.url)
@@ -82,21 +83,31 @@ async def extract_keywords_endpoint(request: KeywordExtractionRequest):
             else:
                 clean_text = ""  # Fallback
 
+            phrase_keywords = seo_scraper.extract_phrase_keywords_yake_pos(clean_text, top_n=10)
+
             full_text_lower = clean_text.lower()
             word_count = len(re.findall(r"\w+", full_text_lower)) if full_text_lower else 1
 
             title_lower = request.title.lower() if request.title else ""
             desc_lower = request.description.lower() if request.description else ""
 
-            for kw in top_kws:
-                kw_lower = kw.lower()
-                kw_matches = re.findall(re.escape(kw_lower), full_text_lower)
-                count = len(kw_matches) if full_text_lower else 0
-                density = (count / word_count * 100) if word_count > 0 else 0
-                final_kws.append(
-                    KeywordDensityResult(word=kw, count=count, density=f"{density:.2f}%")
-                )
+            # Prefer YAKE + POS phrase table.
+            if phrase_keywords:
+                final_kws = phrase_keywords
+            else:
+                # Legacy fallback when phrase extraction yields nothing.
+                for kw in top_kws:
+                    kw_lower = kw.lower()
+                    kw_matches = re.findall(re.escape(kw_lower), full_text_lower)
+                    count = len(kw_matches) if full_text_lower else 0
+                    density = (count / word_count * 100) if word_count > 0 else 0
+                    final_kws.append(
+                        KeywordDensityResult(word=kw, count=count, density=f"{density:.2f}%")
+                    )
 
+            # Compute title/meta coverage using final keywords actually returned.
+            for kw_item in final_kws:
+                kw_lower = kw_item.word.lower()
                 if title_lower and kw_lower in title_lower:
                     kw_in_title += 1
                 if desc_lower and kw_lower in desc_lower:

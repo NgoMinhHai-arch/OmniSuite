@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { scrapeGoogleMapsPlaywright, scrapeGoogleMapsSerpApi, MapsRow } from '@/modules/maps/services/mapsService';
+import { PLAYWRIGHT_HEADLESS } from '@/shared/lib/playwright/config';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
                 if (deepScan) {
                   onLog(`📋 Lấy được ${rows.length} kết quả từ API. Bắt đầu Deep Scan...`);
                   const { chromium } = await import('playwright');
-                  const browser = await chromium.launch({ headless: true });
+                  const browser = await chromium.launch({ headless: PLAYWRIGHT_HEADLESS });
                   try {
                     const { discoverWebPresence, findEmailFromWebsite } = await import('@/modules/maps/services/mapsService');
                     for (const row of rows) {

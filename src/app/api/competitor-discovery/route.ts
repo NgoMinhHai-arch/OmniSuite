@@ -4,6 +4,7 @@ import * as cheerio from 'cheerio';
 import axios from 'axios';
 import { generateText } from 'ai';
 import { getAIModel } from '@/shared/lib/ai-provider';
+import { PLAYWRIGHT_HEADLESS } from '@/shared/lib/playwright/config';
 
 async function aiFilterCompetitors(
   competitors: any[], 
@@ -440,7 +441,7 @@ export async function POST(req: NextRequest) {
     const getBrowser = async () => {
       if (browser) return browser;
       browser = await chromium.launch({ 
-        headless: true, 
+        headless: PLAYWRIGHT_HEADLESS, 
         args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--no-setuid-sandbox'] 
       });
       return browser;

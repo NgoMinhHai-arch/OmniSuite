@@ -1,4 +1,5 @@
 import { chromium } from 'playwright';
+import { PLAYWRIGHT_HEADLESS } from '@/shared/lib/playwright/config';
 
 /**
  * Scrapes photos from Google Maps for a specific query without an API key.
@@ -8,7 +9,7 @@ export async function scrapeGoogleMapsPhotos(query: string, limit: number = 10) 
   let browser;
   try {
     console.log(`[Maps Scraper] Launching browser for: "${query}"`);
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ headless: PLAYWRIGHT_HEADLESS });
     const context = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
       viewport: { width: 1280, height: 800 }

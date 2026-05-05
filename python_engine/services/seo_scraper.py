@@ -1,5 +1,6 @@
 import re
 import time
+from collections import Counter
 
 import httpx
 import numpy as np
@@ -12,6 +13,15 @@ from python_engine.schemas.seo_schemas import (
     SeoAnalysisResponse,
 )
 from sklearn.feature_extraction.text import TfidfVectorizer
+try:
+    import yake
+except Exception:
+    yake = None
+
+try:
+    from underthesea import pos_tag
+except Exception:
+    pos_tag = None
 
 # --- STOPWORDS CONFIG ---
 VIETNAMESE_STOPWORDS = {
@@ -196,6 +206,244 @@ ENGLISH_STOPWORDS = {
     "now",
 }
 COMBINED_STOPWORDS = list(VIETNAMESE_STOPWORDS.union(ENGLISH_STOPWORDS))
+COMBINED_STOPWORDS_SET = set(COMBINED_STOPWORDS)
+PLAYWRIGHT_HEADLESS = True
+PLAYWRIGHT_LAUNCH_ARGS = ["--no-sandbox", "--disable-dev-shm-usage"]
+QUESTION_WORDS_VI = {
+    "ai",
+    "gì",
+    "nào",
+    "đâu",
+    "khi",
+    "bao",
+    "bao_nhiêu",
+    "vì_sao",
+    "tại_sao",
+    "thế_nào",
+}
+
+
+def normalize_vietnamese_text(text: str) -> str:
+    if not text:
+        return ""
+    clean_text = re.sub(r"\s+", " ", text)
+    clean_text = re.sub(r"[^\wÀ-ỹ\s\-\_]", " ", clean_text, flags=re.UNICODE)
+    clean_text = re.sub(r"\s+", " ", clean_text).strip().lower()
+    return clean_text
+
+
+def is_meaningful_phrase(phrase: str) -> bool:
+    tokens = [token for token in phrase.split() if token]
+    if len(tokens) < 2:
+        return False
+    if all(token.isdigit() for token in tokens):
+        return False
+    if all(token in COMBINED_STOPWORDS_SET for token in tokens):
+        return False
+    if any(len(token) < 2 for token in tokens):
+        return False
+    return True
+
+
+def pos_pattern_match(phrase: str) -> bool:
+    if not phrase:
+        return False
+    if pos_tag is None:
+        # If Underthesea is unavailable, keep phrase-level heuristics as fallback.
+        return is_meaningful_phrase(phrase)
+
+    try:
+        tagged = pos_tag(phrase)
+    except Exception:
+        return False
+    if not tagged:
+        return False
+
+    words = [word.lower() for word, _ in tagged]
+    tags = [tag for _, tag in tagged]
+
+    if any(word in QUESTION_WORDS_VI for word in words):
+        return True
+
+    if len(tags) >= 2:
+        # Verb + Noun
+        if any(tags[i].startswith("V") and tags[i + 1].startswith("N") for i in range(len(tags) - 1)):
+            return True
+        # Noun + Adjective
+        if any(tags[i].startswith("N") and tags[i + 1].startswith("A") for i in range(len(tags) - 1)):
+            return True
+
+    # noun phrase presence (single or multi noun tags)
+    noun_like = sum(1 for tag in tags if tag.startswith("N"))
+    if noun_like >= 1 and len(tags) >= 2:
+        return True
+    # meaningful adverb phrase
+    if any(tag.startswith("R") for tag in tags) and len(tags) >= 2:
+        return True
+    return False
+
+
+def count_phrase_occurrence(clean_text: str, phrase: str) -> int:
+    escaped = re.escape(phrase)
+    pattern = re.compile(rf"(?<!\w){escaped}(?!\w)", flags=re.UNICODE)
+    return len(pattern.findall(clean_text))
+
+
+def tokenize_vietnamese_words(text: str) -> list[str]:
+    if not text:
+        return []
+    tokens = re.findall(r"[A-Za-zÀ-ỹ0-9_]+", text.lower())
+    return [token for token in tokens if token and not token.isdigit()]
+
+
+def extract_candidate_phrases_ngram(clean_text: str, min_n: int = 2, max_n: int = 4) -> list[str]:
+    tokens = tokenize_vietnamese_words(clean_text)
+    candidates: list[str] = []
+    if len(tokens) < min_n:
+        return candidates
+
+    for i in range(len(tokens)):
+        for n in range(min_n, max_n + 1):
+            if i + n > len(tokens):
+                continue
+            phrase_tokens = tokens[i : i + n]
+            phrase = " ".join(phrase_tokens).strip()
+            if not is_meaningful_phrase(phrase):
+                continue
+            # Avoid phrases with too many stopwords like "là của và ..."
+            stop_count = sum(1 for tk in phrase_tokens if tk in COMBINED_STOPWORDS_SET)
+            if stop_count > (n // 2):
+                continue
+            candidates.append(phrase)
+    return candidates
+
+
+def rank_phrase_density(
+    clean_text: str,
+    candidates: list[str],
+    top_n: int = 10,
+) -> list[KeywordDensityResult]:
+    if not clean_text or not candidates:
+        return []
+    total_words = max(1, len(tokenize_vietnamese_words(clean_text)))
+    phrase_counts = Counter()
+
+    for phrase in candidates:
+        occurrence = count_phrase_occurrence(clean_text, phrase)
+        if occurrence > 0:
+            phrase_counts[phrase] = occurrence
+
+    if not phrase_counts:
+        return []
+
+    # Keep stronger/longer phrases and remove nested duplicates.
+    ordered = sorted(
+        phrase_counts.items(),
+        key=lambda item: (-item[1], -len(item[0].split()), item[0]),
+    )
+    selected: list[tuple[str, int]] = []
+    for phrase, count in ordered:
+        if count < 2:
+            continue
+        overlaps = any(
+            phrase in picked_phrase or picked_phrase in phrase for picked_phrase, _ in selected
+        )
+        if overlaps:
+            continue
+        selected.append((phrase, count))
+        if len(selected) >= top_n:
+            break
+
+    if not selected:
+        selected = ordered[:top_n]
+
+    return [
+        KeywordDensityResult(
+            word=phrase,
+            count=count,
+            density=f"{(count / total_words * 100):.2f}%",
+        )
+        for phrase, count in selected
+    ]
+
+
+def extract_keyword_frequency(text: str, top_n: int = 10) -> list[KeywordDensityResult]:
+    """Tokenize, remove stop words, and compute keyword frequency density."""
+    if not text:
+        return []
+    tokens = re.findall(r"[A-Za-zÀ-ỹ0-9_]+", text.lower())
+    filtered = [
+        token
+        for token in tokens
+        if len(token) > 2 and token not in COMBINED_STOPWORDS_SET and not token.isdigit()
+    ]
+    if not filtered:
+        return []
+
+    freq: dict[str, int] = {}
+    for token in filtered:
+        freq[token] = freq.get(token, 0) + 1
+
+    total = len(filtered)
+    sorted_items = sorted(freq.items(), key=lambda item: item[1], reverse=True)[:top_n]
+    return [
+        KeywordDensityResult(word=word, count=count, density=f"{(count / total * 100):.2f}%")
+        for word, count in sorted_items
+    ]
+
+
+def extract_phrase_keywords_yake_pos(text: str, top_n: int = 10) -> list[KeywordDensityResult]:
+    """
+    YAKE-based phrase extraction + POS filtering for Vietnamese.
+    Fallbacks to simple frequency if libraries are unavailable.
+    """
+    clean_text = normalize_vietnamese_text(text)
+    if not clean_text:
+        return []
+
+    if yake is None:
+        ngram_candidates = extract_candidate_phrases_ngram(clean_text)
+        pos_filtered = [phrase for phrase in ngram_candidates if pos_pattern_match(phrase)]
+        phrase_results = rank_phrase_density(clean_text, pos_filtered, top_n=top_n)
+        if phrase_results:
+            return phrase_results
+        return extract_keyword_frequency(clean_text, top_n=top_n)
+
+    try:
+        extractor = yake.KeywordExtractor(
+            lan="vi",
+            n=4,
+            dedupLim=0.85,
+            dedupFunc="seqm",
+            windowsSize=1,
+            top=120,
+            features=None,
+        )
+        candidates = extractor.extract_keywords(clean_text)
+    except Exception:
+        return extract_keyword_frequency(clean_text, top_n=top_n)
+
+    filtered_candidates: list[str] = []
+    for phrase, score in candidates:
+        candidate = normalize_vietnamese_text(phrase).replace("_", " ").strip()
+        if not candidate:
+            continue
+        if score <= 0:
+            continue
+        if not is_meaningful_phrase(candidate):
+            continue
+        if not pos_pattern_match(candidate):
+            continue
+        filtered_candidates.append(candidate)
+
+    if not filtered_candidates:
+        ngram_candidates = extract_candidate_phrases_ngram(clean_text)
+        filtered_candidates = [phrase for phrase in ngram_candidates if pos_pattern_match(phrase)]
+
+    phrase_results = rank_phrase_density(clean_text, filtered_candidates, top_n=top_n)
+    if phrase_results:
+        return phrase_results
+    return extract_keyword_frequency(clean_text, top_n=top_n)
 
 
 async def extract_keywords_jina(url: str) -> list[str]:
@@ -327,7 +575,7 @@ async def analyze_url(url: str, keyword: str = None) -> SeoAnalysisResponse:
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"]
+            headless=PLAYWRIGHT_HEADLESS, args=PLAYWRIGHT_LAUNCH_ARGS
         )
         try:
             page = await browser.new_page()

@@ -26,6 +26,7 @@ except ImportError:
     TrendReq = None
 
 settings = get_settings()
+PLAYWRIGHT_HEADLESS = True
 
 # --- ALPHABET BAITING ---
 LATIN_ALPHABET = list("abcdefghijklmnopqrstuvwxyz")
@@ -715,7 +716,7 @@ async def deep_scan_keyword(keyword: str) -> KeywordDeepScanResponse:
 
     async with async_playwright() as p:
         # Sử dụng trình duyệt thật để tránh block và lấy được PAA (render bằng JS)
-        browser = await p.chromium.launch(headless=True)
+        browser = await p.chromium.launch(headless=PLAYWRIGHT_HEADLESS)
         context = await browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "

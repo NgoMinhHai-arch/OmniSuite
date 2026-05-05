@@ -1,1671 +1,1068 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
-import { 
-  Search, 
-  Download, 
-  Trash2, 
-  Eye, 
-  Maximize2, 
-  Minimize2,
-  X, 
-  Globe, 
-  ShieldCheck, 
-  Layout,
-  Zap,
-  Activity,
-  ArrowRight,
-  BrainCircuit,
-  Target,
-  RefreshCw
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Stethoscope,
+  Globe,
+  Radar,
+  FlaskConical,
+  Download,
+  X,
+  Link2,
+  LayoutList,
+  Tags,
+  AlertTriangle,
+  Image as ImageIcon,
+  Bot,
+  Trash2,
+  Search,
 } from 'lucide-react';
-import { MagicIcon } from '@/shared/ui/Icons';
-import Card from '@/shared/ui/Card';
-import Button from '@/shared/ui/Button';
-import Typography from '@/shared/ui/Typography';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useTasks } from '@/shared/lib/context/TaskContext';
 
-export default function ScraperPage() {
-  const [urls, setUrls] = useState('');
-  const [keywords, setKeywords] = useState('');
-  const [results, setResults] = useState<any[]>([]);
-  const [keywordMapping, setKeywordMapping] = useState<Record<string, string>>({});
-  const [isLoading, setIsLoading] = useState(false);
-  const [analyzingUrl, setAnalyzingUrl] = useState<string | null>(null);
-  const [searchStatus, setSearchStatus] = useState('');
-  const [analysisData, setAnalysisData] = useState<Record<string, any>>({});
-  const [selectedAnalysis, setSelectedAnalysis] = useState<any>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isSiloEnabled, setIsSiloEnabled] = useState(false);
-  const [isSiloAnalyzing, setIsSiloAnalyzing] = useState(false);
-  const [isStructureDiscoveryEnabled, setIsStructureDiscoveryEnabled] = useState(false);
-  
-  // --- AI CONFIG STATE ---
-   const [aiSettings, setAiSettings] = useState<any>(null);
-   const [selectedProvider, setSelectedProvider] = useState('Gemini');
-   const [selectedModel, setSelectedModel] = useState('');
-   const [availableModels, setAvailableModels] = useState<string[]>([]);
-   const [isLoadingModels, setIsLoadingModels] = useState(false);
-  
-  const [siloProgress, setSiloProgress] = useState({ current: 0, total: 0 });
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [showDetail, setShowDetail] = useState<any>(null);
-  const [modalTab, setModalTab] = useState('overview');
+type KeywordRow = { word: string; count: number; density: string };
+type HeadingRow = { tag: string; text: string };
+type HeadingNode = { tag: 'h1' | 'h2' | 'h3'; text: string; children?: HeadingNode[]; isSkippedLevel?: boolean };
+type SeoIssue = { id: string; severity: 'error' | 'warning' | 'info'; category: string; message: string };
+type ImageAuditRow = {
+  src: string;
+  alt: string;
+  title: string;
+  sizeKb: number | null;
+  width: number | null;
+  height: number | null;
+};
+type ImageAuditGroup = {
+  groupId: string;
+  pageUrl: string;
+  total: number;
+  missingAlt: number;
+  missingTitle: number;
+  images: ImageAuditRow[];
+};
+type LinkAuditRow = {
+  source: string;
+  target: string;
+  anchor: string;
+  rel: string;
+  bucket: 'internal' | 'external';
+};
+
+type ScrapeResult = {
+  url: string;
+  statusCode?: number;
+  title?: string;
+  canonical?: string;
+  robots?: string;
+  h1?: string;
+  wordCount?: number;
+  keywordDensity?: string;
+  imageStats?: { total?: number; missingAlt?: number; missingTitle?: number };
+  images?: Array<{ src: string; alt: string; title: string; sizeKb?: number; width?: number; height?: number }>;
+  headings?: HeadingRow[];
+  headingTree?: HeadingNode[];
+  headingCounts?: Record<string, number>;
+  topKeywords?: KeywordRow[];
+  linkStats?: {
+    internal?: number;
+    external?: number;
+    nofollow?: number;
+    dofollow?: number;
+    anchor?: { internal?: number; external?: number; nofollow?: number; dofollow?: number };
+    resource?: { internal?: number; external?: number; nofollow?: number; dofollow?: number };
+  };
+  collectedLinks?: {
+    internal?: string[];
+    external?: string[];
+    anchorLinks?: { internal?: string[]; external?: string[] };
+    resourceLinks?: { internal?: string[]; external?: string[] };
+  };
+  issues?: SeoIssue[];
+};
+
+const BRAND = {
+  accent: 'text-violet-300',
+  panel: 'border-violet-400/25 bg-violet-500/[0.06]',
+  panelStrong: 'border-violet-400/35 bg-violet-500/[0.12]',
+};
+
+export default function WebsiteCheckupPage() {
   const { startTask, getTask } = useTasks();
+  const [seedInput, setSeedInput] = useState('');
+  const [urlInput, setUrlInput] = useState('');
+  const [seedInputError, setSeedInputError] = useState('');
+  const [status, setStatus] = useState('Sẵn sàng kiểm tra website');
+  const [loading, setLoading] = useState(false);
+  const HOMEPAGE_MAX_LINES = 5;
+  const [results, setResults] = useState<ScrapeResult[]>([]);
+  const [detail, setDetail] = useState<ScrapeResult | null>(null);
+  const [tab, setTab] = useState<'keywords' | 'headings' | 'links' | 'issues'>('keywords');
+  const [activeDashboard, setActiveDashboard] = useState<'structure' | 'images' | 'links' | 'googlebot'>('structure');
+  const [imageQuery, setImageQuery] = useState('');
+  const [imageFilter, setImageFilter] = useState<'all' | 'missing_alt' | 'missing_title'>('all');
+  const [linkQuery, setLinkQuery] = useState('');
+  const [linkFilter, setLinkFilter] = useState<'all' | 'internal' | 'external' | 'nofollow'>('all');
+  const [imageDetailGroup, setImageDetailGroup] = useState<ImageAuditGroup | null>(null);
+  const activeDashboardLabel =
+    activeDashboard === 'images'
+      ? 'Hình ảnh'
+      : activeDashboard === 'links'
+        ? 'Link'
+        : activeDashboard === 'googlebot'
+          ? 'Googlebot'
+          : 'Cấu trúc';
 
-  const STORAGE_KEY = 'omnisuite_scraper_state';
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const SCRAPE_TASK_ID = 'website_checkup_scrape';
+  const DISCOVERY_TASK_ID = 'website_checkup_discovery';
 
-  // --- RE-ATTACH TO BACKGROUND TASK ---
-  useEffect(() => {
-    const activeTask = getTask('seo_scraper');
-    if (activeTask && activeTask.status === 'running') {
-      setIsLoading(true);
-      setResults(activeTask.results || []);
-      if (activeTask.progress) setSearchStatus(activeTask.progress);
-      
-      const interval = setInterval(() => {
-        const t = getTask('seo_scraper');
-        if (t) {
-          setResults([...t.results]);
-          setSearchStatus(t.progress);
-          if (t.status !== 'running') {
-            setIsLoading(false);
-            clearInterval(interval);
-          }
-        }
-      }, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [getTask]);
-
-  // --- DATA FETCHING & PERSISTENCE ---
-  const fetchHistory = async () => {
+  const seedCount = useMemo(
+    () => seedInput.split('\n').map((v) => v.trim()).filter(Boolean).length,
+    [seedInput],
+  );
+  const normalizeHomepageUrl = (raw: string): string | null => {
+    const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
     try {
-      const res = await fetch('/api/scrape/history');
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setResults(data);
-        }
-      }
-    } catch (e) {
-      console.error("Failed to fetch history:", e);
+      const parsed = new URL(withProtocol);
+      const isHomepagePath = parsed.pathname === '/' || parsed.pathname === '';
+      if (!isHomepagePath || parsed.search || parsed.hash) return null;
+      return `${parsed.protocol}//${parsed.host}`;
+    } catch {
+      return null;
     }
   };
-
-  const handleClearHistory = async () => {
-     if (!confirm("Bạn có chắc chắn muốn xóa toàn bộ lịch sử quét không?")) return;
-     try {
-        const res = await fetch('/api/scrape/history', { method: 'DELETE' });
-        if (res.ok) {
-           setResults([]);
-           sessionStorage.removeItem(STORAGE_KEY);
-        }
-     } catch (e) {
-        console.error("Failed to clear history:", e);
-     }
+  const normalizeScrapeUrl = (raw: string): string | null => {
+    const candidate = raw.trim();
+    if (!candidate) return null;
+    const withProtocol = /^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`;
+    try {
+      const parsed = new URL(withProtocol);
+      parsed.hash = '';
+      return parsed.toString();
+    } catch {
+      return null;
+    }
   };
+  const imageGroups = useMemo<ImageAuditGroup[]>(
+    () =>
+      results.map((row, rowIdx) => {
+        const images = (row.images || []).map((img) => ({
+          src: img.src,
+          alt: img.alt || '',
+          title: img.title || '',
+          sizeKb: typeof img.sizeKb === 'number' ? img.sizeKb : null,
+          width: typeof img.width === 'number' ? img.width : null,
+          height: typeof img.height === 'number' ? img.height : null,
+        }));
+        return {
+          groupId: `${row.url}-${rowIdx}`,
+          pageUrl: row.url,
+          total: images.length,
+          missingAlt: images.filter((img) => !img.alt.trim()).length,
+          missingTitle: images.filter((img) => !img.title.trim()).length,
+          images,
+        };
+      }),
+    [results],
+  );
+  const filteredImageGroups = useMemo(() => {
+    return imageGroups.filter((group) => {
+      const byFilter =
+        imageFilter === 'all' ||
+        (imageFilter === 'missing_alt' && group.missingAlt > 0) ||
+        (imageFilter === 'missing_title' && group.missingTitle > 0);
+      const byQuery =
+        !imageQuery.trim() ||
+        group.pageUrl.toLowerCase().includes(imageQuery.toLowerCase()) ||
+        group.images.some(
+          (img) =>
+            img.src.toLowerCase().includes(imageQuery.toLowerCase()) ||
+            img.alt.toLowerCase().includes(imageQuery.toLowerCase()) ||
+            img.title.toLowerCase().includes(imageQuery.toLowerCase()),
+        );
+      return byFilter && byQuery;
+    });
+  }, [imageFilter, imageQuery, imageGroups]);
+  const linkRows = useMemo<LinkAuditRow[]>(
+    () =>
+      results.flatMap((row) => {
+        const internal = (row.collectedLinks?.internal || []).map((target) => ({
+          source: row.url,
+          target,
+          anchor: '-',
+          rel: 'unknown',
+          bucket: 'internal' as const,
+        }));
+        const external = (row.collectedLinks?.external || []).map((target) => ({
+          source: row.url,
+          target,
+          anchor: '-',
+          rel: 'unknown',
+          bucket: 'external' as const,
+        }));
+        return [...internal, ...external];
+      }),
+    [results],
+  );
+  const filteredLinkRows = useMemo(() => {
+    return linkRows.filter((row) => {
+      const byFilter =
+        linkFilter === 'all' ||
+        (linkFilter === 'internal' && row.bucket === 'internal') ||
+        (linkFilter === 'external' && row.bucket === 'external') ||
+        (linkFilter === 'nofollow' && row.rel.toLowerCase().includes('nofollow'));
+      const query = linkQuery.trim().toLowerCase();
+      const byQuery =
+        !query ||
+        row.source.toLowerCase().includes(query) ||
+        row.target.toLowerCase().includes(query) ||
+        row.anchor.toLowerCase().includes(query);
+      return byFilter && byQuery;
+    });
+  }, [linkFilter, linkQuery, linkRows]);
+  const googlebotRows = useMemo(
+    () =>
+      results.map((row) => {
+        const robotsText = (row.robots || '').toLowerCase();
+        const isNoindex = robotsText.includes('noindex');
+        const statusCode = row.statusCode || 0;
+        const status =
+          statusCode >= 500 || isNoindex ? 'fail' : statusCode >= 400 || !row.canonical ? 'warn' : 'pass';
+        return {
+          url: row.url,
+          statusCode,
+          robots: row.robots || 'index, follow',
+          canonical: row.canonical || '-',
+          status,
+          note:
+            status === 'fail'
+              ? 'URL lỗi hoặc bị noindex'
+              : status === 'warn'
+                ? 'Cần kiểm tra canonical/status'
+                : 'Sẵn sàng cho crawl/index',
+        };
+      }),
+    [results],
+  );
+  const googlebotSummary = useMemo(
+    () => ({
+      pass: googlebotRows.filter((r) => r.status === 'pass').length,
+      warn: googlebotRows.filter((r) => r.status === 'warn').length,
+      fail: googlebotRows.filter((r) => r.status === 'fail').length,
+      total: googlebotRows.length,
+    }),
+    [googlebotRows],
+  );
 
   useEffect(() => {
-    // Try sessionStorage first (for session consistency)
-    const saved = sessionStorage.getItem(STORAGE_KEY);
+    const saved = sessionStorage.getItem('website_checkup_state');
     if (saved) {
       try {
-        const { results: r, urls: u, keywords: k, analysisData: a, keywordMapping: km } = JSON.parse(saved);
-        if (r && r.length > 0) {
-            setResults(r);
-            if (u) setUrls(u);
-            if (k) setKeywords(k);
-            if (a) setAnalysisData(a);
-            if (km) setKeywordMapping(km);
-            return; // Found in session, stop here
-        }
-      } catch (e) {}
+        const parsed = JSON.parse(saved) as {
+          seedInput: string;
+          urlInput: string;
+          status: string;
+          results: ScrapeResult[];
+        };
+        setSeedInput(parsed.seedInput || '');
+        setUrlInput(parsed.urlInput || '');
+        setStatus(parsed.status || 'Sẵn sàng kiểm tra website');
+        setResults(parsed.results || []);
+      } catch {
+        // ignore invalid session state
+      }
     }
-    
-    // Fallback to Database History
-    fetchHistory();
   }, []);
 
   useEffect(() => {
-      const saved = localStorage.getItem('omnisuite_settings');
-      if (saved) {
-         try {
-            const parsed = JSON.parse(saved);
-            setAiSettings(parsed);
-            
-            const provider = parsed.default_provider || 'Gemini';
-            setSelectedProvider(provider);
-            setSelectedModel(parsed.default_model || '');
-            
-            // Auto fetch on load
-            triggerFetchModels(provider, parsed);
-         } catch (e) {
-            console.error('Failed to parse settings');
-         }
-      }
-   }, []);
-
-   const triggerFetchModels = async (provider: string, settings: any) => {
-      if (!settings) return;
-      setIsLoadingModels(true);
-      
-      let apiKey = '';
-      if (provider === 'OpenAI') apiKey = settings.openai_api_key;
-      else if (provider === 'Gemini') apiKey = settings.gemini_api_key;
-      else if (provider === 'Claude') apiKey = settings.claude_api_key;
-      else if (provider === 'Groq') apiKey = settings.groq_api_key;
-      else if (provider === 'DeepSeek') apiKey = settings.deepseek_api_key;
-      else if (provider === 'OpenRouter') apiKey = settings.openrouter_api_key;
-
-      if (!apiKey) {
-         setIsLoadingModels(false);
-         // Fallback to defaults if no key
-         const modelMap: Record<string, string[]> = {
-            'Gemini': ['gemini-1.5-pro', 'gemini-1.5-flash'],
-            'OpenAI': ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo'],
-            'Claude': ['anthropic/claude-3-5-sonnet-latest', 'anthropic/claude-3-5-haiku-latest'],
-            'Groq': ['groq/llama-3.3-70b-versatile'],
-            'DeepSeek': ['deepseek-chat'],
-            'OpenRouter': ['openrouter/google/gemini-2.0-flash-001']
-         };
-         setAvailableModels(modelMap[provider] || []);
-         return;
-      }
-
-      try {
-         const resp = await fetch('/api/list-models', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ provider, apiKey })
-         });
-         const data = await resp.json();
-         if (data.models) {
-            setAvailableModels(data.models);
-         }
-      } catch (err) {
-         console.error('Fetch models error:', err);
-      } finally {
-         setIsLoadingModels(false);
-      }
-   };
-
-   // Update models when provider changes
-   const handleProviderChange = (provider: string) => {
-      setSelectedProvider(provider);
-      triggerFetchModels(provider, aiSettings);
-   };
-
-  const getSEOAction = (r: any) => {
-    if (r.statusCode && r.statusCode !== 200) return `Lỗi ${r.statusCode}`;
-    if (!r.title || r.title === 'N/A') return 'Thiếu Title';
-    if (!r.description || r.description === 'N/A') return 'Thiếu mô tả';
-    if (r.titleLength < 50 || r.titleLength > 60) return 'Tối ưu Title';
-    if (r.descriptionLength < 150 || r.descriptionLength > 160) return 'Tối ưu mô tả';
-    return 'Đã xong';
-  };
-
-  const getStatusColor = (status: number) => {
-    if (!status || status === 200) return 'text-emerald-400';
-    if (status >= 400) return 'text-rose-400';
-    return 'text-amber-400';
-  };
+    sessionStorage.setItem(
+      'website_checkup_state',
+      JSON.stringify({ seedInput, urlInput, status, results }),
+    );
+  }, [seedInput, urlInput, status, results]);
 
   useEffect(() => {
-    if (results.length > 0 || urls || keywords || Object.keys(analysisData).length > 0) {
-      const state = { results, urls, keywords, analysisData, keywordMapping };
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const scrapeTask = getTask(SCRAPE_TASK_ID);
+    if (scrapeTask) {
+      setLoading(scrapeTask.status === 'running');
+      if (scrapeTask.progress) setStatus(scrapeTask.progress);
+      if (Array.isArray(scrapeTask.results) && scrapeTask.results.length) {
+        setResults(scrapeTask.results as ScrapeResult[]);
+      }
     }
-  }, [results, urls, keywords, analysisData, keywordMapping]);
 
-  const handleSearchKeywords = async () => {
-    if (!keywords.trim()) return;
-    setIsLoading(true);
-    setResults([]);
+    const discoveryTask = getTask(DISCOVERY_TASK_ID);
+    if (discoveryTask?.status === 'running') {
+      setLoading(true);
+      if (discoveryTask.progress) setStatus(discoveryTask.progress);
+    }
+  }, [getTask]);
 
-    const inputLines = keywords.split(/[\n,]/).map(k => k.trim()).filter(k => k).slice(0, 5);
-    const isDomainOnly = inputLines.every(line => /^https?:\/\/[^\s]+$/.test(line) || /^[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?$/.test(line));
-    const triggerDiscovery = isStructureDiscoveryEnabled || isDomainOnly;
-
-    if (triggerDiscovery) {
-      setSearchStatus('Đang khám phá cấu trúc website...');
-      startTask('seo_scraper', async (update) => {
-        try {
-          update({ progress: `Đang kết nối ${inputLines.length} trang chủ...` });
-
-          const allDiscoveredLinks: string[] = [];
-          
-          for (let hp of inputLines) {
-            if (!hp.startsWith('http')) hp = 'https://' + hp;
-            update({ progress: `Đang quét cấu trúc: ${hp}...` });
-            try {
-              const res = await fetch('/api/scrape/discovery', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ homepageUrl: hp })
-              });
-              if (res.ok) {
-                const data = await res.json();
-                if (data.links) {
-                  allDiscoveredLinks.push(...data.links);
-                }
-              }
-            } catch (e) {
-              console.error(`Discovery failed for ${hp}`, e);
-            }
-          }
-
-          if (allDiscoveredLinks.length > 0) {
-            const currentUrls = urls.split('\n').map(u => u.trim()).filter(u => u);
-            const newUrls = Array.from(new Set([...allDiscoveredLinks])).filter(u => !currentUrls.includes(u));
-            const finalUrls = [...currentUrls, ...newUrls].slice(0, 500);
-            
-            setUrls(finalUrls.join('\n'));
-            setSearchStatus(`Đã tìm thấy ${newUrls.length} URL mới.`);
-            update({ progress: `Hoàn tất! Đã thêm ${newUrls.length} URL vào Box 2.` });
-          } else {
-            setSearchStatus('Không tìm thấy cấu trúc URL.');
-            update({ progress: 'Không tìm thấy kết quả cấu trúc.' });
-          }
-        } catch (err) {
-          console.error(err);
-          setSearchStatus('Lỗi khi khám phá cấu trúc.');
-        } finally {
-          setIsLoading(false);
-        }
-      });
+  const runDiscovery = async () => {
+    const rawLines = seedInput.split('\n').map((v) => v.trim()).filter(Boolean);
+    if (!rawLines.length) {
+      const msg = 'Vui lòng nhập ít nhất 1 URL trang chủ';
+      setSeedInputError(msg);
+      setStatus(msg);
       return;
     }
 
-    setSearchStatus('Đang tìm kiếm website từ từ khóa...');
-    startTask('seo_scraper', async (update) => {
+    if (rawLines.length > HOMEPAGE_MAX_LINES) {
+      const msg = `Chỉ được nhập tối đa ${HOMEPAGE_MAX_LINES} trang chủ`;
+      setSeedInputError(msg);
+      setStatus(msg);
+      return;
+    }
+
+    const normalizedSeeds = rawLines.map((raw) => normalizeHomepageUrl(raw));
+    const invalidCount = normalizedSeeds.filter((v) => !v).length;
+    if (invalidCount > 0) {
+      const msg = `Có ${invalidCount} dòng không đúng định dạng URL trang chủ`;
+      setSeedInputError(msg);
+      setStatus(msg);
+      return;
+    }
+    setSeedInputError('');
+
+    setLoading(true);
+    startTask(DISCOVERY_TASK_ID, async (update) => {
+      update({ progress: 'Đang khám phá URL từ danh sách trang chủ...' });
       try {
-        const savedSettings = localStorage.getItem('omnisuite_settings');
-        const keysData = savedSettings ? JSON.parse(savedSettings) : {};
-        const keywordLines = inputLines;
-
-        update({ progress: 'Đang kết nối API tìm kiếm...' });
-
-        const searchRes = await fetch('/api/search-keywords', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            keywords: keywordLines,
-            keys: keysData
-          })
-        });
-
-        if (searchRes.ok) {
-          const searchData = await searchRes.json();
-          if (searchData.urls && searchData.urls.length > 0) {
-            const currentUrls = urls.split('\n').map(u => u.trim()).filter(u => u);
-            const newUrls = searchData.urls.filter((u: string) => !currentUrls.includes(u));
-            let allUrls = [...currentUrls, ...newUrls];
-            
-            if (allUrls.length > 200) allUrls = allUrls.slice(0, 200);
-            setUrls(allUrls.join('\n'));
-            
-            if (searchData.analysis) {
-               setAnalysisData(prev => ({ ...prev, ...searchData.analysis }));
-            }
-
-            if (searchData.raw_data) {
-               const mapping: Record<string, string> = {};
-               searchData.raw_data.forEach((item: any) => {
-                  mapping[item.url.toLowerCase().replace(/\/$/, "")] = item.keyword;
-               });
-               setKeywordMapping(prev => ({ ...prev, ...mapping }));
-            }
-            
-            update({ progress: `Đã tìm thấy ${newUrls.length} website.` });
-            setSearchStatus(`Tìm thấy ${newUrls.length} website.`);
-          } else {
-            setSearchStatus('Không tìm thấy kết quả.');
-            update({ progress: 'Không tìm thấy kết quả.' });
+        let discovered: string[] = [];
+        for (const homepageUrl of normalizedSeeds as string[]) {
+          const res = await fetch('/api/scrape/discovery', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ homepageUrl }),
+          });
+          if (res.ok) {
+            const data = (await res.json()) as { links?: string[] };
+            discovered = discovered.concat(data.links || []);
           }
-        } else {
-          const err = await searchRes.json().catch(() => ({}));
-          const msg = err.error || 'Server error';
-          setSearchStatus(`Lỗi: ${msg}`);
-          throw new Error(msg);
         }
-      } catch (err: any) {
-        console.error(err);
-        // Only override if it wasn't already set to a specific message
-        if (searchStatus.startsWith('Đang')) {
-          setSearchStatus('Lỗi hệ thống hoặc API.');
-        }
-        throw err;
+
+        const merged = Array.from(new Set([...urlInput.split('\n').map((v) => v.trim()).filter(Boolean), ...discovered]));
+        setUrlInput(merged.slice(0, 500).join('\n'));
+        const done = `Đã thêm ${discovered.length} URL vào danh sách quét`;
+        setStatus(done);
+        update({ progress: done });
+      } catch {
+        const err = 'Lỗi khi khám phá URL';
+        setStatus(err);
+        update({ progress: err });
       } finally {
-        setIsLoading(false);
+        setLoading(false);
       }
     });
   };
 
-  const handleScrapeMetadata = async () => {
-    if (!urls.trim()) return;
-    
-    // If discovery is enabled, run structure scraper instead
-    if (isStructureDiscoveryEnabled) {
-      await handleScrapeStructure();
+  const runScrape = async () => {
+    const normalizedUrls = urlInput
+      .split('\n')
+      .map((v) => normalizeScrapeUrl(v))
+      .filter((v): v is string => Boolean(v));
+    const urls = Array.from(new Set(normalizedUrls)).slice(0, 200);
+    if (!urls.length) {
+      setStatus('Danh sách URL không hợp lệ');
       return;
     }
 
-    if (abortControllerRef.current) abortControllerRef.current.abort();
-    abortControllerRef.current = new AbortController();
-    
-    setIsLoading(true);
-    setResults([]);
-    setSearchStatus('Đang trích xuất dữ liệu metadata...');
-    
-    try {
-      const urlList = urls.split('\n').map(u => u.trim()).filter(u => u);
-      
-      const savedSettings = localStorage.getItem('omnisuite_settings');
-      const aiSettings = savedSettings ? JSON.parse(savedSettings) : null;
-
-      const res = await fetch('/api/scrape', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          urls: urlList,
-          aiSettings: {
-            ...aiSettings,
-            default_provider: selectedProvider,
-            default_model: selectedModel
-          } 
-        }),
-        signal: abortControllerRef.current.signal
-      });
-      
-      if (!res.ok) throw new Error(`Lỗi Server: ${res.status}`);
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setResults(data); 
-        
-        if (isSiloEnabled) {
-          await handleBulkSiloAnalysis(data);
-        }
-      }
-    } catch (err: any) {
-      if (err.name !== 'AbortError') console.error(err);
-    } finally {
-      if (!isSiloEnabled) setIsLoading(false);
+    const existingScrapeTask = getTask(SCRAPE_TASK_ID);
+    if (existingScrapeTask?.status === 'running') {
+      setLoading(true);
+      setStatus(existingScrapeTask.progress || 'Đang quét dữ liệu website...');
+      return;
     }
-  };
 
-  const handleScrapeStructure = async () => {
-    if (!urls.trim()) return;
-    setIsLoading(true);
-    setSearchStatus('Đang thu thập sơ đồ trang web...');
-    setResults([]);
-
-    try {
-      const siteUrls = urls.split('\n').map(u => u.trim()).filter(u => u).slice(0, 5);
-      const allDiscoveredLinks = new Set<string>();
-
-      for (let homepageUrl of siteUrls) {
-        if (!homepageUrl.startsWith('http')) homepageUrl = 'https://' + homepageUrl;
-        setSearchStatus(`Đang quét cấu trúc: ${homepageUrl}...`);
-        try {
-          const res = await fetch('/api/scrape/discovery', {
+    setLoading(true);
+    setStatus(`Đang quét dữ liệu website... 0/${urls.length}`);
+    startTask(SCRAPE_TASK_ID, async (update) => {
+      const total = urls.length;
+      const CLIENT_BATCH_SIZE = 10;
+      let processed = 0;
+      let collected: ScrapeResult[] = [];
+      update({ progress: `Đang quét dữ liệu website... 0/${total}` });
+      try {
+        for (let i = 0; i < urls.length; i += CLIENT_BATCH_SIZE) {
+          const chunk = urls.slice(i, i + CLIENT_BATCH_SIZE);
+          const payload = { urls: chunk };
+          const res = await fetch('/api/scrape', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ homepageUrl })
+            body: JSON.stringify(payload),
           });
-          
-          if (res.ok) {
-            const data = await res.json();
-            if (data.links && Array.isArray(data.links)) {
-              data.links.forEach((l: string) => allDiscoveredLinks.add(l));
-            }
-          }
-        } catch (e) {
-          console.error(`Discovery failed for ${homepageUrl}`, e);
+          if (!res.ok) throw new Error('Scrape failed');
+          const data = (await res.json()) as ScrapeResult[];
+          collected = [...collected, ...data];
+          processed = Math.min(total, collected.length);
+          setResults(collected);
+          update({
+            progress: `Đang quét dữ liệu website... ${processed}/${total}`,
+            results: collected,
+          });
         }
+
+        const done = `Hoàn tất: ${collected.length}/${total} URL đã phân tích`;
+        setStatus(done);
+        update({ progress: done, results: collected });
+      } catch {
+        const err = 'Lỗi khi quét dữ liệu';
+        setStatus(err);
+        update({ progress: err, status: 'error' });
+      } finally {
+        setLoading(false);
       }
-
-      const finalUrlList = Array.from(allDiscoveredLinks);
-      if (finalUrlList.length > 0) {
-        setUrls(finalUrlList.join('\n'));
-        setSearchStatus(`Đã tìm thấy ${finalUrlList.length} liên kết. Bắt đầu cào Metadata...`);
-        
-        // Re-use existing scrape logic with discovered list
-        if (abortControllerRef.current) abortControllerRef.current.abort();
-        abortControllerRef.current = new AbortController();
-
-        const savedSettings = localStorage.getItem('omnisuite_settings');
-        const aiSettings = savedSettings ? JSON.parse(savedSettings) : null;
-
-        const scrapeRes = await fetch('/api/scrape', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ urls: finalUrlList, aiSettings }),
-          signal: abortControllerRef.current.signal
-        });
-
-        if (scrapeRes.ok) {
-          const data = await scrapeRes.json();
-          if (Array.isArray(data)) {
-            setResults(data);
-            if (isSiloEnabled) await handleBulkSiloAnalysis(data);
-          }
-        }
-      } else {
-        setSearchStatus('Không tìm thấy liên kết nội bộ nào.');
-      }
-    } catch (err) {
-      console.error(err);
-      setSearchStatus('Lỗi khi thu thập cấu trúc.');
-    } finally {
-      setIsLoading(false);
-    }
+    });
   };
 
-
-  const handleBulkSiloAnalysis = async (targetResults?: any[]) => {
-    const list = targetResults || results;
-    if (list.length === 0) return;
-
-    setIsSiloAnalyzing(true);
-    setSiloProgress({ current: 0, total: list.length });
-    
-    try {
-      for (let i = 0; i < list.length; i++) {
-          const item = list[i];
-          if (analysisData[item.url]) {
-              setSiloProgress(prev => ({ ...prev, current: i + 1 }));
-              continue; 
-          }
-          
-          setSiloProgress(prev => ({ ...prev, current: i + 1 }));
-          try {
-            await handleAnalyzeSingle(item.url, item.title, true);
-          } catch (e) {
-            console.error(`Silo analysis failed for ${item.url}:`, e);
-          }
-      }
-    } finally {
-      setIsSiloAnalyzing(false);
-      setIsLoading(false);
-    }
-  };
-
-  const handleAnalyzeSingle = async (url: string, title: string, silent = false) => {
-    if (analysisData[url] && !silent) {
-      setSelectedAnalysis(analysisData[url]);
-      setIsModalOpen(true);
-      return;
-    }
-
-    if (!silent) setAnalyzingUrl(url);
-    try {
-      const savedSettings = localStorage.getItem('omnisuite_settings');
-      const keys = savedSettings ? JSON.parse(savedSettings) : {};
-      
-      const response = await fetch('/api/analyze-single', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-           url, 
-           title, 
-           provider: selectedProvider.toLowerCase(),
-           model: selectedModel,
-           api_keys: {
-              gemini: aiSettings?.gemini_api_key,
-              openai: aiSettings?.openai_api_key,
-              anthropic: aiSettings?.claude_api_key,
-              groq: aiSettings?.groq_api_key,
-              deepseek: aiSettings?.deepseek_api_key
-           }
-        }),
-      });
-      
-      if (!response.ok) throw new Error('Phân tích thất bại');
-      const data = await response.json();
-      
-      setAnalysisData(prev => ({
-        ...prev,
-        [url]: data
-      }));
-      
-      if (!silent) {
-        setSelectedAnalysis(data);
-        setIsModalOpen(true);
-      }
-    } finally {
-      if (!silent) setAnalyzingUrl(null);
-    }
-  };
-
-  const handleExport = () => {
-    if (results.length === 0) return;
-    
-    // Header definition
-    const headers = [
-      'STT', 'URL', 'Depth', 'Type', 'Ngày đăng', 'Title', 'Title Len', 'Description', 'Desc Len', 
-      'H1', 'Keywords', 'KW Count', 'Density', 'Images', 'Img No Alt', 'Img No Title', 
-      'Internal Links', 'External Links', 'Total Links', 'Size (KB)', 'Load Time (ms)', 'Status'
-    ];
-
-    const rows = results.map((r, i) => [
-      i + 1,
+  const exportCsv = () => {
+    if (!results.length) return;
+    const headers = ['URL', 'Status', 'Title', 'H1', 'WordCount', 'KeywordDensity', 'Internal', 'External', 'NoFollow', 'DoFollow'];
+    const rows = results.map((r) => [
       r.url,
-      r.urlDepth || 0,
-      r.contentType || 'N/A',
-      r.publishDate ? `Đăng: ${r.publishDate.published || 'N/A'} / Sửa: ${r.publishDate.modified || 'N/A'}` : 'N/A',
-      `"${(r.title || '').replace(/"/g, '""')}"`,
-      r.titleLength || 0,
-      `"${(r.description || '').replace(/"/g, '""')}"`,
-      r.descriptionLength || 0,
-      `"${(r.h1 || '').replace(/"/g, '""')}"`,
-      `"${(r.metaKeywords || '').replace(/"/g, '""')}"`,
-      r.metaKeywordsCount || 0,
-      r.keywordDensity || '0%',
-      r.imageStats?.total || 0,
-      r.imageStats?.missingAlt || 0,
-      r.imageStats?.missingTitle || 0,
-      r.linkStats?.internal || 0,
-      r.linkStats?.external || 0,
-      r.totalLinks || 0,
-      r.pageSizeKB || 0,
-      r.responseTimeMs || 0,
-      r.statusCode || 200
+      String(r.statusCode || 0),
+      JSON.stringify(r.title || ''),
+      JSON.stringify(r.h1 || ''),
+      String(r.wordCount || 0),
+      String(r.keywordDensity || '0%'),
+      String(r.linkStats?.internal || 0),
+      String(r.linkStats?.external || 0),
+      String(r.linkStats?.nofollow || 0),
+      String(r.linkStats?.dofollow || 0),
     ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.join(','))
-    ].join('\n');
-
-    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `OMNISUITE_SEO_AUDIT_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `website-checkup-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
   };
+
+  const renderTree = (nodes: HeadingNode[] = [], depth = 0) =>
+    nodes.map((node, idx) => (
+      <div key={`${node.tag}-${node.text}-${idx}`} style={{ marginLeft: depth * 16 }} className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+        <div className="flex items-center gap-2">
+          <span className="rounded bg-violet-500/20 px-2 py-0.5 text-[10px] font-bold uppercase text-violet-200">{node.tag}</span>
+          <span className="text-sm text-slate-200">{node.text}</span>
+          {node.isSkippedLevel ? <span className="text-[10px] uppercase text-amber-300">skip-level</span> : null}
+        </div>
+        {node.children?.length ? <div className="mt-2 space-y-2">{renderTree(node.children, depth + 1)}</div> : null}
+      </div>
+    ));
 
   return (
-    <div className="flex flex-col gap-10 min-h-screen font-inter pb-20 overflow-x-hidden max-w-full min-w-0 box-border">
-      <header className="flex justify-between items-end pb-10" style={{ borderBottom: '1px solid var(--border-color)' }}>
+    <div className="flex min-h-screen flex-col gap-8 p-6" style={{ backgroundColor: 'var(--bg-primary)' }}>
+      <header className="flex items-end justify-between pb-10" style={{ borderBottom: '1px solid var(--border-color)' }}>
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-6">
-             <div className="p-3.5 rounded-2xl border shadow-[0_0_15px_rgba(34,211,238,0.3)]" style={{ backgroundColor: 'rgba(6,182,212,0.1)', borderColor: 'rgba(6,182,212,0.3)' }}>
-                <Search className="text-cyan-400" size={24} />
-             </div>
-             <h1 className="text-2xl font-black tracking-tighter uppercase leading-none" style={{ color: 'var(--text-primary)' }}>
-                Thu thập dữ liệu website
-             </h1>
+            <div
+              className="rounded-2xl border p-3.5 shadow-[0_0_15px_rgba(168,85,247,0.3)]"
+              style={{ backgroundColor: 'rgba(168,85,247,0.12)', borderColor: 'rgba(168,85,247,0.35)' }}
+            >
+              <Stethoscope className="text-violet-300" size={24} />
+            </div>
+            <h1 className="text-2xl font-black tracking-tighter uppercase leading-none" style={{ color: 'var(--text-primary)' }}>
+              KIỂM TRA SỨC KHỎE WEBSITE
+            </h1>
           </div>
           <div className="flex items-center gap-4 px-2">
-             <div className="w-12 h-px bg-white/10" />
-             <p className="text-[10px] font-black text-cyan-400 uppercase tracking-widest opacity-60">TRÍCH XUẬT & PHÂN TÍCH CẤU TRÚC WEBSITE.</p>
+            <div className="h-px w-12 bg-white/10" />
+            <p className="text-[10px] font-black uppercase tracking-widest text-violet-300/90">
+              CHẨN ĐOÁN CẤU TRÚC - NỘI DUNG - LIÊN KẾT SEO
+            </p>
           </div>
+          <p className="px-2 text-xs font-semibold uppercase tracking-widest text-slate-400">{status}</p>
+        </div>
+        <div className="flex items-center gap-2 rounded-xl border border-violet-400/25 bg-violet-500/[0.08] p-1">
+          {[
+            { id: 'structure', label: 'Cấu trúc', icon: Radar },
+            { id: 'images', label: 'Hình ảnh', icon: ImageIcon },
+            { id: 'links', label: 'Link', icon: Link2 },
+            { id: 'googlebot', label: 'Googlebot', icon: Bot },
+          ].map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setActiveDashboard(item.id as 'structure' | 'images' | 'links' | 'googlebot')}
+              className={`rounded-lg border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${
+                activeDashboard === item.id
+                  ? 'border-violet-300/40 bg-violet-500/20 text-violet-100'
+                  : 'border-transparent bg-transparent text-slate-300 hover:border-violet-300/20 hover:bg-violet-500/10'
+              }`}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <item.icon size={12} />
+                {item.label}
+              </span>
+            </button>
+          ))}
         </div>
       </header>
 
-       <div className="flex flex-col gap-8 flex-1 w-full max-w-full min-w-0 box-border">
-         {/* --- HORIZONTAL CONTROL CENTER --- */}
-         <div className="w-full">
-            <Card className="p-6 rounded-[2.5rem] shadow-2xl relative overflow-hidden" style={{ backgroundColor: 'var(--card-bg)', border: '1px solid rgba(6,182,212,0.2)' }}>
-               <div className="flex flex-col lg:flex-row lg:flex-wrap xl:flex-nowrap gap-8 items-stretch">
-                  
-                  {/* STEP 1: CONFIG & TOGGLES */}
-                  <div className="w-full lg:w-[calc(50%-1rem)] xl:w-[350px] flex gap-5 pr-8 lg:border-r border-white/5 items-center box-border">
-                     <div className="w-1 h-24 bg-cyan-500 rounded-full shadow-[0_0_12px_rgba(34,211,238,0.6)] shrink-0" />
-                     
-                     <div className="flex flex-col gap-4 flex-1">
-                        <div className="flex gap-2 flex-wrap">
-                           {/* CÀO CẤU TRÚC TOGGLE */}
-                           <label className="flex items-center cursor-pointer gap-2 p-1.5 px-3 bg-white/[0.03] border border-white/10 rounded-full hover:bg-white/[0.05] transition-all group shrink-0">
-                              <span className={`text-[9px] font-black uppercase tracking-tighter transition-colors ${isStructureDiscoveryEnabled ? 'text-cyan-400' : 'text-slate-500'}`}>
-                                 CÀO CẤU TRÚC
-                              </span>
-                              <div className="relative">
-                                 <input type="checkbox" checked={isStructureDiscoveryEnabled} onChange={() => setIsStructureDiscoveryEnabled(!isStructureDiscoveryEnabled)} className="sr-only peer" />
-                                 <div className="w-6 h-3 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-400 after:rounded-full after:h-2 after:w-2 after:transition-all peer-checked:bg-cyan-500"></div>
-                              </div>
-                           </label>
+      {activeDashboard === 'structure' ? (
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        <div className={`rounded-3xl border p-6 lg:col-span-5 ${BRAND.panel}`}>
+          <div className="mb-4 flex items-center gap-3">
+            <div className="h-10 w-1 rounded-full bg-violet-400/80 shadow-[0_0_10px_rgba(168,85,247,0.45)]" />
+            <div className="flex items-center gap-2 text-slate-100">
+              <Radar size={18} className={BRAND.accent} />
+              <h2 className="text-base font-black uppercase tracking-wider">Nhập trang chủ</h2>
+            </div>
+          </div>
+          <textarea
+            value={seedInput}
+            onChange={(e) => {
+              const lines = e.target.value
+                .split('\n')
+                .map((line) => line.replace(/\r/g, ''));
+              if (lines.length <= HOMEPAGE_MAX_LINES) {
+                setSeedInput(lines.join('\n'));
+                const nonEmpty = lines.map((line) => line.trim()).filter(Boolean);
+                const invalidCount = nonEmpty.filter((line) => !normalizeHomepageUrl(line)).length;
+                if (invalidCount > 0) {
+                  setSeedInputError(`Có ${invalidCount} dòng không đúng định dạng URL trang chủ`);
+                } else {
+                  setSeedInputError('');
+                }
+                return;
+              }
+              setSeedInput(lines.slice(0, HOMEPAGE_MAX_LINES).join('\n'));
+              setSeedInputError(`Chỉ được nhập tối đa ${HOMEPAGE_MAX_LINES} trang chủ`);
+            }}
+            disabled={loading}
+            placeholder="Mỗi dòng 1 URL trang chủ (vd: https://example.com)"
+            title={`Nhập URL trang chủ (tối đa ${HOMEPAGE_MAX_LINES} dòng): ${seedCount}/${HOMEPAGE_MAX_LINES}`}
+            className="h-32 w-full rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-slate-200 outline-none focus:border-violet-400/40 disabled:cursor-not-allowed disabled:opacity-60"
+          />
+          {seedInputError ? (
+            <p className="mt-2 text-xs font-semibold text-rose-300">{seedInputError}</p>
+          ) : null}
+          <button
+            onClick={runDiscovery}
+            disabled={loading || !seedInput.trim() || Boolean(seedInputError)}
+            className="mt-3 inline-flex items-center gap-2 rounded-xl border border-violet-300/30 bg-violet-500/20 px-4 py-2 text-xs font-bold uppercase tracking-wider text-violet-100 disabled:opacity-40"
+          >
+            <Globe size={14} />
+            Khám phá URL
+          </button>
+        </div>
 
-                           {/* SILO TOGGLE */}
-                           <label title="nâng cao hiệu quả cho cột keyword" className="flex items-center cursor-pointer gap-2 p-1.5 px-3 bg-white/[0.03] border border-white/10 rounded-full hover:bg-white/[0.05] transition-all group shrink-0">
-                              <span className={`text-[9px] font-black uppercase tracking-tighter transition-colors ${isSiloEnabled ? 'text-indigo-400' : 'text-slate-500'}`}>
-                                 Từ khóa
-                              </span>
-                              <div className="relative">
-                                 <input type="checkbox" checked={isSiloEnabled} onChange={() => setIsSiloEnabled(!isSiloEnabled)} className="sr-only peer" />
-                                 <div className="w-6 h-3 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-400 after:rounded-full after:h-2 after:w-2 after:transition-all peer-checked:bg-indigo-500"></div>
-                              </div>
-                           </label>
-                        </div>
-
-                        {/* AI SELECTOR GROUP - REACTIVE TO SILO */}
-                        <div className={`grid grid-cols-2 gap-2 transition-all duration-500 ${isSiloEnabled ? 'opacity-100 scale-100 brightness-110' : 'opacity-30 grayscale blur-[0.5px] scale-95 pointer-events-none'}`}>
-                           <div className="flex flex-col gap-1.5">
-                              <div className="flex items-center gap-1.5">
-                                 <BrainCircuit size={10} className="text-indigo-400" />
-                                 <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">AI ENGINE</span>
-                              </div>
-                              <select 
-                                 value={selectedProvider} 
-                                 onChange={(e) => handleProviderChange(e.target.value)}
-                                 className="w-full bg-indigo-500/10 border border-indigo-500/20 rounded-xl px-3 py-2 text-[10px] font-bold text-indigo-400 outline-none focus:border-indigo-500/50 transition-all cursor-pointer appearance-none"
-                              >
-                                 {['Gemini', 'OpenAI', 'Claude', 'Groq', 'DeepSeek', 'OpenRouter'].map(p => (
-                                    <option key={p} value={p} className="bg-slate-900">{p}</option>
-                                 ))}
-                              </select>
-                           </div>
-                           <div className="flex flex-col gap-1.5">
-                              <div className="flex items-center justify-between">
-                                 <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">MODEL</span>
-                                 {isLoadingModels && <RefreshCw size={8} className="animate-spin text-cyan-500" />}
-                              </div>
-                              <select 
-                                 value={selectedModel} 
-                                 onChange={(e) => setSelectedModel(e.target.value)}
-                                 className={`w-full bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-[10px] font-bold outline-none focus:border-cyan-500/50 transition-all cursor-pointer appearance-none ${isLoadingModels ? 'opacity-50' : 'text-slate-300'}`}
-                                 disabled={isLoadingModels}
-                              >
-                                 <option value="" className="bg-slate-900 text-slate-500">
-                                    {isLoadingModels ? 'Đang dò...' : 'Chọn Model'}
-                                 </option>
-                                 {availableModels.map(m => (
-                                    <option key={m} value={m} className="bg-slate-900">{m}</option>
-                                 ))}
-                              </select>
-                           </div>
-                        </div>
-                        
-                        {!isSiloEnabled && (
-                           <span className="text-[7px] font-black text-slate-600 uppercase tracking-tighter text-center">Bật Từ khóa để dùng AI</span>
-                        )}
-                     </div>
-                  </div>
-
-                  <div className="w-full lg:w-[calc(50%-1rem)] xl:w-[400px] flex flex-col gap-4 pr-8 lg:border-r border-white/5 box-border">
-                     <div className="flex justify-between items-center px-1">
-                        <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-colors ${isStructureDiscoveryEnabled ? 'text-amber-400' : 'text-cyan-400'}`}>
-                           {isStructureDiscoveryEnabled ? 'Nhập trang chủ (tối đa 5 trang chủ)' : '1. TÌM URL CƠ BẢN THEO TỪ KHÓA'}
-                        </span>
-                        <span className="text-[10px] text-slate-500 font-bold uppercase">{keywords.split(/[\n,]/).filter(k => k.trim()).length}/5</span>
-                     </div>
-                     <div className="flex gap-4 h-full items-stretch">
-                        <textarea 
-                           placeholder={isStructureDiscoveryEnabled ? "https://example.com, https://blog.com..." : "SEO, Marketing..."} 
-                           value={keywords} 
-                           onChange={e => setKeywords(e.target.value)} 
-                           className={`flex-1 h-24 rounded-2xl p-5 text-sm outline-none resize-none font-mono bg-white/[0.02] border transition-all shadow-inner ${isStructureDiscoveryEnabled ? 'border-amber-500/20 focus:border-amber-500/40' : 'border-white/5 focus:border-cyan-500/30'}`}
-                           style={{ color: 'var(--text-primary)' }}
-                        />
-                        <button 
-                           onClick={handleSearchKeywords}
-                           disabled={isLoading || !keywords.trim()}
-                           className={`px-8 rounded-2xl text-[12px] font-black tracking-widest uppercase transition-all flex flex-col items-center justify-center gap-3 group
-                              ${(isLoading || !keywords.trim()) 
-                                 ? 'opacity-40 cursor-not-allowed bg-white/5 text-slate-500' 
-                                 : isStructureDiscoveryEnabled 
-                                    ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:scale-[1.02] active:scale-95 shadow-lg shadow-amber-500/10'
-                                    : 'bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:scale-[1.02] active:scale-95 shadow-lg shadow-cyan-500/10'}`}
-                        >
-                           {isStructureDiscoveryEnabled ? (
-                              <Globe size={20} className={isLoading ? 'animate-spin' : 'group-hover:rotate-12 transition-transform'} />
-                           ) : (
-                              <Search size={20} className={isLoading ? 'animate-pulse' : 'group-hover:scale-110 transition-transform'} />
-                           )}
-                           <span className="hidden lg:block">{isStructureDiscoveryEnabled ? 'QUÉT CẤU TRÚC' : 'TÌM URL'}</span>
-                        </button>
-                     </div>
-                  </div>
-
-                  <div className="flex-1 min-w-[300px] flex flex-col gap-4 box-border">
-                     <div className="flex justify-between items-center px-1">
-                        <span className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em]">2. CÀO DỮ LIỆU WEBSITE</span>
-                        {searchStatus && (
-                           <span className="text-[10px] text-cyan-500 font-black animate-pulse flex items-center gap-2">
-                              {searchStatus}
-                           </span>
-                        )}
-                     </div>
-                     <div className="flex gap-4 h-full items-stretch">
-                        <textarea 
-                           placeholder="Paste URLs tại đây..." 
-                           value={urls} 
-                           onChange={e => setUrls(e.target.value)} 
-                           className="flex-1 h-24 rounded-2xl p-5 text-sm outline-none resize-none font-mono bg-white/[0.02] border border-white/5 focus:border-indigo-500/30 transition-all shadow-inner"
-                           style={{ color: 'var(--text-primary)' }}
-                        />
-                        <button 
-                           onClick={handleScrapeMetadata}
-                           disabled={isLoading || !urls.trim()}
-                           className={`px-10 rounded-2xl text-[12px] font-black tracking-widest uppercase transition-all flex flex-col items-center justify-center gap-3 group
-                              ${(isLoading || !urls.trim()) 
-                                 ? 'opacity-40 cursor-not-allowed bg-white/5 text-slate-500' 
-                                 : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-xl shadow-indigo-600/30 hover:scale-[1.02] active:scale-95'}`}
-                        >
-                           <Zap size={22} className={isLoading ? (isStructureDiscoveryEnabled ? 'animate-bounce' : 'animate-spin') : 'group-hover:rotate-12 transition-transform'} />
-                           <span className="hidden lg:block">BẮT ĐẦU</span>
-                        </button>
-                     </div>
-                  </div>
-
-               </div>
-            </Card>
-         </div>
-
-         {/* --- RESULTS AREA --- */}
-         <div className="w-full overflow-hidden flex flex-col min-w-0 max-w-full">
-            <Card className={`${isExpanded ? 'fixed inset-0 z-[100] m-0 rounded-none border-none pb-40 bg-slate-950/95 backdrop-blur-xl' : 'rounded-[2.5rem] min-h-[600px] shadow-2xl'} relative flex flex-col min-w-0`} style={!isExpanded ? { backgroundColor: 'var(--card-bg)', border: '1px solid rgba(6,182,212,0.2)' } : {}}>
-               {results.length > 0 ? (
-                  <div className="h-full flex flex-col min-h-0 min-w-0 w-full max-w-full box-border overflow-hidden">
-                     <div className="p-8 flex items-center justify-between shrink-0" style={{ backgroundColor: 'var(--hover-bg)', borderBottom: '1px solid rgba(6,182,212,0.2)' }}>
-                        <div className="flex items-center gap-6">
-                           <div className="flex flex-col">
-                              <Typography variant="h3" className="mb-1 text-2xl font-black uppercase" style={{ color: 'var(--text-primary)' }}>Kết quả</Typography>
-                              <div className="flex items-center gap-2">
-                                 <div className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
-                                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{results.length} URL đã trích xuất</span>
-                              </div>
-                           </div>
-                           
-                           {isSiloAnalyzing && (
-                              <div className="flex items-center gap-4 px-4 py-2 bg-cyan-500/10 border border-cyan-500/20 rounded-xl">
-                                 <MagicIcon size={14} className="text-cyan-400 animate-spin" />
-                                 <span className="text-[10px] font-black text-cyan-400 uppercase tracking-widest">
-                                    Đang phân tích Silo: {siloProgress.current}/{siloProgress.total}
-                                 </span>
-                                 <div className="w-24 h-1 bg-white/5 rounded-full overflow-hidden">
-                                    <div 
-                                        className="h-full bg-cyan-500 transition-all duration-500"
-                                        style={{ width: `${(siloProgress.current / siloProgress.total) * 100}%` }}
-                                    />
-                                 </div>
-                              </div>
-                           )}
-                        </div>
-                        <div className="flex items-center gap-3">
-
-                           <button 
-                              onClick={() => setIsExpanded(!isExpanded)}
-                              className="h-14 w-14 flex items-center justify-center rounded-xl bg-white/[0.03] border border-white/5 text-slate-400 hover:text-white hover:bg-white/5 transition-all"
-                              title={isExpanded ? "Thu nhỏ" : "Phóng to"}
-                           >
-                              {isExpanded ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
-                           </button>
-                             <Button 
-                               variant="outline" 
-                               size="sm" 
-                               className="px-6 h-14 font-bold uppercase text-[10px] tracking-widest bg-rose-500/5 hover:bg-rose-500/10 border-rose-500/20 text-rose-400" 
-                               leftIcon={<Trash2 size={16} />}
-                               onClick={handleClearHistory}
-                               disabled={results.length === 0}
-                             >
-                                XÓA LỊCH SỬ
-                             </Button>
-                             <Button 
-                               variant="success" 
-                               size="sm" 
-                               className="px-10 h-14 font-bold uppercase text-xs tracking-widest" 
-                               leftIcon={<Download size={18} />}
-                               onClick={handleExport}
-                               disabled={results.length === 0}
-                             >
-                                XUẤT DỮ LIỆU
-                             </Button>
-                        </div>
-                     </div>
-
-                     <div className="flex-1 overflow-x-auto force-scrollbar w-full max-w-full min-w-0 pb-10" style={{ display: 'block' }}>
-                        <table className="text-left table-fixed" style={{ minWidth: '5800px', width: 'max-content' }}>
-                           <colgroup>
-                              <col className="w-24" />
-                              <col className="w-[500px]" />
-                              {isSiloEnabled && (
-                                 <>
-                                    <col className="w-48" />
-                                    <col className="w-48" />
-                                 </>
-                              )}
-                              <col className="w-32" />
-                              <col className="w-48" />
-                              <col className="w-[240px]" />
-                              <col className="w-[350px]" />
-                              <col className="w-24" />
-                              <col className="w-24" />
-                              <col className="w-[500px]" />
-                              <col className="w-[600px]" />
-                              <col className="w-[500px]" />
-                              <col className="w-32" />
-                              <col className="w-32" />
-                              <col className="w-32" />
-                              <col className="w-32" />
-                              <col className="w-[500px]" />
-                              <col className="w-48" />
-                              <col className="w-64" />
-                              <col className="w-32" />
-                              <col className="w-40" />
-                              <col className="w-32" />
-                              <col className="w-32" />
-                              <col className="w-32" />
-                           </colgroup>
-                           <thead className="sticky top-0 z-10" style={{ backgroundColor: 'var(--card-bg)' }}>
-                              <tr className="border-b border-white/5 bg-white/[0.02]">
-                                 <th colSpan={isSiloEnabled ? 7 : 5} className="p-6 text-[15px] font-black text-indigo-400 uppercase tracking-[0.3em] border-r border-white/5 text-center">Nhóm 1: Định danh</th>
-                                 <th colSpan={10} className="p-6 text-[15px] font-black text-cyan-400 uppercase tracking-[0.3em] border-r border-white/5 text-center">Nhóm 2: Nội dung Metadata</th>
-                                 <th colSpan={7} className="p-6 text-[15px] font-black text-amber-400 uppercase tracking-[0.3em] text-center">Nhóm 3: Kỹ thuật & Kiểm soát</th>
-                              </tr>
-                              <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-24 text-center">STT</th>
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-[500px]">Target (URL)</th>
-                                 {isSiloEnabled && (
-                                    <>
-                                       <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-48 text-center">Mục đích</th>
-                                       <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-48 text-center">Độ phủ</th>
-                                    </>
-                                 )}
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-32 text-center">Phân cấp</th>
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-48 text-center">Loại</th>
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-[240px] text-center border-r border-white/5">Ngày</th>
-                                 
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-[350px]">Keywords</th>
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-24 text-center">Từ Title</th>
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-24 text-center border-r border-white/5">Từ Meta</th>
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-[500px]">Tiêu đề (Title)</th>
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-[600px]">Mô tả (Desc)</th>
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-[500px]">Thẻ H1</th>
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-32 text-center">Hình ảnh</th>
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-32 text-center">Mất Alt</th>
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-32 text-center">Mất Title</th>
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-32 text-center border-r border-white/5">Liên kết</th>
-                                 
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-[500px]">Nguồn gốc (Canonical)</th>
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-48">Chỉ mục (Robots)</th>
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-64 text-center">Tác giả</th>
-
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-40 text-center underline decoration-cyan-500">Tốc độ (ms)</th>
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-32 text-center border-r border-white/5">Dung lượng (KB)</th>
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-32 text-center">Trạng thái</th>
-                                 <th className="p-6 text-[14px] font-black uppercase tracking-widest text-slate-500 w-32 text-center bg-slate-900 border-l border-white/5">Chi tiết</th>
-                              </tr>
-                           </thead>
-                           <tbody className="divide-y divide-white/[0.02]">
-                               {results.map((r, i) => (
-                                  <tr key={i} className="hover:bg-cyan-600/[0.03] transition-colors group">
-                                     <td className="p-5 text-center">
-                                        <span className="text-[14px] font-mono text-slate-500">{(i + 1).toString().padStart(2, '0')}</span>
-                                     </td>
-                                     <td className="p-5">
-                                        <div className="flex items-center gap-2">
-                                           <div className="p-2 bg-indigo-500/10 rounded-lg shrink-0">
-                                             <Globe size={16} className="text-indigo-400" />
-                                           </div>
-                                           <a href={r.url} target="_blank" rel="noreferrer" className="text-[15px] font-bold text-slate-200 hover:text-cyan-400 transition-colors">
-                                              {r.url}
-                                           </a>
-                                        </div>
-                                     </td>
-                                     {isSiloEnabled && (
-                                        <>
-                                           <td className="p-5">
-                                              {analysisData[r.url] ? (
-                                                 <span className={`text-[14px] font-black px-3 py-1.5 rounded border tracking-widest ${
-                                                    (analysisData[r.url].intent === 'Bán hàng' || analysisData[r.url].intent === 'Thương mại') ? 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20' : 
-                                                     'bg-blue-500/10 text-blue-500 border-blue-500/20'
-                                                }`}>
-                                                   {analysisData[r.url].intent || "..."}
-                                                </span>
-                                              ) : (
-                                                 <div className="flex items-center gap-2 animate-pulse">
-                                                    <div className="w-2 h-2 rounded-full bg-slate-700" />
-                                                    <span className="text-[13px] text-slate-700 italic">Chờ...</span>
-                                                 </div>
-                                              )}
-                                           </td>
-                                           <td className="p-5 text-center">
-                                              {analysisData[r.url] ? (
-                                                 <span className={`text-[14px] font-black px-3 py-1.5 rounded border ${
-                                                    (analysisData[r.url].coverage === 'Cao') ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-slate-500/10 text-slate-500 border-slate-500/20'
-                                                 }`}>
-                                                    {analysisData[r.url].coverage}
-                                                 </span>
-                                              ) : <span className="text-[13px] text-slate-700">--</span>}
-                                           </td>
-                                        </>
-                                     )}
-                                      <td className="p-5 text-center" 
-                                          title={(r.urlDepth || 0) <= 3 
-                                             ? "Trang có phân cấp nông, thuận lợi để Googlebot crawl và người dùng tìm thấy nội dung nhanh nhất." 
-                                             : (r.urlDepth || 0) === 4 
-                                             ? "Trang nằm ở cấp độ trung bình, nên tối ưu liên kết nội bộ để tăng khả năng tiếp cận." 
-                                             : "Cấu trúc URL quá sâu (nhiều lớp folder), gây khó khăn cho việc lập chỉ mục và trải nghiệm người dùng."}
-                                      >
-                                         <span className={`px-4 py-1.5 rounded border text-[12px] font-black uppercase tracking-widest cursor-help ${
-                                            (r.urlDepth || 0) <= 3 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
-                                            (r.urlDepth || 0) === 4 ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
-                                            'bg-rose-500/20 text-rose-400 border-rose-500/30'
-                                         }`}>
-                                            {(r.urlDepth || 0) <= 3 ? 'Tốt' : (r.urlDepth || 0) === 4 ? 'Cảnh báo' : 'Sâu'}
-                                         </span>
-                                      </td>
-                                     <td className="p-5 text-center">
-                                        <span className="text-[13px] font-black text-slate-400 px-3 py-1.5 bg-white/5 rounded-lg border border-white/5 uppercase tracking-tighter">
-                                           {r.contentType || 'N/A'}
-                                        </span>
-                                     </td>
-                                     <td className="p-5 text-center border-r border-white/5">
-                                         <div className="flex flex-col items-center gap-1.5">
-                                            {r.publishDate?.published && r.publishDate.published !== 'N/A' && (
-                                              <p className="text-[13px] font-bold font-mono text-slate-300" title="Ngày đăng bài (datePublished)">
-                                                 Đăng: {r.publishDate.published}
-                                              </p>
-                                            )}
-                                            {r.publishDate?.modified && r.publishDate.modified !== 'N/A' && (
-                                              <p className="text-[13px] font-bold font-mono text-amber-500/80" title="Ngày cập nhật (dateModified)">
-                                                 Sửa: {r.publishDate.modified}
-                                              </p>
-                                            )}
-                                            {(!r.publishDate || (r.publishDate.published === 'N/A' && r.publishDate.modified === 'N/A')) && (
-                                              <p className="text-[13px] font-bold font-mono text-slate-600">N/A</p>
-                                            )}
-                                         </div>
-                                      </td>
-
-                                      <td className="p-5 align-top">
-                                         <div className="flex flex-wrap gap-2 pt-1">
-                                            {(r.topKeywords || []).slice(0, 5).map((k: any, idx: number) => (
-                                               <div key={idx} className="px-2.5 py-1 bg-indigo-500/5 border border-indigo-500/10 rounded-lg flex items-center gap-2 group/kw hover:bg-indigo-500/10 transition-all">
-                                                  <span className="text-[12px] font-bold text-indigo-200 truncate">{k.word}</span>
-                                                  <span className="text-[10px] font-black text-indigo-400/50 group-hover/kw:text-cyan-400 transition-colors uppercase">{k.density}</span>
-                                               </div>
-                                            ))}
-                                            {(!r.topKeywords || r.topKeywords.length === 0) && (
-                                               <span className="text-[13px] text-slate-700 italic">N/A</span>
-                                            )}
-                                         </div>
-                                      </td>
-                                      <td className="p-5 text-center">
-                                         <div className="flex flex-col items-center gap-1">
-                                            <span className={`text-[16px] font-black ${r.keywordsInTitle > 0 ? 'text-emerald-400' : 'text-slate-600'}`}>
-                                               {r.keywordsInTitle || 0}
-                                            </span>
-                                            <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">Từ khóa</span>
-                                         </div>
-                                      </td>
-                                      <td className="p-5 text-center border-r border-white/5">
-                                         <div className="flex flex-col items-center gap-1">
-                                            <span className={`text-[16px] font-black ${r.keywordsInMeta > 0 ? 'text-emerald-400' : 'text-slate-600'}`}>
-                                               {r.keywordsInMeta || 0}
-                                            </span>
-                                            <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">Từ khóa</span>
-                                         </div>
-                                      </td>
-                                     
-                                     <td className="p-5">
-                                        <Typography variant="body" className="font-bold text-slate-300 text-[16px]">{r.title}</Typography>
-                                     </td>
-                                     <td className="p-5">
-                                        <Typography variant="body" className="text-slate-500 text-[15px] italic truncate max-w-[500px]">{r.description || "N/A"}</Typography>
-                                     </td>
-                                     <td className="p-5">
-                                        <p className="text-[15px] font-bold text-slate-400 truncate max-w-[400px]">{r.h1 || "N/A"}</p>
-                                     </td>
-                                     
-                                     <td className="p-5 text-center">
-                                        <span className="text-[16px] font-black text-slate-300">{r.imageStats?.total || 0}</span>
-                                     </td>
-                                     <td className="p-5 text-center">
-                                        <span className="text-[16px] font-black text-rose-400">{r.imageStats?.missingAlt || 0}</span>
-                                     </td>
-                                     <td className="p-5 text-center">
-                                        <span className="text-[16px] font-black text-amber-400">{r.imageStats?.missingTitle || 0}</span>
-                                     </td>
-                                     <td className="p-5 text-center border-r border-white/5">
-                                        <span className="text-[16px] font-black text-slate-300">{r.totalLinks || 0}</span>
-                                     </td>
- 
-                                     <td className="p-5">
-                                        <p className="text-[14px] text-slate-600 italic truncate max-w-[400px]">{r.canonical || "N/A"}</p>
-                                     </td>
-                                     <td className="p-5">
-                                        <span className="text-[13px] font-black text-slate-600 uppercase tracking-widest">{r.robots || "index, follow"}</span>
-                                     </td>
-                                     <td className="p-5">
-                                        <span className={`text-[14px] font-bold italic ${r.publisher === 'Missing' ? 'text-slate-700' : 'text-amber-500/70'}`}>{r.publisher}</span>
-                                     </td>
-
-                                     <td className="p-5 text-center">
-                                        <span className={`text-[16px] font-black ${r.responseTimeMs > 2000 ? 'text-rose-500' : 'text-emerald-500'}`}>
-                                           {Math.round(r.responseTimeMs || 0)}
-                                        </span>
-                                     </td>
-                                     <td className="p-5 text-center border-r border-white/5">
-                                        <span className={`text-[16px] font-black ${r.pageSizeKB > 1000 ? 'text-amber-500' : 'text-slate-300'}`}>
-                                           {r.pageSizeKB?.toLocaleString() || 0}
-                                        </span>
-                                     </td>
-                                     <td className="p-5 text-center">
-                                        <span className={`text-[16px] font-black ${getStatusColor(r.statusCode)}`}>
-                                           {r.statusCode || 200}
-                                        </span>
-                                     </td>
-                                      <td className="p-5 text-center bg-slate-900/50 border-l border-white/5">
-                                        <button 
-                                          onClick={() => { setShowDetail(r); setModalTab('overview'); }}
-                                          className="p-3 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded-lg transition-all border border-cyan-500/20 group-hover:scale-110"
-                                        >
-                                           <Eye size={18} />
-                                        </button>
-                                     </td>
-                                  </tr>
-                               ))}
-                           </tbody>
-                        </table>
-                     </div>
-                  </div>
-               ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center p-20 relative">
-                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.02]">
-                        <Typography variant="h1" className="text-9xl font-black tracking-[0.5em] uppercase select-none">SEO NEXUS</Typography>
-                     </div>
-                     
-                     <div className="relative text-center space-y-8 max-w-md">
-                        <div className="p-6 bg-cyan-500/5 rounded-[3rem] w-fit mx-auto border border-dashed border-cyan-500/20">
-                           <ShieldCheck size={80} className="text-cyan-400/20 animate-pulse" />
-                        </div>
-                        <div className="space-y-4">
-                            <Typography variant="h3" className="text-white font-black uppercase text-2xl tracking-widest mb-0">{isLoading ? 'Hệ thống đang chạy' : 'Hệ thống sẵn sàng'}</Typography>
-                            <p className="text-xs font-black text-slate-600 uppercase tracking-[0.4em] leading-loose">
-                               {isLoading ? (searchStatus || 'Đang xử lý dữ liệu yêu cầu...') : 'Đang chờ khởi tạo quy trình URL hoặc từ khóa để trích xuất và kiểm tra metadata.'}
-                            </p>
-                         </div>
-                        <div className="pt-8">
-                           <div className="px-6 py-2 border border-white/5 rounded-full inline-flex items-center gap-4">
-                              <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest">Protocol</span>
-                              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
-                              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">STABLE-X64</span>
-                           </div>
-                        </div>
-                     </div>
-                  </div>
-               )}
-            </Card>
-         </div>
-      </div>
-
-      <AnimatePresence>
-        {isModalOpen && selectedAnalysis && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="w-full max-w-2xl bg-slate-900 border border-cyan-500/30 rounded-[2.5rem] overflow-hidden shadow-[0_0_50px_rgba(6,182,212,0.15)]"
+        <div className={`rounded-3xl border p-6 lg:col-span-7 ${BRAND.panel}`}>
+          <div className="mb-4 flex items-center gap-3">
+            <div className="h-10 w-1 rounded-full bg-fuchsia-400/80 shadow-[0_0_10px_rgba(217,70,239,0.45)]" />
+            <div className="flex items-center gap-2 text-slate-100">
+              <FlaskConical size={18} className="text-fuchsia-300" />
+              <h2 className="text-base font-black uppercase tracking-wider">Danh sách URL quét</h2>
+            </div>
+          </div>
+          <textarea
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            disabled={loading}
+            placeholder="Mỗi dòng một URL (có thể nhập/xóa thủ công)"
+            className="h-32 w-full rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-slate-200 outline-none focus:border-violet-400/40 disabled:cursor-not-allowed disabled:opacity-60"
+          />
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={runScrape}
+              disabled={loading || !urlInput.trim()}
+              className="inline-flex items-center gap-2 rounded-xl border border-fuchsia-300/30 bg-fuchsia-500/20 px-4 py-2 text-xs font-bold uppercase tracking-wider text-fuchsia-100 disabled:opacity-40"
             >
-              <div className="p-10 border-b border-white/5 bg-white/[0.02]">
-                <div className="flex justify-between items-start gap-10">
-                  <div className="space-y-4">
-                    <div className="inline-flex items-center gap-3 px-4 py-1.5 bg-cyan-500/10 border border-cyan-500/20 rounded-full">
-                       <MagicIcon size={14} className="text-cyan-400 animate-pulse" />
-                       <span className="text-[10px] font-black text-cyan-400 uppercase tracking-widest">AI Competitor Insight</span>
-                    </div>
-                    <Typography variant="h3" className="text-2xl font-black text-white leading-tight">{selectedAnalysis.title}</Typography>
-                    <div className="flex items-center gap-2 text-xs text-slate-500 font-mono italic overflow-hidden">
-                      <Globe size={12} /> {selectedAnalysis.url}
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => setIsModalOpen(false)}
-                    className="p-4 bg-white/5 hover:bg-rose-500 text-slate-400 hover:text-white rounded-2xl transition-all border border-white/5"
-                  >
-                    <X size={20} />
-                  </button>
-                </div>
-              </div>
+              <Stethoscope size={14} />
+              Bắt đầu audit
+            </button>
+            <button
+              onClick={exportCsv}
+              disabled={loading || !results.length}
+              className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-100 disabled:opacity-40"
+            >
+              <Download size={14} />
+              Xuất CSV
+            </button>
+          </div>
+        </div>
+      </section>
+      ) : activeDashboard === 'images' ? (
+      <section className={`rounded-3xl border p-6 ${BRAND.panel}`}>
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-black uppercase tracking-wider text-slate-100">Hình ảnh</h2>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
+              image audit từ danh sách URL đã quét
+            </p>
+          </div>
+          <div className="rounded-full border border-violet-300/30 bg-violet-500/15 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-violet-100">Live data</div>
+        </div>
+        <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-slate-400">Tổng ảnh</p>
+            <p className="mt-1 text-xl font-black text-violet-100">{imageGroups.reduce((sum, x) => sum + x.total, 0)}</p>
+          </div>
+          <div className="rounded-xl border border-rose-300/20 bg-rose-500/10 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-rose-200">Thiếu ALT</p>
+            <p className="mt-1 text-xl font-black text-rose-100">{imageGroups.reduce((sum, x) => sum + x.missingAlt, 0)}</p>
+          </div>
+          <div className="rounded-xl border border-amber-300/20 bg-amber-500/10 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-amber-200">Thiếu TITLE</p>
+            <p className="mt-1 text-xl font-black text-amber-100">{imageGroups.reduce((sum, x) => sum + x.missingTitle, 0)}</p>
+          </div>
+          <div className="rounded-xl border border-sky-300/20 bg-sky-500/10 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-sky-200">Tổng URL có ảnh</p>
+            <p className="mt-1 text-xl font-black text-sky-100">{imageGroups.filter((x) => x.total > 0).length}</p>
+          </div>
+        </div>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[240px] flex-1">
+            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              value={imageQuery}
+              onChange={(e) => setImageQuery(e.target.value)}
+              placeholder="Tìm theo URL trang..."
+              className="w-full rounded-xl border border-white/10 bg-black/20 py-2 pl-9 pr-3 text-xs text-slate-200 outline-none focus:border-violet-400/40"
+            />
+          </div>
+          {[
+            { id: 'all', label: 'Tất cả' },
+            { id: 'missing_alt', label: 'Thiếu alt' },
+            { id: 'missing_title', label: 'Thiếu title' },
+          ].map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setImageFilter(item.id as 'all' | 'missing_alt' | 'missing_title')}
+              className={`rounded-lg border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider ${
+                imageFilter === item.id
+                  ? 'border-violet-300/40 bg-violet-500/20 text-violet-100'
+                  : 'border-white/10 bg-white/[0.03] text-slate-300'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-white/10">
+          <table className="w-full min-w-[900px] text-left text-xs">
+            <thead className="bg-white/[0.03] uppercase text-slate-400">
+              <tr>
+                <th className="p-2">Page URL</th>
+                <th className="p-2">Tổng ảnh</th>
+                <th className="p-2">Thiếu Alt</th>
+                <th className="p-2">Thiếu Title</th>
+                <th className="p-2">Chi tiết</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredImageGroups.map((group) => (
+                <tr key={group.groupId} className="border-t border-white/5">
+                  <td className="p-2 text-slate-300">{group.pageUrl}</td>
+                  <td className="p-2 text-slate-200">{group.total}</td>
+                  <td className="p-2 text-slate-200">{group.missingAlt}</td>
+                  <td className="p-2 text-slate-200">{group.missingTitle}</td>
+                  <td className="p-2">
+                    <button
+                      onClick={() => setImageDetailGroup(group)}
+                      disabled={!group.total}
+                      className="rounded-lg border border-violet-300/30 bg-violet-500/20 px-3 py-1 text-xs font-bold text-violet-100 disabled:opacity-40"
+                    >
+                      Chi tiết
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      ) : activeDashboard === 'links' ? (
+      <section className={`rounded-3xl border p-6 ${BRAND.panel}`}>
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-black uppercase tracking-wider text-slate-100">Link</h2>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
+              link explorer từ URL đã quét
+            </p>
+          </div>
+          <div className="rounded-full border border-violet-300/30 bg-violet-500/15 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-violet-100">Live data</div>
+        </div>
+        <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-slate-400">Tổng links</p>
+            <p className="mt-1 text-xl font-black text-violet-100">{linkRows.length}</p>
+          </div>
+          <div className="rounded-xl border border-emerald-300/20 bg-emerald-500/10 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-emerald-200">Internal</p>
+            <p className="mt-1 text-xl font-black text-emerald-100">{linkRows.filter((x) => x.bucket === 'internal').length}</p>
+          </div>
+          <div className="rounded-xl border border-amber-300/20 bg-amber-500/10 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-amber-200">External</p>
+            <p className="mt-1 text-xl font-black text-amber-100">{linkRows.filter((x) => x.bucket === 'external').length}</p>
+          </div>
+          <div className="rounded-xl border border-rose-300/20 bg-rose-500/10 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-rose-200">Nofollow</p>
+            <p className="mt-1 text-xl font-black text-rose-100">
+              {results.reduce((sum, row) => sum + (row.linkStats?.nofollow || 0), 0)}
+            </p>
+          </div>
+        </div>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[240px] flex-1">
+            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              value={linkQuery}
+              onChange={(e) => setLinkQuery(e.target.value)}
+              placeholder="Tìm source/target/anchor..."
+              className="w-full rounded-xl border border-white/10 bg-black/20 py-2 pl-9 pr-3 text-xs text-slate-200 outline-none focus:border-violet-400/40"
+            />
+          </div>
+          {[
+            { id: 'all', label: 'Tất cả' },
+            { id: 'internal', label: 'Internal' },
+            { id: 'external', label: 'External' },
+            { id: 'nofollow', label: 'Nofollow' },
+          ].map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setLinkFilter(item.id as 'all' | 'internal' | 'external' | 'nofollow')}
+              className={`rounded-lg border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider ${
+                linkFilter === item.id
+                  ? 'border-violet-300/40 bg-violet-500/20 text-violet-100'
+                  : 'border-white/10 bg-white/[0.03] text-slate-300'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-white/10">
+          <table className="w-full min-w-[1000px] text-left text-xs">
+            <thead className="bg-white/[0.03] uppercase text-slate-400">
+              <tr>
+                <th className="p-2">Source</th>
+                <th className="p-2">Target</th>
+                <th className="p-2">Anchor</th>
+                <th className="p-2">Rel</th>
+                <th className="p-2">Bucket</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredLinkRows.map((row, idx) => (
+                <tr key={`${row.source}-${row.target}-${idx}`} className="border-t border-white/5">
+                  <td className="p-2 text-slate-300">{row.source}</td>
+                  <td className="p-2 text-slate-300">{row.target}</td>
+                  <td className="p-2 text-slate-200">{row.anchor}</td>
+                  <td className="p-2 text-slate-200">{row.rel}</td>
+                  <td className="p-2">
+                    <span className={`rounded px-2 py-0.5 font-bold ${row.bucket === 'internal' ? 'bg-emerald-500/20 text-emerald-200' : 'bg-amber-500/20 text-amber-200'}`}>
+                      {row.bucket}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      ) : (
+      <section className={`rounded-3xl border p-6 ${BRAND.panel}`}>
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-black uppercase tracking-wider text-slate-100">Googlebot</h2>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
+              crawlability từ URL đã quét
+            </p>
+          </div>
+          <div className="rounded-full border border-violet-300/30 bg-violet-500/15 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-violet-100">Live data</div>
+        </div>
+        <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-slate-400">Tổng URL</p>
+            <p className="mt-1 truncate text-sm font-black text-violet-100">{googlebotSummary.total}</p>
+          </div>
+          <div className="rounded-xl border border-emerald-300/20 bg-emerald-500/10 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-emerald-200">PASS</p>
+            <p className="mt-1 truncate text-sm font-black text-emerald-100">{googlebotSummary.pass}</p>
+          </div>
+          <div className="rounded-xl border border-amber-300/20 bg-amber-500/10 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-amber-200">WARN</p>
+            <p className="mt-1 truncate text-sm font-black text-amber-100">{googlebotSummary.warn}</p>
+          </div>
+          <div className="rounded-xl border border-rose-300/20 bg-rose-500/10 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-rose-200">FAIL</p>
+            <p className="mt-1 truncate text-sm font-black text-rose-100">{googlebotSummary.fail}</p>
+          </div>
+        </div>
+        <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-white/10">
+          <table className="w-full min-w-[900px] text-left text-xs">
+            <thead className="bg-white/[0.03] uppercase text-slate-400">
+              <tr>
+                <th className="p-2">URL</th>
+                <th className="p-2">HTTP</th>
+                <th className="p-2">Meta Robots</th>
+                <th className="p-2">Canonical</th>
+                <th className="p-2">Verdict</th>
+                <th className="p-2">Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              {googlebotRows.map((row) => (
+                <tr key={row.url} className="border-t border-white/5">
+                  <td className="p-2 text-slate-300">{row.url}</td>
+                  <td className="p-2 text-slate-200">{row.statusCode || '--'}</td>
+                  <td className="p-2 text-slate-200">{row.robots}</td>
+                  <td className="p-2 text-slate-200">{row.canonical}</td>
+                  <td className="p-2">
+                    <span className={`rounded px-2 py-0.5 font-bold ${row.status === 'pass' ? 'bg-emerald-500/20 text-emerald-200' : row.status === 'warn' ? 'bg-amber-500/20 text-amber-200' : 'bg-rose-500/20 text-rose-200'}`}>
+                      {row.status.toUpperCase()}
+                    </span>
+                  </td>
+                  <td className="p-2 text-slate-300">{row.note}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      )}
 
-              <div className="p-10 grid grid-cols-2 gap-8 bg-slate-900">
-                <div className="space-y-3">
-                  <Typography variant="label">MỤC ĐÍCH (INTENT)</Typography>
-                  <div className="p-5 bg-white/[0.03] border border-white/5 rounded-2xl">
-                    <div className="flex items-center gap-4">
-                       <Layout className="text-cyan-500" size={24} />
-                       <span className="text-lg font-black text-white uppercase tracking-tight">{selectedAnalysis.intent}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <Typography variant="label">ĐỘ PHỦ THƯƠNG HIỆU</Typography>
-                  <div className="p-5 bg-white/[0.03] border border-white/5 rounded-2xl">
-                    <div className="flex items-center gap-4">
-                       <Activity className="text-emerald-500" size={24} />
-                       <span className="text-lg font-black text-white uppercase tracking-tight">{selectedAnalysis.coverage}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="col-span-2 space-y-3">
-                  <Typography variant="label">ĐIỂM YẾU CỦA ĐỐI THỦ</Typography>
-                  <div className="p-6 bg-rose-500/5 border border-rose-500/20 rounded-2xl border-l-4 border-l-rose-500">
-                    <p className="text-sm font-semibold text-rose-200 leading-relaxed italic">
-                      "{selectedAnalysis.weakness}"
-                    </p>
-                  </div>
-                </div>
-
-                <div className="col-span-2 space-y-3">
-                  <Typography variant="label">CƠ HỘI KHAI THÁC</Typography>
-                  <div className="p-6 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl border-l-4 border-l-emerald-500">
-                    <div className="flex gap-4">
-                      <ArrowRight className="text-emerald-500 shrink-0" size={20} />
-                      <p className="text-sm font-black text-white uppercase tracking-wide leading-relaxed">
-                        {selectedAnalysis.opportunity}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="px-10 py-8 bg-white/[0.02] border-t border-white/5 flex justify-end">
-                <Button 
-                   onClick={() => window.open(selectedAnalysis.url, '_blank')}
-                   variant="secondary" 
-                   className="h-14 px-10 rounded-2xl font-black uppercase text-xs tracking-widest gap-2"
-                >
-                  Truy cập Website <Maximize2 size={16} />
-                </Button>
-              </div>
-            </motion.div>
+      {activeDashboard === 'structure' ? (
+      <section className="rounded-3xl border border-violet-500/20 bg-black/20 p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex flex-col gap-1">
+            <h3 className="text-sm font-black uppercase tracking-wider text-slate-100">Kết quả kiểm tra ({results.length})</h3>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">Thu thập dữ liệu tự động</p>
+          </div>
+          <button
+            onClick={() => {
+              setResults([]);
+              setDetail(null);
+              setStatus('Đã xóa kết quả kiểm tra');
+            }}
+            disabled={loading || !results.length}
+            className="inline-flex items-center gap-1 rounded-lg border border-rose-300/20 bg-rose-500/10 px-3 py-1 text-xs font-bold text-rose-200 disabled:opacity-40"
+          >
+            <Trash2 size={12} /> Xóa kết quả
+          </button>
+        </div>
+        {results.length > 0 ? (
+          <div className="overflow-x-auto custom-scrollbar-indigo">
+            <table className="w-full min-w-[900px] text-left text-sm">
+              <thead className="text-xs uppercase text-slate-400">
+                <tr>
+                  <th className="p-2">URL</th>
+                  <th className="p-2">Status</th>
+                  <th className="p-2">H1</th>
+                  <th className="p-2">Density</th>
+                  <th className="p-2">Issues</th>
+                  <th className="p-2">Links</th>
+                  <th className="p-2">Chi tiết</th>
+                </tr>
+              </thead>
+              <tbody>
+                {results.map((r) => (
+                  <tr key={r.url} className="border-t border-white/5 transition-colors hover:bg-violet-600/[0.03]">
+                    <td className="p-2 text-slate-300">{r.url}</td>
+                    <td className="p-2 text-slate-200">{r.statusCode || 0}</td>
+                    <td className="p-2 text-slate-300">{r.h1 || 'N/A'}</td>
+                    <td className="p-2 text-violet-200">{r.keywordDensity || '0.00%'}</td>
+                    <td className="p-2">
+                      {(() => {
+                        const issues = r.issues || [];
+                        const errors = issues.filter((i) => i.severity === 'error').length;
+                        const warnings = issues.filter((i) => i.severity === 'warning').length;
+                        const infos = issues.filter((i) => i.severity === 'info').length;
+                        return (
+                          <div className="flex items-center gap-1 text-[10px] font-bold">
+                            <span className="rounded bg-rose-500/20 px-1.5 py-0.5 text-rose-200">E:{errors}</span>
+                            <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-amber-200">W:{warnings}</span>
+                            <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-sky-200">I:{infos}</span>
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    <td className="p-2 text-slate-300">{(r.linkStats?.internal || 0) + (r.linkStats?.external || 0)}</td>
+                    <td className="p-2">
+                      <button
+                        onClick={() => setDetail(r)}
+                        className="rounded-lg border border-violet-300/30 bg-violet-500/20 px-3 py-1 text-xs font-bold text-violet-100"
+                      >
+                        Xem
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="flex min-h-[280px] flex-col items-center justify-center gap-5 rounded-2xl border border-dashed border-violet-500/20 bg-violet-500/[0.03] text-center">
+            <div className="rounded-[2rem] border border-violet-500/20 bg-violet-500/10 p-5">
+              <Stethoscope size={56} className="text-violet-300/50" />
+            </div>
+            <div className="space-y-2">
+              <p className="text-xl font-black uppercase tracking-widest text-slate-100">Sẵn sàng kiểm tra</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-500">
+                Nhập URL trang chủ để bắt đầu audit
+              </p>
+            </div>
           </div>
         )}
-      </AnimatePresence>
+      </section>
+      ) : null}
 
-      <AnimatePresence>
-        {showDetail && (
-           <div className="fixed inset-0 z-[100] flex items-center justify-center p-10">
-              <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setShowDetail(null)}
-                className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-              />
-              
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="relative w-full max-w-6xl h-[85vh] bg-slate-900 border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-              >
-                 {/* Header */}
-                 <div className="p-6 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
-                    <div className="flex items-center gap-4">
-                       <div className="p-3 bg-cyan-500/10 rounded-xl">
-                          <MagicIcon size={24} className="text-cyan-400" />
-                       </div>
-                       <div>
-                          <Typography variant="h4" className="text-white font-black tracking-tight leading-tight line-clamp-1">{showDetail.title}</Typography>
-                          <Typography variant="body" className="text-slate-500 text-xs font-mono">{showDetail.url}</Typography>
-                       </div>
+      {detail ? (
+        <div className="fixed inset-0 z-[90] bg-black/70 p-6 backdrop-blur-sm">
+          <div className="mx-auto h-[90vh] w-full max-w-5xl overflow-hidden rounded-3xl border border-violet-400/30 bg-slate-950">
+            <div className="flex items-center justify-between border-b border-white/10 p-4">
+              <div>
+                <p className="text-sm font-bold text-slate-100">{detail.title || detail.url}</p>
+                <p className="text-xs text-slate-400">{detail.url}</p>
+              </div>
+              <button onClick={() => setDetail(null)} className="rounded-full p-2 text-slate-300 hover:bg-white/10">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex gap-2 border-b border-white/10 p-3">
+              {[
+                { id: 'keywords', label: 'Keywords', icon: Tags },
+                { id: 'headings', label: 'Heading Tree', icon: LayoutList },
+                { id: 'links', label: 'Links', icon: Link2 },
+                { id: 'issues', label: 'Issues', icon: AlertTriangle },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setTab(t.id as 'keywords' | 'headings' | 'links' | 'issues')}
+                  className={`rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-wider ${
+                    tab === t.id ? 'bg-violet-500/20 text-violet-100 border border-violet-300/30' : 'text-slate-400'
+                  }`}
+                >
+                  <span className="inline-flex items-center gap-2"><t.icon size={13} /> {t.label}</span>
+                </button>
+              ))}
+            </div>
+            <div className="h-[calc(90vh-130px)] overflow-auto custom-scrollbar-indigo p-4">
+              {tab === 'keywords' ? (
+                <div className="space-y-2">
+                  {(detail.topKeywords || []).map((k) => (
+                    <div key={`${k.word}-${k.count}`} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                      <span className="text-slate-200">{k.word}</span>
+                      <span className="text-slate-300">{k.count} · {k.density}</span>
                     </div>
-                    <button 
-                      onClick={() => setShowDetail(null)}
-                      className="p-2 hover:bg-white/5 rounded-full text-slate-500 hover:text-white transition-colors"
-                    >
-                       <X size={24} />
-                    </button>
-                 </div>
+                  ))}
+                </div>
+              ) : null}
 
-                 <div className="flex-1 flex overflow-hidden">
-                    {/* Tabs Sidebar */}
-                    <div className="w-56 border-r border-white/5 bg-black/20 p-4 space-y-1">
-                       {[
-                          { id: 'overview', label: 'Overview', icon: Globe },
-                          { id: 'headings', label: 'Headings', icon: Layout },
-                          { id: 'links', label: 'Links', icon: Activity },
-                          { id: 'images', label: 'Images', icon: Eye },
-                          { id: 'schema', label: 'Schema', icon: BrainCircuit },
-                          { id: 'social', label: 'Social', icon: Zap }
-                       ].map(tab => (
-                          <button
-                            key={tab.id}
-                            onClick={() => setModalTab(tab.id)}
-                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                               modalTab === tab.id ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-bold' : 'text-slate-400 hover:bg-white/5 opacity-70'
-                            }`}
-                          >
-                             <tab.icon size={18} />
-                             <span className="text-sm tracking-wide uppercase">{tab.label}</span>
-                          </button>
-                       ))}
+              {tab === 'headings' ? (
+                <div className="space-y-2">
+                  {detail.headingTree?.length
+                    ? renderTree(detail.headingTree)
+                    : (detail.headings || []).map((h, idx) => (
+                        <div key={`${h.tag}-${h.text}-${idx}`} className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-slate-200">
+                          <span className="mr-2 rounded bg-violet-500/20 px-2 py-0.5 text-[10px] font-bold uppercase text-violet-200">{h.tag}</span>
+                          {h.text}
+                        </div>
+                      ))}
+                </div>
+              ) : null}
+
+              {tab === 'links' ? (
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-violet-200">Anchor Links</p>
+                    <p className="text-xs text-slate-300">Internal: {detail.linkStats?.anchor?.internal || 0}</p>
+                    <p className="text-xs text-slate-300">External: {detail.linkStats?.anchor?.external || 0}</p>
+                    <p className="text-xs text-slate-300">Nofollow: {detail.linkStats?.anchor?.nofollow || 0}</p>
+                    <p className="text-xs text-slate-300">Dofollow: {detail.linkStats?.anchor?.dofollow || 0}</p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-violet-200">Resource Links</p>
+                    <p className="text-xs text-slate-300">Internal: {detail.linkStats?.resource?.internal || 0}</p>
+                    <p className="text-xs text-slate-300">External: {detail.linkStats?.resource?.external || 0}</p>
+                    <p className="text-xs text-slate-300">Nofollow: {detail.linkStats?.resource?.nofollow || 0}</p>
+                    <p className="text-xs text-slate-300">Dofollow: {detail.linkStats?.resource?.dofollow || 0}</p>
+                  </div>
+                </div>
+              ) : null}
+
+              {tab === 'issues' ? (
+                <div className="space-y-2">
+                  {(detail.issues || []).length ? (
+                    (detail.issues || []).map((issue) => {
+                      const tone =
+                        issue.severity === 'error'
+                          ? 'border-rose-400/30 bg-rose-500/[0.08] text-rose-100'
+                          : issue.severity === 'warning'
+                            ? 'border-amber-300/30 bg-amber-500/[0.08] text-amber-100'
+                            : 'border-sky-300/30 bg-sky-500/[0.08] text-sky-100';
+                      return (
+                        <div key={issue.id} className={`rounded-xl border p-3 ${tone}`}>
+                          <div className="mb-1 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest">
+                            <span>{issue.severity}</span>
+                            <span className="opacity-60">•</span>
+                            <span>{issue.category}</span>
+                          </div>
+                          <p className="text-sm">{issue.message}</p>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="rounded-xl border border-emerald-400/20 bg-emerald-500/[0.08] p-3 text-emerald-100">
+                      Không phát hiện issue nghiêm trọng trên URL này.
                     </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
-                    {/* Content Area */}
-                    <div className="flex-1 overflow-auto p-8 custom-scrollbar-indigo bg-white/[0.01]">
-                       {modalTab === 'overview' && (
-                          <div className="space-y-8 max-w-4xl">
-                             <div className="grid grid-cols-2 gap-6">
-                                <Card className="p-6 border-cyan-500/10 bg-cyan-500/[0.02]">
-                                   <Typography variant="body" className="uppercase text-[10px] font-black tracking-[0.2em] text-cyan-500 mb-4">Meta Title</Typography>
-                                   <p className="text-lg font-bold text-slate-200 leading-snug">{showDetail.title}</p>
-                                   <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between text-[11px] font-mono">
-                                      <span className="text-slate-500">Length: {showDetail.titleLength} chars</span>
-                                      <span className={showDetail.titleLength > 60 ? 'text-amber-400' : 'text-emerald-400'}>
-                                         {showDetail.titleLength <= 60 ? 'Optimal' : 'Too Long'}
-                                      </span>
-                                   </div>
-                                </Card>
-                                <Card className="p-6 border-indigo-500/10 bg-indigo-500/[0.02]">
-                                   <Typography variant="body" className="uppercase text-[10px] font-black tracking-[0.2em] text-indigo-500 mb-4">Meta Description</Typography>
-                                   <p className="text-base font-medium text-slate-400 leading-relaxed italic line-clamp-4">{showDetail.description}</p>
-                                   <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between text-[11px] font-mono">
-                                      <span className="text-slate-500">Length: {showDetail.descriptionLength} chars</span>
-                                      <span className={showDetail.descriptionLength > 160 ? 'text-amber-400' : 'text-emerald-400'}>
-                                         {showDetail.descriptionLength <= 160 ? 'Optimal' : 'Too Long'}
-                                      </span>
-                                   </div>
-                                </Card>
-                             </div>
-
-                             <div className="grid grid-cols-2 gap-6">
-                                <div className="p-5 bg-white/[0.02] border border-white/5 rounded-2xl flex items-center gap-4">
-                                   <div className={`p-3 rounded-xl ${showDetail.robots?.includes('noindex') ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-400'}`}>
-                                      {showDetail.robots?.includes('noindex') ? <ShieldCheck size={20} className="opacity-50" /> : <ShieldCheck size={20} />}
-                                   </div>
-                                   <div className="flex-1 min-w-0">
-                                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Robots Tag</p>
-                                      <p className={`text-sm font-bold truncate ${showDetail.robots?.includes('noindex') ? 'text-rose-400' : 'text-emerald-400'}`}>
-                                         {showDetail.robots || 'index, follow'}
-                                      </p>
-                                   </div>
-                                </div>
-
-                                <div className="p-5 bg-white/[0.02] border border-white/5 rounded-2xl flex items-center gap-4">
-                                   <div className={`p-3 rounded-xl ${showDetail.canonical === showDetail.url ? 'bg-cyan-500/10 text-cyan-500' : 'bg-amber-500/10 text-amber-500'}`}>
-                                      <Globe size={20} />
-                                   </div>
-                                   <div className="flex-1 min-w-0">
-                                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Canonical URL</p>
-                                      <p className="text-xs font-mono text-slate-400 truncate leading-relaxed">
-                                         {showDetail.canonical}
-                                      </p>
-                                      {showDetail.canonical !== showDetail.url && (
-                                         <p className="text-[9px] text-amber-500 font-black uppercase mt-1">! Khác với URL hiện tại</p>
-                                      )}
-                                   </div>
-                                </div>
-                             </div>
-
-                             <div className="grid grid-cols-3 gap-6">
-                                {[
-                                   { label: 'Language', val: showDetail.language, color: 'amber', icon: Globe },
-                                   { label: 'Publisher', val: showDetail.publisher, color: 'indigo', icon: Search },
-                                   { label: 'Content Type', val: showDetail.contentType, color: 'blue', icon: Layout }
-                                ].map((item, idx) => (
-                                   <div key={idx} className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl flex items-center gap-3">
-                                      <div className={`p-2 bg-${item.color}-500/10 text-${item.color}-400 rounded-lg`}>
-                                         <item.icon size={14} />
-                                      </div>
-                                      <div className="min-w-0">
-                                         <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-0.5">{item.label}</p>
-                                         <p className={`text-xs font-bold text-${item.color}-400 truncate`}>{item.val}</p>
-                                      </div>
-                                   </div>
-                                ))}
-                             </div>
-
-                             {/* NEW: Primary Keyword Density Analysis Section */}
-                             <div className="p-8 rounded-3xl border border-indigo-500/20 bg-indigo-500/[0.03] space-y-6">
-                                <div className="flex items-center justify-between">
-                                   <div className="flex items-center gap-3">
-                                      <div className="p-2.5 bg-indigo-500/20 rounded-xl text-indigo-400">
-                                         <Target size={20} />
-                                      </div>
-                                      <div>
-                                         <Typography variant="body" className="uppercase text-[10px] font-black tracking-[0.2em] text-indigo-500">Phân tích Mật độ từ khóa chính</Typography>
-                                         <Typography variant="h4" className="text-white font-black">Ước tính chủ đề nội dung</Typography>
-                                      </div>
-                                   </div>
-                                   
-                                   <div className="text-right">
-                                      <Typography variant="body" className="uppercase text-[10px] font-black tracking-[0.2em] text-slate-500 mb-1">Tổng số từ (Clean Content)</Typography>
-                                      <Typography variant="h4" className="text-white font-mono font-black">{showDetail.wordCount?.toLocaleString() || 0}</Typography>
-                                   </div>
-                                </div>
-
-                                <div className="grid grid-cols-12 gap-6 items-center">
-                                   <div className="col-span-12 lg:col-span-7">
-                                      <div className="p-6 bg-black/20 rounded-2xl border border-white/5">
-                                         <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Từ khóa chính (Hiển thị lọc)</p>
-                                         <p className="text-xl font-black text-indigo-300 italic">"{showDetail.primaryKeyword}"</p>
-                                         
-                                         <div className="mt-4 pt-4 border-t border-white/5">
-                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Cụm từ đếm mật độ (Nguyên bản)</p>
-                                            <p className="text-sm font-bold text-slate-400 italic">"{showDetail.densityCrawlPhrase}"</p>
-                                         </div>
-
-                                         <p className="mt-3 text-[11px] text-slate-500 leading-relaxed font-medium capitalize">
-                                            Phân tích mật độ dựa trên cụm từ nguyên bản từ H1/Title để đảm bảo độ chính xác của ngữ cảnh.
-                                         </p>
-                                      </div>
-                                   </div>
-                                   
-                                   <div className="col-span-12 lg:col-span-5 flex flex-col items-center justify-center space-y-4">
-                                      <div className={`p-6 rounded-2xl border flex flex-col items-center justify-center w-full ${
-                                         parseFloat(showDetail.keywordDensity || '0') < 0.5 ? 'border-amber-500/30 bg-amber-500/5' :
-                                         parseFloat(showDetail.keywordDensity || '0') <= 2.5 ? 'border-emerald-500/30 bg-emerald-500/5' :
-                                         'border-rose-500/30 bg-rose-500/5'
-                                      }`}>
-                                         <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Mật độ hiện tại</p>
-                                         <p className={`text-4xl font-black font-mono ${
-                                            parseFloat(showDetail.keywordDensity || '0') < 0.5 ? 'text-amber-400' :
-                                            parseFloat(showDetail.keywordDensity || '0') <= 2.5 ? 'text-emerald-400' :
-                                            'text-rose-400'
-                                         }`}>{showDetail.keywordDensity || '0.00%'}</p>
-                                         
-                                         <div className={`mt-3 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${
-                                            parseFloat(showDetail.keywordDensity || '0') < 0.5 ? 'bg-amber-500/20 text-amber-500 border-amber-500/30' :
-                                            parseFloat(showDetail.keywordDensity || '0') <= 2.5 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
-                                            'bg-rose-500/20 text-rose-400 border-rose-500/30'
-                                         }`}>
-                                            {parseFloat(showDetail.keywordDensity || '0') < 0.5 ? 'Chưa tối ưu' :
-                                             parseFloat(showDetail.keywordDensity || '0') <= 2.5 ? 'Tuyệt vời (Chuẩn SEO)' :
-                                             'Cảnh báo (Nhồi nhét)'}
-                                         </div>
-                                      </div>
-                                   </div>
-                                </div>
-                             </div>
-
-                             <div className="space-y-4">
-                                <Typography variant="h4" className="text-white/80 font-black tracking-widest text-[12px] uppercase">Keyword Analysis</Typography>
-                                <div className="overflow-hidden rounded-2xl border border-white/5">
-                                   <table className="w-full text-left">
-                                      <thead className="bg-white/[0.03]">
-                                         <tr>
-                                            <th className="p-4 text-[10px] font-black text-slate-500 uppercase">Keyword</th>
-                                            <th className="p-4 text-[10px] font-black text-slate-500 uppercase text-center">Count</th>
-                                            <th className="p-4 text-[10px] font-black text-slate-500 uppercase text-center">Density</th>
-                                         </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-white/5">
-                                         {showDetail.topKeywords?.map((kw: any, idx: number) => (
-                                            <tr key={idx} className="hover:bg-white/[0.02]">
-                                               <td className="p-4 text-sm font-bold text-slate-300 italic">{kw.word}</td>
-                                               <td className="p-4 text-sm text-center font-mono text-slate-500">{kw.count}</td>
-                                               <td className="p-4 text-sm text-center">
-                                                  <span className="px-2 py-1 bg-cyan-500/10 text-cyan-400 rounded-lg font-black text-xs">{kw.density}</span>
-                                               </td>
-                                            </tr>
-                                         ))}
-                                      </tbody>
-                                   </table>
-                                </div>
-                             </div>
-                          </div>
-                       )}
-
-                       {modalTab === 'headings' && (
-                          <div className="space-y-6 max-w-3xl">
-                             <div className="flex items-center gap-4 mb-8 overflow-x-auto whitespace-nowrap custom-scrollbar-indigo pb-2">
-                                {Object.entries(showDetail.headingCounts || {}).map(([tag, count]: [string, any]) => (
-                                   <div key={tag} className="px-4 py-2 bg-white/5 rounded-xl border border-white/5 flex flex-col items-center min-w-[70px] shrink-0">
-                                      <span className="text-[10px] font-black text-slate-500 uppercase">{tag}</span>
-                                      <span className="text-xl font-black text-cyan-400">{count}</span>
-                                   </div>
-                                ))}
-                             </div>
-
-                             <div className="space-y-3">
-                                {showDetail.headings?.map((h: any, idx: number) => (
-                                   <div 
-                                     key={idx} 
-                                     className={`p-4 rounded-xl border transition-all hover:translate-x-1 ${
-                                        h.tag === 'h1' ? 'bg-indigo-500/10 border-indigo-500/20' : 
-                                        h.tag === 'h2' ? 'bg-cyan-500/5 border-cyan-500/10 ml-4' : 
-                                        'bg-white/[0.02] border-white/5 ml-8'
-                                     }`}
-                                   >
-                                      <div className="flex items-center gap-3">
-                                         <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase ${
-                                            h.tag === 'h1' ? 'bg-indigo-500 text-white' : 
-                                            h.tag === 'h2' ? 'bg-cyan-500 text-white' : 'bg-slate-700 text-slate-300'
-                                         }`}>{h.tag}</span>
-                                         <span className={`text-sm font-bold ${h.tag === 'h1' ? 'text-indigo-300' : 'text-slate-300'}`}>{h.text}</span>
-                                      </div>
-                                   </div>
-                                ))}
-                             </div>
-                          </div>
-                       )}
-
-                       {modalTab === 'links' && (
-                          <div className="space-y-8">
-                             <div className="grid grid-cols-2 gap-8">
-                                <div className="space-y-4">
-                                   <div className="flex items-center justify-between">
-                                      <Typography variant="h4" className="text-emerald-400 font-black text-xs uppercase tracking-widest">Internal Links ({showDetail.collectedLinks?.internal?.length || 0})</Typography>
-                                      <button className="text-[10px] text-slate-500 hover:text-white uppercase font-black" onClick={() => {
-                                        const text = showDetail.collectedLinks?.internal?.join('\n');
-                                        navigator.clipboard.writeText(text);
-                                        alert('Copied to clipboard!');
-                                      }}>Copy All</button>
-                                   </div>
-                                   <div className="bg-black/20 rounded-2xl border border-white/5 max-h-[500px] overflow-auto custom-scrollbar-indigo">
-                                      {showDetail.collectedLinks?.internal?.map((link: string, idx: number) => (
-                                         <div key={idx} className="p-3 border-b border-white/5 flex items-center gap-3 group">
-                                            <span className="text-[10px] font-mono text-slate-700">{(idx + 1).toString().padStart(2, '0')}</span>
-                                            <a href={link} target="_blank" rel="noreferrer" className="text-xs text-slate-400 truncate hover:text-emerald-400 transition-colors">{link}</a>
-                                         </div>
-                                      ))}
-                                   </div>
-                                </div>
-                                <div className="space-y-4">
-                                   <div className="flex items-center justify-between">
-                                      <Typography variant="h4" className="text-rose-400 font-black text-xs uppercase tracking-widest">External Links ({showDetail.collectedLinks?.external?.length || 0})</Typography>
-                                      <button className="text-[10px] text-slate-500 hover:text-white uppercase font-black" onClick={() => {
-                                        const text = showDetail.collectedLinks?.external?.join('\n');
-                                        navigator.clipboard.writeText(text);
-                                        alert('Copied to clipboard!');
-                                      }}>Copy All</button>
-                                   </div>
-                                   <div className="bg-black/20 rounded-2xl border border-white/5 max-h-[500px] overflow-auto custom-scrollbar-indigo">
-                                      {showDetail.collectedLinks?.external?.map((link: string, idx: number) => (
-                                         <div key={idx} className="p-3 border-b border-white/5 flex items-center gap-3 group">
-                                            <span className="text-[10px] font-mono text-slate-700">{(idx + 1).toString().padStart(2, '0')}</span>
-                                            <a href={link} target="_blank" rel="noreferrer" className="text-xs text-slate-400 truncate hover:text-rose-400 transition-colors uppercase font-mono">{link}</a>
-                                         </div>
-                                      ))}
-                                   </div>
-                                </div>
-                             </div>
-                          </div>
-                       )}
-
-                       {modalTab === 'images' && (
-                          <div className="space-y-8">
-                             <Card className="p-8 border-cyan-500/10 bg-cyan-500/[0.02] flex items-center justify-between">
-                                <div>
-                                   <Typography variant="h3" className="text-cyan-400 font-black">{showDetail.imageStats?.total || 0}</Typography>
-                                   <Typography variant="body" className="text-slate-500 uppercase text-xs font-black tracking-widest">Total Images Found</Typography>
-                                </div>
-                                <div className="flex gap-10 overflow-x-auto whitespace-nowrap custom-scrollbar-indigo pb-2">
-                                   <div className="text-center">
-                                      <p className="text-2xl font-black text-rose-500">{showDetail.imageStats?.missingAlt || 0}</p>
-                                      <p className="text-[10px] font-black text-slate-500 uppercase">Missing ALT</p>
-                                   </div>
-                                   <div className="text-center">
-                                      <p className="text-2xl font-black text-amber-500">{showDetail.imageStats?.missingTitle || 0}</p>
-                                      <p className="text-[10px] font-black text-slate-500 uppercase">Missing Title</p>
-                                   </div>
-                                </div>
-                             </Card>
-                             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                                {showDetail.images?.map((img: any, idx: number) => (
-                                   <div key={idx} className="group bg-white/[0.02] border border-white/5 rounded-3xl overflow-hidden hover:border-cyan-500/30 transition-all duration-300">
-                                      <div className="aspect-[4/3] relative bg-black/40 overflow-hidden">
-                                         <img 
-                                            src={img.src} 
-                                            alt={img.alt} 
-                                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                                            loading="lazy"
-                                            onError={(e) => {
-                                               (e.target as HTMLImageElement).src = 'https://placehold.co/400x300/1e1e1e/444444?text=Image+Load+Error';
-                                            }}
-                                         />
-                                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
-                                            <a href={img.src} target="_blank" rel="noreferrer" className="w-full py-2 bg-white/10 hover:bg-white/20 text-white text-[10px] font-black uppercase text-center rounded-xl border border-white/10 backdrop-blur-sm">View Full</a>
-                                         </div>
-                                      </div>
-                                      <div className="p-4 space-y-3">
-                                         <div className="space-y-1">
-                                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Alt Text</p>
-                                            <p className={`text-[11px] font-bold line-clamp-1 ${img.alt && img.alt !== 'BG Image' ? 'text-slate-300 italic' : img.alt === 'BG Image' ? 'text-indigo-400' : 'text-rose-500'}`}>
-                                               {img.alt || 'MISSING ALT TAG'}
-                                            </p>
-                                         </div>
-                                         <div className="space-y-1">
-                                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Title Tag</p>
-                                            <p className={`text-[11px] font-bold line-clamp-1 ${img.title ? 'text-slate-400' : 'text-amber-500'}`}>
-                                               {img.title || 'MISSING TITLE TAG'}
-                                            </p>
-                                         </div>
-                                      </div>
-                                   </div>
-                                ))}
-                             </div>
-                          </div>
-                       )}
-
-                       {modalTab === 'schema' && (
-                          <div className="p-8 text-center text-slate-500">
-                            <Typography variant="body">Tính năng Schema đã được gỡ bỏ.</Typography>
-                          </div>
-                       )}
-
-                       {modalTab === 'social' && (
-                          <div className="space-y-12">
-                             {/* ROW 1: GOOGLE PREVIEWS */}
-                             <div className="grid grid-cols-2 gap-10">
-                                <div className="space-y-4">
-                                   <div className="flex items-center justify-between">
-                                      <Typography variant="h4" className="text-white/50 font-black text-xs uppercase tracking-[0.2em]">Google Desktop</Typography>
-                                      <span className="px-2 py-0.5 bg-white/5 rounded text-[9px] text-slate-500 font-bold uppercase tracking-widest border border-white/5">SERP Snippet</span>
-                                   </div>
-                                   <div className="bg-[#202124] p-8 rounded-2xl shadow-2xl border border-white/10 hover:border-blue-500/20 transition-colors group">
-                                      <div className="space-y-2">
-                                         <div className="flex items-center gap-2 text-[14px] text-slate-400">
-                                            <span>{showDetail.url ? new URL(showDetail.url).hostname : 'website.com'}</span>
-                                            <span className="text-[10px] text-slate-600">▼</span>
-                                         </div>
-                                         <p className="text-[20px] text-[#8ab4f8] font-medium leading-snug group-hover:underline line-clamp-1">
-                                            {showDetail.title}
-                                         </p>
-                                         <p className="text-[14px] text-[#bdc1c6] leading-relaxed line-clamp-2">
-                                            <span className="text-[#9aa0a6] mr-1">
-                                               {showDetail.publishDate?.published !== 'N/A' ? `${showDetail.publishDate.published} — ` : ''}
-                                            </span>
-                                            {showDetail.description || "Website description will appear here to provide users context about your content in Google Search..."}
-                                         </p>
-                                      </div>
-                                   </div>
-                                </div>
-
-                                <div className="space-y-4">
-                                   <div className="flex items-center justify-between">
-                                      <Typography variant="h4" className="text-white/50 font-black text-xs uppercase tracking-[0.2em]">Google Mobile</Typography>
-                                      <span className="px-2 py-0.5 bg-white/5 rounded text-[9px] text-slate-500 font-bold uppercase tracking-widest border border-white/5">Device Preview</span>
-                                   </div>
-                                   <div className="flex justify-center">
-                                      <div className="w-full max-w-[360px] bg-[#202124] rounded-3xl p-5 shadow-2xl border border-white/10 relative overflow-hidden group">
-                                         <div className="space-y-3">
-                                            <div className="flex items-center gap-3">
-                                               <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center p-1 border border-white/5 overflow-hidden">
-                                                  <img src={showDetail.favicon || '/favicon.ico'} className="w-full h-full object-contain" alt="" onError={(e) => (e.currentTarget.style.display='none')} />
-                                               </div>
-                                               <div>
-                                                  <p className="text-[12px] text-white font-medium">{showDetail.url ? new URL(showDetail.url).hostname : 'website.com'}</p>
-                                                  <p className="text-[11px] text-[#bdc1c6] line-clamp-1">{showDetail.url}</p>
-                                               </div>
-                                            </div>
-                                            <p className="text-[18px] text-[#8ab4f8] font-medium leading-tight group-hover:underline line-clamp-2">
-                                               {showDetail.title}
-                                            </p>
-                                            <p className="text-[14px] text-[#bdc1c6] leading-relaxed line-clamp-3">
-                                               {showDetail.description || "On mobile devices, descriptions are often truncated to ensure the best search experience for users on the go."}
-                                            </p>
-                                         </div>
-                                         {/* Mock Home Bar */}
-                                         <div className="mt-8 flex justify-center">
-                                            <div className="w-24 h-1 bg-white/10 rounded-full" />
-                                         </div>
-                                      </div>
-                                   </div>
-                                </div>
-                             </div>
-
-                             {/* ROW 2: FACEBOOK & TWITTER */}
-                             <div className="grid grid-cols-2 gap-10">
-                                <div className="space-y-4">
-                                   <Typography variant="h4" className="text-white/50 font-black text-xs uppercase tracking-[0.2em]">Facebook (Open Graph)</Typography>
-                                   <div className="bg-[#1c1e21] rounded-xl overflow-hidden shadow-2xl border border-white/10">
-                                      <div className="h-60 bg-slate-800 flex items-center justify-center overflow-hidden">
-                                         {showDetail.og?.image ? (
-                                            <img src={showDetail.og.image} alt="OG" className="w-full h-full object-cover" />
-                                         ) : (
-                                            <Globe size={48} className="text-white/10" />
-                                         )}
-                                      </div>
-                                      <div className="p-4 bg-[#242526]">
-                                         <p className="text-[11px] text-[#b0b3b8] uppercase font-bold tracking-tight mb-1">{showDetail.url ? new URL(showDetail.url).hostname : 'N/A'}</p>
-                                         <p className="text-base font-bold text-[#e4e6eb] line-clamp-1">{showDetail.og?.title || showDetail.title}</p>
-                                         <p className="text-sm text-[#b0b3b8] line-clamp-2 mt-1">{showDetail.og?.description || showDetail.description}</p>
-                                      </div>
-                                   </div>
-                                </div>
-
-                                <div className="space-y-4">
-                                   <Typography variant="h4" className="text-white/50 font-black text-xs uppercase tracking-[0.2em]">Twitter (X Card)</Typography>
-                                   <div className="bg-black rounded-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col h-fit">
-                                      <div className="p-4 flex items-center gap-3">
-                                         <div className="w-10 h-10 rounded-full bg-slate-800 shrink-0" />
-                                         <div>
-                                            <p className="text-sm font-bold text-white leading-tight">OmniSuite Pro</p>
-                                            <p className="text-xs text-slate-500">@omnisuite_bot</p>
-                                         </div>
-                                      </div>
-                                      <div className="px-4 pb-4">
-                                         <p className="text-sm text-white mb-3 line-clamp-2">{showDetail.twitter?.description || showDetail.og?.description || showDetail.description}</p>
-                                         <div className="rounded-2xl border border-white/10 overflow-hidden">
-                                            <div className="h-48 bg-slate-800 overflow-hidden">
-                                               {showDetail.og?.image ? (
-                                                  <img src={showDetail.og.image} alt="Twitter" className="w-full h-full object-cover" />
-                                               ) : (
-                                                  <div className="w-full h-full flex items-center justify-center"><Zap size={48} className="text-white/5" /></div>
-                                               )}
-                                            </div>
-                                            <div className="p-3 bg-black">
-                                               <p className="text-[11px] text-slate-500">{showDetail.url ? new URL(showDetail.url).hostname : 'N/A'}</p>
-                                               <p className="text-sm font-bold text-white line-clamp-1">{showDetail.twitter?.title || showDetail.title}</p>
-                                            </div>
-                                         </div>
-                                      </div>
-                                   </div>
-                                </div>
-                             </div>
-                          </div>
-                       )}
-
-                    </div>
-                 </div>
-              </motion.div>
-           </div>
-         )}
-      </AnimatePresence>
+      {imageDetailGroup ? (
+        <div className="fixed inset-0 z-[95] bg-black/70 p-6 backdrop-blur-sm">
+          <div className="mx-auto h-[85vh] w-full max-w-6xl overflow-hidden rounded-3xl border border-violet-400/30 bg-slate-950">
+            <div className="flex items-center justify-between border-b border-white/10 p-4">
+              <div>
+                <p className="text-sm font-bold text-slate-100">Chi tiết hình ảnh theo URL</p>
+                <p className="text-xs text-slate-400">{imageDetailGroup.pageUrl}</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">{imageDetailGroup.images.length} ảnh</p>
+              </div>
+              <button onClick={() => setImageDetailGroup(null)} className="rounded-full p-2 text-slate-300 hover:bg-white/10">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="h-[calc(85vh-72px)] overflow-auto custom-scrollbar-indigo p-4">
+              <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-white/10">
+                <table className="w-full min-w-[900px] text-left text-xs">
+                  <thead className="bg-white/[0.03] uppercase text-slate-400">
+                    <tr>
+                      <th className="p-2">Ảnh nhỏ</th>
+                      <th className="p-2">Image URL</th>
+                      <th className="p-2">Alt</th>
+                      <th className="p-2">Title</th>
+                      <th className="p-2">Size (KB)</th>
+                      <th className="p-2">Width</th>
+                      <th className="p-2">Height</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {imageDetailGroup.images.map((img, idx) => (
+                      <tr key={`${img.src}-${idx}`} className="border-t border-white/5">
+                        <td className="p-2">
+                          <a href={img.src} target="_blank" rel="noreferrer" className="block w-fit">
+                            <img src={img.src} alt={img.alt || 'image'} loading="lazy" className="h-12 w-20 rounded border border-white/10 object-cover" />
+                          </a>
+                        </td>
+                        <td className="p-2 text-slate-300">{img.src}</td>
+                        <td className="p-2 text-slate-200">{img.alt || <span className="text-rose-300">Missing</span>}</td>
+                        <td className="p-2 text-slate-200">{img.title || <span className="text-amber-300">Missing</span>}</td>
+                        <td className="p-2 text-slate-300">{img.sizeKb ?? '--'}</td>
+                        <td className="p-2 text-slate-300">{img.width ? `${img.width}px` : '--'}</td>
+                        <td className="p-2 text-slate-300">{img.height ? `${img.height}px` : '--'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
+

@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
 
-async function fetchInternalLinks(homepageUrl: string): Promise<string[]> {
+const DEFAULT_MAX_URLS = 1000;
+const HARD_MAX_URLS = 5000;
+
+function resolveMaxUrls(input: unknown): number {
+  const parsed = Number(input);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_MAX_URLS;
+  return Math.min(Math.floor(parsed), HARD_MAX_URLS);
+}
+
+async function fetchInternalLinks(homepageUrl: string, maxUrls: number): Promise<string[]> {
   const links = new Set<string>();
   const urlObj = new URL(homepageUrl);
   const baseHostname = urlObj.hostname.replace('www.', '');
@@ -33,6 +42,7 @@ async function fetchInternalLinks(homepageUrl: string): Promise<string[]> {
           finalUrl = finalUrl.replace(/\/$/, "");
           if (finalUrl.startsWith('http')) {
              links.add(finalUrl);
+             if (links.size >= maxUrls) return false;
           }
         }
       } catch (e) {}
@@ -45,7 +55,7 @@ async function fetchInternalLinks(homepageUrl: string): Promise<string[]> {
   // Ensure homepage is always in the list
   links.add(homepageUrl.replace(/\/$/, ""));
   
-  return Array.from(links).slice(0, 100); // Guard limit
+  return Array.from(links).slice(0, maxUrls); // Guard limit
 }
 
 async function getLinksFromSitemap(domain: string): Promise<string[]> {
@@ -97,7 +107,8 @@ async function getLinksFromSitemap(domain: string): Promise<string[]> {
 
 export async function POST(req: NextRequest) {
   try {
-    const { homepageUrl } = await req.json();
+    const { homepageUrl, maxUrls } = await req.json();
+    const targetMaxUrls = resolveMaxUrls(maxUrls);
 
     if (!homepageUrl) {
       return NextResponse.json({ error: 'Missing homepageUrl' }, { status: 400 });
@@ -109,7 +120,7 @@ export async function POST(req: NextRequest) {
     // If few links found via sitemap, crawl the homepage
     let finalLinks = sitemapLinks;
     if (finalLinks.length < 5) {
-       const crawledLinks = await fetchInternalLinks(homepageUrl);
+       const crawledLinks = await fetchInternalLinks(homepageUrl, targetMaxUrls);
        finalLinks = Array.from(new Set([...finalLinks, ...crawledLinks]));
     }
 
@@ -117,7 +128,7 @@ export async function POST(req: NextRequest) {
     finalLinks.sort((a, b) => a.length - b.length);
 
     return NextResponse.json({ 
-       links: finalLinks.slice(0, 50), // Standard limit as proposed in plan
+       links: finalLinks.slice(0, targetMaxUrls),
        count: finalLinks.length 
     });
   } catch (error) {

@@ -11,6 +11,7 @@ import {
   Settings,
   Key,
   Search,
+  Stethoscope,
   Activity,
   X,
   Sun,
@@ -37,6 +38,7 @@ const navGroups = [
       { name: 'Viết bài AI', href: '/dashboard/content', icon: FileText },
       { name: 'Quét bản đồ', href: '/dashboard/maps', icon: MapPin },
       { name: 'Bộ công cụ SEO', href: '/dashboard/seo-tools', icon: Search },
+      { name: 'Kiểm tra website', href: '/dashboard/seo-tools/scraper', icon: Stethoscope },
       { name: 'SEO nâng cao', href: '/dashboard/seo-tools/advanced', icon: BarChart },
       { name: 'Hình ảnh AI', href: '/dashboard/images', icon: ImageIcon },
     ]

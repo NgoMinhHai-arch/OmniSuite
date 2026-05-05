@@ -19,6 +19,7 @@ import {
   Link,
   KeyRound,
   Filter,
+  Stethoscope,
 } from "lucide-react";
 import { findTool, REQUIREMENTS, RequirementKey } from "@/lib/seo/tool-registry";
 import { useSystemKeys } from "@/lib/seo/use-system-keys";
@@ -139,6 +140,7 @@ const categories: ToolCategory[] = [
       { id: "schema-generator", name: "Schema Generator", description: "Sinh JSON-LD chung", href: "/dashboard/seo-tools/schema-generator" },
       { id: "sitemap-extractor", name: "Sitemap Extractor", description: "Trích URL từ sitemap", href: "/dashboard/seo-tools/sitemap-extractor" },
       { id: "template-fingerprint", name: "Template Fingerprint", description: "Cluster URL theo template", href: "/dashboard/seo-tools/template-fingerprint" },
+      { id: "website-checkup", name: "Kiểm tra website", description: "Nội soi SEO on-page + link + heading tree", href: "/dashboard/seo-tools/scraper" },
     ],
   },
   {
@@ -403,6 +405,7 @@ export default function SeoToolsDashboard() {
           <QuickActionCard title="Redirect Validator" description="Kiểm tra redirect chain" icon={Settings} href="/dashboard/seo-tools/redirect-validator" color="bg-gradient-to-br from-orange-500 to-red-500" />
           <QuickActionCard title="Schema Generator" description="JSON-LD nhanh" icon={FileText} href="/dashboard/seo-tools/schema-generator" color="bg-gradient-to-br from-cyan-500 to-blue-500" />
           <QuickActionCard title="Internal Linker" description="Cơ hội internal link" icon={Link} href="/dashboard/seo-tools/internal-linker" color="bg-gradient-to-br from-purple-500 to-pink-500" />
+          <QuickActionCard title="Kiểm tra website" description="Audit nhanh bài đối thủ" icon={Stethoscope} href="/dashboard/seo-tools/scraper" color="bg-gradient-to-br from-emerald-500 to-cyan-500" />
           <QuickActionCard title="Wikipedia Citation" description="Cơ hội citation" icon={BookOpen} href="/dashboard/seo-tools/wikipedia-citation" color="bg-gradient-to-br from-gray-600 to-gray-800" />
         </div>
 

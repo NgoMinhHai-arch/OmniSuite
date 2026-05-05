@@ -211,6 +211,7 @@ export const TOOL_REGISTRY: ToolMeta[] = [
   { slug: "sitemap-url-extractor-2", title: "Sitemap URL Extractor (v2)", description: "Alias.", category: "technical", requires: [], aliasOf: "sitemap-extractor" },
   { slug: "template-fingerprint", title: "Template Fingerprint", description: "Cluster URL theo signature HTML.", category: "technical", requires: [] },
   { slug: "template-fingerprinting-2", title: "Template Fingerprinting (v2)", description: "Alias.", category: "technical", requires: [], aliasOf: "template-fingerprint" },
+  { slug: "scraper", title: "Kiểm tra website", description: "Audit SEO on-page, heading tree, link profile và mật độ từ khóa.", category: "technical", requires: [], worksOffline: true },
 
   // ---------- links
   { slug: "citation-link-finder", title: "Citation Link Finder", description: "Tìm link citation cho bài viết.", category: "links", requires: ["serpapi"] },

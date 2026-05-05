@@ -1,6 +1,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
+import { imageSize } from 'image-size';
+import { chromium } from 'playwright';
+import { PLAYWRIGHT_HEADLESS, PLAYWRIGHT_LAUNCH_ARGS } from '@/shared/lib/playwright/config';
 
 // ---------------------------------------------------------
 // SEO SCRAPER CONSTANTS & HELPERS
@@ -10,6 +13,67 @@ const VIETNAMESE_STOP_WORDS = new Set([
   "this", "that", "and", "the", "for", "with", "you", "are", "our", "your", "from",
   "là", "của", "những", "các", "một", "cho", "với", "không", "thì", "mà", "như", "khi", "từ", "này", "được", "về", "vào", "ra", "đến", "ở", "tại", "sự", "thêm", "lại", "chi", "tiết", "trang", "bài", "viết", "xem", "người", "nhất", "hơn", "nào", "đó", "đây", "rất", "hay", "cũng", "đang", "qua", "trên", "dưới", "ngoài", "phần", "website", "tổng", "quan", "công", "ty", "dịch", "vụ", "giá", "rẻ", "uy", "tín", "chất", "lượng"
 ]);
+const VIETNAMESE_FILLER_WORDS = new Set([
+  'và', 'hoặc', 'là', 'của', 'cho', 'với', 'trong', 'trên', 'dưới', 'tại', 'được', 'những', 'các', 'một', 'này', 'kia'
+]);
+
+type HeadingNode = {
+  tag: 'h1' | 'h2' | 'h3';
+  text: string;
+  children: HeadingNode[];
+  isSkippedLevel?: boolean;
+};
+
+type SeoIssue = {
+  id: string;
+  severity: 'error' | 'warning' | 'info';
+  category: string;
+  message: string;
+};
+
+const buildHeadingTree = (headings: { tag: string; text: string }[]): HeadingNode[] => {
+  const tree: HeadingNode[] = [];
+  let currentH1: HeadingNode | null = null;
+  let currentH2: HeadingNode | null = null;
+
+  for (const heading of headings) {
+    if (!['h1', 'h2', 'h3'].includes(heading.tag) || !heading.text) continue;
+    const level = Number(heading.tag.slice(1));
+    const node: HeadingNode = {
+      tag: heading.tag as HeadingNode['tag'],
+      text: heading.text,
+      children: [],
+    };
+
+    if (level === 1) {
+      tree.push(node);
+      currentH1 = node;
+      currentH2 = null;
+      continue;
+    }
+
+    if (level === 2) {
+      if (!currentH1) {
+        node.isSkippedLevel = true;
+        tree.push(node);
+      } else {
+        currentH1.children.push(node);
+      }
+      currentH2 = node;
+      continue;
+    }
+
+    if (!currentH2) {
+      node.isSkippedLevel = true;
+      if (currentH1) currentH1.children.push(node);
+      else tree.push(node);
+      continue;
+    }
+    currentH2.children.push(node);
+  }
+
+  return tree;
+};
 
 const formatKeyword = (kw: string) => {
     // Làm sạch các ký tự rác do AI có thể trả về (ngoặc kép, chấm cuối câu)
@@ -22,6 +86,212 @@ const formatKeyword = (kw: string) => {
     if (clean === "Missing") return clean;
     // Viết hoa chữ cái đầu và GIỮ NGUYÊN phần còn lại (để không hỏng danh từ riêng Nha Trang, SEO...)
     return clean.charAt(0).toUpperCase() + clean.slice(1);
+};
+
+const extractPhraseKeywordsFallback = (rawText: string, topN = 10): Array<{ word: string; count: number; density: string }> => {
+  const wordsOnly = rawText
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const tokens = wordsOnly
+    .split(' ')
+    .filter((w) => w.length > 1 && !VIETNAMESE_STOP_WORDS.has(w) && Number.isNaN(Number(w)));
+
+  if (!tokens.length) return [];
+
+  const phraseFreq: Record<string, number> = {};
+  const maxN = 4;
+  const minN = 2;
+  for (let i = 0; i < tokens.length; i++) {
+    for (let n = minN; n <= maxN; n++) {
+      if (i + n > tokens.length) continue;
+      const phraseTokens = tokens.slice(i, i + n);
+      const fillerCount = phraseTokens.filter((t) => VIETNAMESE_FILLER_WORDS.has(t)).length;
+      if (fillerCount > Math.floor(n / 2)) continue;
+      const phrase = phraseTokens.join(' ').trim();
+      if (phrase.length < 6) continue;
+      phraseFreq[phrase] = (phraseFreq[phrase] || 0) + 1;
+    }
+  }
+
+  const phraseEntries = Object.entries(phraseFreq)
+    .filter(([, count]) => count >= 2)
+    .sort((a, b) => b[1] - a[1]);
+
+  // Keep longer phrases first when counts are similar.
+  phraseEntries.sort((a, b) => {
+    if (b[1] !== a[1]) return b[1] - a[1];
+    return b[0].split(' ').length - a[0].split(' ').length;
+  });
+
+  const selected: Array<[string, number]> = [];
+  for (const [phrase, count] of phraseEntries) {
+    const overlaps = selected.some(([picked]) => picked.includes(phrase) || phrase.includes(picked));
+    if (overlaps) continue;
+    selected.push([phrase, count]);
+    if (selected.length >= topN) break;
+  }
+
+  const finalPicked = selected.length
+    ? selected
+    : Object.entries(phraseFreq).sort((a, b) => b[1] - a[1]).slice(0, topN);
+  const total = finalPicked.reduce((sum, [, count]) => sum + count, 0) || 1;
+
+  return finalPicked.map(([word, count]) => ({
+    word,
+    count,
+    density: ((count / total) * 100).toFixed(2) + '%',
+  }));
+};
+
+const detectSeoIssues = (params: {
+  statusCode: number;
+  title: string;
+  description: string;
+  h1: string;
+  canonical: string;
+  robots: string;
+  wordCount: number;
+  responseTimeMs: number;
+  imagesMissingAlt: number;
+  headingCounts: Record<string, number>;
+  linkStats: { internal: number; external: number; nofollow: number; dofollow: number; unknown?: number };
+}): SeoIssue[] => {
+  const {
+    statusCode,
+    title,
+    description,
+    h1,
+    canonical,
+    robots,
+    wordCount,
+    responseTimeMs,
+    imagesMissingAlt,
+    headingCounts,
+    linkStats,
+  } = params;
+  const issues: SeoIssue[] = [];
+
+  if (statusCode >= 400) {
+    issues.push({
+      id: 'http-error',
+      severity: 'error',
+      category: 'HTTP',
+      message: `Trang trả về mã lỗi ${statusCode}.`,
+    });
+  } else if (statusCode >= 300) {
+    issues.push({
+      id: 'http-redirect',
+      severity: 'info',
+      category: 'HTTP',
+      message: `Trang trả về chuyển hướng ${statusCode}.`,
+    });
+  }
+
+  if (!title) {
+    issues.push({ id: 'title-missing', severity: 'error', category: 'Title', message: 'Thiếu thẻ title.' });
+  } else {
+    if (title.length > 60) {
+      issues.push({
+        id: 'title-too-long',
+        severity: 'warning',
+        category: 'Title',
+        message: `Title dài (${title.length} ký tự), nên <= 60.`,
+      });
+    } else if (title.length < 20) {
+      issues.push({
+        id: 'title-too-short',
+        severity: 'info',
+        category: 'Title',
+        message: `Title ngắn (${title.length} ký tự), có thể chưa đủ ngữ cảnh SEO.`,
+      });
+    }
+  }
+
+  if (!description) {
+    issues.push({
+      id: 'meta-description-missing',
+      severity: 'warning',
+      category: 'Meta Description',
+      message: 'Thiếu meta description.',
+    });
+  } else if (description.length > 160) {
+    issues.push({
+      id: 'meta-description-too-long',
+      severity: 'info',
+      category: 'Meta Description',
+      message: `Meta description dài (${description.length} ký tự), nên <= 160.`,
+    });
+  }
+
+  if (!h1) {
+    issues.push({ id: 'h1-missing', severity: 'error', category: 'Heading', message: 'Thiếu thẻ H1.' });
+  }
+  if ((headingCounts.h1 || 0) > 1) {
+    issues.push({
+      id: 'h1-multiple',
+      severity: 'warning',
+      category: 'Heading',
+      message: `Có nhiều H1 (${headingCounts.h1}).`,
+    });
+  }
+
+  if (!canonical) {
+    issues.push({
+      id: 'canonical-missing',
+      severity: 'warning',
+      category: 'Canonical',
+      message: 'Thiếu canonical URL.',
+    });
+  }
+
+  if (robots.toLowerCase().includes('noindex')) {
+    issues.push({
+      id: 'robots-noindex',
+      severity: 'info',
+      category: 'Indexability',
+      message: 'Trang đang đặt noindex.',
+    });
+  }
+
+  if (wordCount > 0 && wordCount < 200) {
+    issues.push({
+      id: 'thin-content',
+      severity: 'warning',
+      category: 'Content',
+      message: `Nội dung mỏng (${wordCount} từ).`,
+    });
+  }
+
+  if (responseTimeMs > 3000) {
+    issues.push({
+      id: 'slow-response',
+      severity: 'warning',
+      category: 'Performance',
+      message: `Phản hồi chậm (${responseTimeMs}ms).`,
+    });
+  }
+
+  if (imagesMissingAlt > 0) {
+    issues.push({
+      id: 'images-missing-alt',
+      severity: imagesMissingAlt >= 5 ? 'warning' : 'info',
+      category: 'Images',
+      message: `${imagesMissingAlt} ảnh thiếu alt.`,
+    });
+  }
+
+  if (linkStats.external > 0 && linkStats.nofollow === 0 && linkStats.dofollow > 0) {
+    issues.push({
+      id: 'external-links-all-dofollow',
+      severity: 'info',
+      category: 'Links',
+      message: 'Có external links dofollow, nên rà soát rủi ro outbound link.',
+    });
+  }
+
+  return issues;
 };
 
 
@@ -162,6 +432,124 @@ export async function POST(req: NextRequest) {
       }
     };
 
+    const enrichImageMeta = async (src: string): Promise<{ sizeKb: number; width: number | null; height: number | null }> => {
+      try {
+        const imageRes = await fetchWithRetry(
+          src,
+          {
+            method: 'GET',
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+              Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+              Referer: 'https://www.google.com/',
+            },
+            redirect: 'follow',
+            next: { revalidate: 0 },
+          },
+          0,
+        );
+        if (!imageRes.ok) return { sizeKb: 0, width: null, height: null };
+
+        const buffer = Buffer.from(await imageRes.arrayBuffer());
+        const rawLen = Number(imageRes.headers.get('content-length') || 0);
+        const sizeKb = Math.max(1, Math.round((rawLen || buffer.byteLength) / 1024));
+
+        try {
+          const parsed = imageSize(buffer);
+          return {
+            sizeKb,
+            width: parsed.width || null,
+            height: parsed.height || null,
+          };
+        } catch {
+          return { sizeKb, width: null, height: null };
+        }
+      } catch {
+        return { sizeKb: 0, width: null, height: null };
+      }
+    };
+
+    const collectImagesWithPlaywright = async (targetUrl: string): Promise<Array<{ src: string; alt: string; title: string }>> => {
+      let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
+      try {
+        browser = await chromium.launch({
+          headless: PLAYWRIGHT_HEADLESS,
+          args: PLAYWRIGHT_LAUNCH_ARGS,
+        });
+        const page = await browser.newPage({
+          viewport: { width: 1366, height: 900 },
+          userAgent:
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        });
+        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await page.waitForTimeout(1200);
+        await page.evaluate(async () => {
+          window.scrollTo(0, document.body.scrollHeight);
+          await new Promise((resolve) => setTimeout(resolve, 700));
+          window.scrollTo(0, 0);
+        });
+        await page.waitForTimeout(700);
+        const images = await page.evaluate(() => {
+          const out: Array<{ src: string; alt: string; title: string }> = [];
+          const pickTitle = (el: Element): string => {
+            const v =
+              el.getAttribute('title') ||
+              el.getAttribute('data-title') ||
+              el.getAttribute('aria-label') ||
+              el.getAttribute('data-caption') ||
+              '';
+            return v.trim();
+          };
+
+          document.querySelectorAll('img').forEach((img) => {
+            const src =
+              (img as HTMLImageElement).currentSrc ||
+              img.getAttribute('src') ||
+              img.getAttribute('data-src') ||
+              img.getAttribute('data-lazy-src') ||
+              img.getAttribute('data-original') ||
+              img.getAttribute('data-srcset')?.split(' ')[0] ||
+              '';
+            if (!src || src.startsWith('data:')) return;
+            out.push({
+              src,
+              alt: (img.getAttribute('alt') || '').trim(),
+              title: pickTitle(img),
+            });
+          });
+
+          document.querySelectorAll('[style*="background-image"]').forEach((el) => {
+            const style = (el as HTMLElement).style?.backgroundImage || '';
+            const match = style.match(/url\(['"]?([^'"]+)['"]?\)/);
+            if (!match?.[1] || match[1].startsWith('data:')) return;
+            out.push({ src: match[1], alt: 'BG Image', title: pickTitle(el) });
+          });
+
+          document.querySelectorAll('picture').forEach((pic) => {
+            if (pic.querySelector('img')) return;
+            const source = pic.querySelector('source');
+            const srcset = source?.getAttribute('srcset') || '';
+            const first = srcset.split(',')[0]?.trim().split(' ')[0];
+            if (!first || first.startsWith('data:')) return;
+            out.push({ src: first, alt: '', title: pickTitle(pic) });
+          });
+
+          return out;
+        });
+        return images.map((img) => {
+          try {
+            return { ...img, src: new URL(img.src, targetUrl).href };
+          } catch {
+            return img;
+          }
+        });
+      } catch {
+        return [];
+      } finally {
+        if (browser) await browser.close();
+      }
+    };
+
     const scrapeUrl = async (url: string, aiSettings?: any) => {
       try {
         const startTime = performance.now();
@@ -225,8 +613,7 @@ export async function POST(req: NextRequest) {
         let totalImages = 0;
         let imagesMissingAlt = 0;
         let imagesMissingTitle = 0;
-        const images: { src: string; alt: string; title: string }[] = [];
-        const seenImageUrls = new Set<string>();
+        let images: { src: string; alt: string; title: string; sizeKb: number; width: number | null; height: number | null }[] = [];
 
         $('img').each((i, el) => {
           totalImages++;
@@ -234,8 +621,14 @@ export async function POST(req: NextRequest) {
           const alt = $(el).attr('alt') || '';
           if (alt.trim() === '') imagesMissingAlt++;
           
-          const titleAttr = $(el).attr('title') || '';
-          if (titleAttr.trim() === '') imagesMissingTitle++;
+          const titleAttr =
+            $(el).attr('title') ||
+            $(el).attr('data-title') ||
+            $(el).attr('aria-label') ||
+            $(el).attr('data-caption') ||
+            '';
+          // Treat image title as missing only when BOTH title and alt are empty.
+          if (titleAttr.trim() === '' && alt.trim() === '') imagesMissingTitle++;
           
           // Comprehensive Lazy-load detection
           const src = $(el).attr('src') || 
@@ -248,14 +641,10 @@ export async function POST(req: NextRequest) {
           if (src && !src.startsWith('data:')) {
             try {
               const fullSrc = new URL(src, url).href;
-              if (!seenImageUrls.has(fullSrc)) {
-                seenImageUrls.add(fullSrc);
-                images.push({ src: fullSrc, alt, title: titleAttr });
-              }
+              images.push({ src: fullSrc, alt, title: titleAttr, sizeKb: 0, width: null, height: null });
             } catch (e) {
-               if (src.startsWith('http') && !seenImageUrls.has(src)) {
-                 seenImageUrls.add(src);
-                 images.push({ src, alt, title: titleAttr });
+               if (src.startsWith('http')) {
+                 images.push({ src, alt, title: titleAttr, sizeKb: 0, width: null, height: null });
                }
             }
           }
@@ -267,14 +656,13 @@ export async function POST(req: NextRequest) {
           const match = style.match(/background-image:\s*url\(['"]?([^'"]+)['"]?\)/);
           if (match && match[1]) {
             const bgUrl = match[1];
-            if (!bgUrl.startsWith('data:') && !seenImageUrls.has(bgUrl)) {
+            if (!bgUrl.startsWith('data:')) {
               totalImages++;
-              seenImageUrls.add(bgUrl);
               try {
                 const fullBgUrl = new URL(bgUrl, url).href;
-                images.push({ src: fullBgUrl, alt: 'BG Image', title: '' });
+                images.push({ src: fullBgUrl, alt: 'BG Image', title: '', sizeKb: 0, width: null, height: null });
               } catch(e) {
-                images.push({ src: bgUrl, alt: 'BG Image', title: '' });
+                images.push({ src: bgUrl, alt: 'BG Image', title: '', sizeKb: 0, width: null, height: null });
               }
             }
           }
@@ -288,56 +676,106 @@ export async function POST(req: NextRequest) {
            }
         });
 
+        // Prefer Playwright-rendered DOM for image completeness (human/bot visible),
+        // fallback to static Cheerio extraction if Playwright is unavailable.
+        const playwrightImages = await collectImagesWithPlaywright(url);
+        if (playwrightImages.length) {
+          images = playwrightImages.map((img) => ({
+            src: img.src,
+            alt: img.alt || '',
+            title: img.title || '',
+            sizeKb: 0,
+            width: null,
+            height: null,
+          }));
+          totalImages = images.length;
+          imagesMissingAlt = images.filter((img) => !img.alt.trim()).length;
+          imagesMissingTitle = images.filter((img) => !img.title.trim() && !img.alt.trim()).length;
+        }
+
+        // Enrich image rows with file size and dimensions for UI details modal.
+        const IMAGE_META_LIMIT = 20;
+        for (const img of images.slice(0, IMAGE_META_LIMIT)) {
+          const meta = await enrichImageMeta(img.src);
+          img.sizeKb = meta.sizeKb;
+          img.width = meta.width;
+          img.height = meta.height;
+        }
+
         // --- PROFESSIONAL SEO LINK AUDIT ENGINE (V3.0) ---
-        let internalLinks = 0;
-        let externalLinks = 0;
-        let nofollowLinks = 0;
-        let dofollowLinks = 0;
-        const internalUrls = new Set<string>();
-        const externalUrls = new Set<string>();
+        const linkBuckets = {
+          anchor: {
+            internal: 0,
+            external: 0,
+            nofollow: 0,
+            dofollow: 0,
+            unknown: 0,
+            internalUrls: new Set<string>(),
+            externalUrls: new Set<string>(),
+          },
+          resource: {
+            internal: 0,
+            external: 0,
+            nofollow: 0,
+            dofollow: 0,
+            unknown: 0,
+            internalUrls: new Set<string>(),
+            externalUrls: new Set<string>(),
+          },
+        };
         const externalDomains = new Set<string>();
         const affiliateDomains = new Set<string>();
         const baseHostname = new URL(url).hostname.replace('www.', '');
 
-        const processUrl = (hrefRaw: string, rel: string = '') => {
+        const normalizeRelTokens = (relRaw: string): Set<string> => {
+          return new Set((relRaw || '').toLowerCase().split(/\s+/).map((token) => token.trim()).filter(Boolean));
+        };
+
+        const processUrl = (hrefRaw: string, rel: string = '', bucket: 'anchor' | 'resource' = 'anchor') => {
           const href = hrefRaw.trim();
           if (!href) return;
+          const relTokens = normalizeRelTokens(rel);
+          const hasRel = relTokens.size > 0;
           try {
             if (href.startsWith('#') || href.startsWith('javascript:')) {
-              internalLinks++;
+              linkBuckets[bucket].internal++;
               return;
             }
             if (href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('sms:')) {
-              externalLinks++;
+              linkBuckets[bucket].external++;
+              if (hasRel && relTokens.has('nofollow')) linkBuckets[bucket].nofollow++;
+              else if (hasRel) linkBuckets[bucket].dofollow++;
+              else linkBuckets[bucket].unknown++;
               return;
             }
             
             const absoluteUrl = new URL(href, url);
             const isInternal = absoluteUrl.hostname.replace('www.', '') === baseHostname;
             if (isInternal) {
-              internalLinks++;
-              internalUrls.add(absoluteUrl.href);
+              linkBuckets[bucket].internal++;
+              linkBuckets[bucket].internalUrls.add(absoluteUrl.href);
             } else {
-              externalLinks++;
-              externalUrls.add(absoluteUrl.href);
+              linkBuckets[bucket].external++;
+              linkBuckets[bucket].externalUrls.add(absoluteUrl.href);
               const domain = absoluteUrl.hostname.toLowerCase().replace('www.', '');
               externalDomains.add(domain);
               if (COMMON_AFFILIATE_PATTERNS.some(p => domain.includes(p))) affiliateDomains.add(domain);
             }
-            if (rel.includes('nofollow')) nofollowLinks++;
-            else dofollowLinks++;
+            if (hasRel && relTokens.has('nofollow')) linkBuckets[bucket].nofollow++;
+            else if (hasRel) linkBuckets[bucket].dofollow++;
+            else linkBuckets[bucket].unknown++;
           } catch (e) {}
         };
 
         // 1. Anchor Tags (<a>) - Main Navigation
         $('a').each((i, el) => {
-          processUrl($(el).attr('href') || '', $(el).attr('rel') || '');
+          processUrl($(el).attr('href') || '', $(el).attr('rel') || '', 'anchor');
         });
 
         // 2-7. Resource Links
         $('link, form, iframe, img, script, area').each((i, el) => {
           const href = $(el).attr('href') || $(el).attr('src') || $(el).attr('action') || $(el).attr('data-src') || '';
-          if (href) processUrl(href);
+          if (href) processUrl(href, $(el).attr('rel') || '', 'resource');
         });
 
         // Schema JSON-LD & Date Extraction from Schema
@@ -394,6 +832,7 @@ export async function POST(req: NextRequest) {
           headingCounts[tag]++;
           headings.push({ tag, text: $(el).text().trim() });
         });
+        const headingTree = buildHeadingTree(headings);
 
         // Hreflang
         const hreflangs: { lang: string; href: string }[] = [];
@@ -559,7 +998,7 @@ export async function POST(req: NextRequest) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url, html, title, description }),
                 // Moderate timeout for keyword analysis
-                signal: AbortSignal.timeout(5000)
+                signal: AbortSignal.timeout(12000)
             });
 
             if (pyRes.ok) {
@@ -572,17 +1011,7 @@ export async function POST(req: NextRequest) {
             }
         } catch (e) {
             console.warn(`[SCRAPE] Falling back to basic NLP for ${url}:`, (e as Error).message);
-            const wordsOnly = bodyTextRaw.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ');
-            const filteredWords = wordsOnly.split(/\s+/).filter(w => w.length > 2 && !VIETNAMESE_STOP_WORDS.has(w) && isNaN(parseInt(w)));
-            const wordFreq: Record<string, number> = {};
-            filteredWords.forEach(w => { wordFreq[w] = (wordFreq[w] || 0) + 1; });
-            
-            finalTopKeywords = Object.entries(wordFreq)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 10)
-                .map(([word, count]) => ({ 
-                    word, count, density: ((count / Math.max(1, filteredWords.length)) * 100).toFixed(2) + '%' 
-                }));
+            finalTopKeywords = extractPhraseKeywordsFallback(cleanBodyText || bodyTextRaw, 10);
         }
 
         // --- Advanced Date Extraction (Meta + Schema) ---
@@ -634,6 +1063,7 @@ export async function POST(req: NextRequest) {
         // 3. Technical & Control (Group 3)
         const pageSizeKB = Math.round(Buffer.byteLength(html) / 1024);
         const responseTimeMs = Math.round(endTime - startTime);
+        const totalImageSizeKB = images.reduce((sum, img) => sum + (img.sizeKb || 0), 0);
 
         const favicon = $('link[rel="icon"], link[rel="shortcut icon"]').attr('href') || '/favicon.ico';
 
@@ -665,20 +1095,43 @@ export async function POST(req: NextRequest) {
             total: totalImages, 
             missingAlt: imagesMissingAlt, 
             missingTitle: imagesMissingTitle, 
-            sizeKB: 0 
+            sizeKB: totalImageSizeKB 
           },
           images, // Full array of image objects
           linkStats: { 
-            internal: internalLinks, 
-            external: externalLinks, 
-            nofollow: nofollowLinks, 
-            dofollow: dofollowLinks 
+            internal: linkBuckets.anchor.internal + linkBuckets.resource.internal,
+            external: linkBuckets.anchor.external + linkBuckets.resource.external,
+            nofollow: linkBuckets.anchor.nofollow + linkBuckets.resource.nofollow,
+            dofollow: linkBuckets.anchor.dofollow + linkBuckets.resource.dofollow,
+            unknown: linkBuckets.anchor.unknown + linkBuckets.resource.unknown,
+            anchor: {
+              internal: linkBuckets.anchor.internal,
+              external: linkBuckets.anchor.external,
+              nofollow: linkBuckets.anchor.nofollow,
+              dofollow: linkBuckets.anchor.dofollow,
+              unknown: linkBuckets.anchor.unknown,
+            },
+            resource: {
+              internal: linkBuckets.resource.internal,
+              external: linkBuckets.resource.external,
+              nofollow: linkBuckets.resource.nofollow,
+              dofollow: linkBuckets.resource.dofollow,
+              unknown: linkBuckets.resource.unknown,
+            },
           },
           collectedLinks: {
-            internal: Array.from(internalUrls),
-            external: Array.from(externalUrls)
+            internal: Array.from(new Set([...linkBuckets.anchor.internalUrls, ...linkBuckets.resource.internalUrls])),
+            external: Array.from(new Set([...linkBuckets.anchor.externalUrls, ...linkBuckets.resource.externalUrls])),
+            anchorLinks: {
+              internal: Array.from(linkBuckets.anchor.internalUrls),
+              external: Array.from(linkBuckets.anchor.externalUrls),
+            },
+            resourceLinks: {
+              internal: Array.from(linkBuckets.resource.internalUrls),
+              external: Array.from(linkBuckets.resource.externalUrls),
+            },
           },
-          totalLinks: internalLinks + externalLinks,
+          totalLinks: linkBuckets.anchor.internal + linkBuckets.anchor.external + linkBuckets.resource.internal + linkBuckets.resource.external,
           publishDate,
           wordCount, 
           urlDepth,
@@ -686,12 +1139,32 @@ export async function POST(req: NextRequest) {
           pageSizeKB,
           responseTimeMs,
           headings, 
+          headingTree,
           headingCounts, 
           schemas, 
           schemaTypes: Array.from(new Set(schemaTypes)),
           topKeywords: finalTopKeywords,
           keywordsInTitle,
           keywordsInMeta,
+          issues: detectSeoIssues({
+            statusCode,
+            title,
+            description,
+            h1,
+            canonical,
+            robots,
+            wordCount,
+            responseTimeMs,
+            imagesMissingAlt,
+            headingCounts,
+            linkStats: {
+              internal: linkBuckets.anchor.internal + linkBuckets.resource.internal,
+              external: linkBuckets.anchor.external + linkBuckets.resource.external,
+              nofollow: linkBuckets.anchor.nofollow + linkBuckets.resource.nofollow,
+              dofollow: linkBuckets.anchor.dofollow + linkBuckets.resource.dofollow,
+              unknown: linkBuckets.anchor.unknown + linkBuckets.resource.unknown,
+            },
+          }),
           textPreview,
           status: 'success' 
         };
@@ -728,7 +1201,7 @@ export async function POST(req: NextRequest) {
           twitter: {},
           imageStats: { total: 0, missingAlt: 0, missingTitle: 0, sizeKB: 0 },
           linkStats: { internal: 0, external: 0, nofollow: 0, dofollow: 0 },
-          collectedLinks: { internal: [], external: [] },
+          collectedLinks: { internal: [], external: [], anchorLinks: { internal: [], external: [] }, resourceLinks: { internal: [], external: [] } },
           totalLinks: 0,
           wordCount: 0,
           urlDepth: 0,
@@ -737,12 +1210,21 @@ export async function POST(req: NextRequest) {
           pageSizeKB: 0,
           responseTimeMs: 0,
           headings: [],
+          headingTree: [],
           headingCounts: { h1: 0, h2: 0, h3: 0, h4: 0, h5: 0, h6: 0 },
           schemas: [],
           schemaTypes: [],
           topKeywords: [],
           keywordsInTitle: 0,
           keywordsInMeta: 0,
+          issues: [
+            {
+              id: 'crawl-failed',
+              severity: 'error',
+              category: 'Crawler',
+              message: 'Không thể cào dữ liệu từ URL này.',
+            },
+          ],
           status: 'error' 
         };
       }
