@@ -363,9 +363,9 @@ const TrendDetailsModal = ({ keyword, onClose }: { keyword: KeywordResult; onClo
                    <div className="px-2 py-0.5 bg-amber-500/20 border border-amber-500/30 rounded text-[8px] font-black text-amber-500 uppercase animate-pulse">Dự báo AI</div>
                 )}
               </div>
-              <h2 className="text-2xl font-black text-white uppercase">{keyword.keyword}</h2>
+              <h2 className="text-2xl font-black uppercase" style={{ color: 'var(--text-primary)' }}>{keyword.keyword}</h2>
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full transition-colors" style={{ color: 'var(--text-muted)' }} onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')} onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}>
+            <button onClick={onClose} className="p-2 hover:bg-[color:var(--hover-bg)] rounded-full transition-colors" style={{ color: 'var(--text-muted)' }} onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')} onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}>
                <ChevronUp size={24} className="rotate-180" />
             </button>
           </div>
@@ -454,7 +454,7 @@ const MindmapModal = ({ data, onClose }: { data: MindmapSeedNode[]; onClose: () 
           </div>
           <button
             onClick={onClose}
-            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 transition-all hover:bg-white/10 hover:text-white"
+            className="rounded-xl border px-4 py-2 text-[10px] font-black uppercase tracking-[0.2em] transition-all hover:bg-[color:var(--active-bg)] border-[color:var(--border-color)] bg-[color:var(--hover-bg)] text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]"
           >
             Đóng
           </button>
@@ -469,7 +469,14 @@ const MindmapModal = ({ data, onClose }: { data: MindmapSeedNode[]; onClose: () 
                 <div className="relative min-w-[1320px]">
                   <div className="flex items-start gap-10">
                     <div className="sticky left-0 top-0 z-10 flex w-[240px] shrink-0 items-center gap-5 rounded-[28px] border border-white/10 bg-slate-950/95 px-5 py-6 shadow-[0_0_28px_rgba(15,23,42,0.7)] backdrop-blur-sm">
-                      <div className="flex min-h-[88px] flex-1 items-center justify-center rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_top,rgba(99,102,241,0.08),rgba(0,0,0,0.85))] px-4 py-3 text-center text-xs font-black uppercase tracking-widest text-white">
+                      <div
+                        className="flex min-h-[88px] flex-1 items-center justify-center rounded-[22px] border px-4 py-3 text-center text-xs font-black uppercase tracking-widest"
+                        style={{
+                          color: 'var(--text-primary)',
+                          borderColor: 'var(--border-color)',
+                          backgroundColor: 'var(--hover-bg)',
+                        }}
+                      >
                         {seedNode.seed_keyword}
                       </div>
                       <div className="h-px flex-1 bg-gradient-to-r from-indigo-400/80 to-transparent" />
@@ -516,7 +523,7 @@ const MindmapModal = ({ data, onClose }: { data: MindmapSeedNode[]; onClose: () 
                                         <div
                                           key={`${k}-${kIdx}`}
                                           title={k}
-                                          className="truncate rounded-lg border border-white/5 bg-white/5 px-2.5 py-2 text-[9px] text-slate-300 transition-all hover:border-indigo-400/40 hover:bg-indigo-500/10 hover:text-white"
+                                          className="truncate rounded-lg border px-2.5 py-2 text-[9px] transition-all hover:border-indigo-400/40 hover:bg-indigo-500/10 border-[color:var(--border-color)] bg-[color:var(--hover-bg)] text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]"
                                         >
                                           {k}
                                         </div>
@@ -581,7 +588,7 @@ const VirtualKeywordList = ({ results, isSiloMode, isCpcEnabled, onKeywordClick,
                   </>
                 )}
                 <div className={isSiloMode ? "col-span-2" : isCpcEnabled ? "col-span-4" : "col-span-5"}>
-                  <div className="font-bold text-slate-300 text-sm group-hover:text-white transition-colors truncate" title={r.keyword}>{r.keyword}</div>
+                  <div className="font-bold text-[color:var(--text-secondary)] text-sm group-hover:text-[color:var(--text-primary)] transition-colors truncate" title={r.keyword}>{r.keyword}</div>
                 </div>
                 <div className="col-span-2 flex justify-center">
                     <TrendSparkline data={r.trend?.history || []} growth={r.trend?.growth || 0} />
@@ -606,14 +613,14 @@ const VirtualKeywordList = ({ results, isSiloMode, isCpcEnabled, onKeywordClick,
 const Pagination = ({ currentPage, totalPages, onPageChange, totalItems }: { currentPage: number; totalPages: number; onPageChange: (page: number) => void; totalItems: number }) => {
   const ITEMS_PER_PAGE = 50;
   return (
-    <div className="flex items-center justify-between px-6 py-4 border-t border-white/5 bg-black/20">
-      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+    <div className="flex items-center justify-between px-6 py-4 border-t bg-[color:var(--tool-surface-subtle)]" style={{ borderColor: 'var(--border-color)' }}>
+      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
         Hiển thị {Math.min((currentPage - 1) * ITEMS_PER_PAGE + 1, totalItems)} - {Math.min(currentPage * ITEMS_PER_PAGE, totalItems)} / {totalItems} từ khóa
       </span>
       <div className="flex items-center gap-2">
-        <button onClick={() => onPageChange(Math.max(1, currentPage - 1))} disabled={currentPage === 1} className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"><ChevronUp size={16} className="rotate-[-90deg]" /></button>
-        <span className="text-sm font-black text-white px-4">{currentPage} / {totalPages}</span>
-        <button onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages} className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"><ChevronDown size={16} className="rotate-[-90deg]" /></button>
+        <button onClick={() => onPageChange(Math.max(1, currentPage - 1))} disabled={currentPage === 1} className="px-3 py-2 rounded-lg border disabled:opacity-30 disabled:cursor-not-allowed transition-all bg-[color:var(--hover-bg)] border-[color:var(--border-color)] text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]"><ChevronUp size={16} className="rotate-[-90deg]" /></button>
+        <span className="text-sm font-black px-4" style={{ color: 'var(--text-primary)' }}>{currentPage} / {totalPages}</span>
+        <button onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages} className="px-3 py-2 rounded-lg border disabled:opacity-30 disabled:cursor-not-allowed transition-all bg-[color:var(--hover-bg)] border-[color:var(--border-color)] text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]"><ChevronDown size={16} className="rotate-[-90deg]" /></button>
       </div>
     </div>
   );
@@ -1512,7 +1519,7 @@ export default function DemoKeywordsPage() {
                           </>
                         )}
                         <div className={isSiloMode ? "col-span-2" : isCpcEnabled ? "col-span-4" : "col-span-5"}>
-                          <div className="font-bold text-slate-300 text-sm group-hover:text-white transition-colors truncate" title={r.keyword}>{r.keyword}</div>
+                          <div className="font-bold text-[color:var(--text-secondary)] text-sm group-hover:text-[color:var(--text-primary)] transition-colors truncate" title={r.keyword}>{r.keyword}</div>
                         </div>
                         <div className="col-span-2 flex justify-center">
                            <TrendSparkline data={r.trend?.history || []} growth={r.trend?.growth || 0} />

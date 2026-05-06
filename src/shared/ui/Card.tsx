@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { motion, Transition } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 interface CardProps {
   children: React.ReactNode;
@@ -22,14 +22,17 @@ export function Card({
 }: CardProps) {
   const Component = animate ? motion.div : 'div';
   
-  const animationProps = animate ? {
-    initial: { opacity: 0, y: 20 },
-    animate: { opacity: 1, y: 0 },
-    transition: { 
-      duration: 0.5, 
-      delay
-    }
-  } : {};
+  const animationProps = animate
+    ? {
+        initial: { opacity: 0, y: 8 },
+        animate: { opacity: 1, y: 0 },
+        transition: {
+          duration: 0.18,
+          delay,
+          ease: [0.25, 0.46, 0.45, 0.94],
+        },
+      }
+    : {};
 
   return (
     <Component
@@ -42,7 +45,7 @@ export function Card({
       style={style}
     >
       {/* Subtle Inner Glow */}
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0 group-hover/card:opacity-100 transition-opacity duration-700" />
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0 transition-opacity duration-300 group-hover/card:opacity-100" />
       
       {/* Content Rendering */}
       <div className="relative z-10 w-full h-full">
@@ -50,7 +53,7 @@ export function Card({
       </div>
       
       {/* Subtle Corner Accents */}
-      <div className="absolute bottom-4 right-4 w-12 h-12 rounded-full bg-indigo-500/5 blur-2xl pointer-events-none group-hover/card:bg-indigo-500/10 transition-colors duration-700" />
+      <div className="pointer-events-none absolute bottom-4 right-4 h-12 w-12 rounded-full bg-indigo-500/5 blur-2xl transition-colors duration-300 group-hover/card:bg-indigo-500/10" />
     </Component>
   );
 }

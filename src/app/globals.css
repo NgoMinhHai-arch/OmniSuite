@@ -45,6 +45,27 @@
   --hover-bg: rgba(255, 255, 255, 0.05);
   --scrollbar-thumb: #1e293b;
   --scrollbar-thumb-hover: #334155;
+
+  /* Page chrome (aligned with body) */
+  --bg-primary: var(--body-bg);
+
+  /* Tool / dense dashboard surfaces (dark defaults) */
+  --tool-panel-bg: rgba(139, 92, 246, 0.06);
+  --tool-panel-bg-strong: rgba(139, 92, 246, 0.12);
+  --tool-panel-border: rgba(167, 139, 250, 0.25);
+  --tool-input-bg: rgba(0, 0, 0, 0.2);
+  --tool-input-border: rgba(255, 255, 255, 0.1);
+  --tool-input-text: #e2e8f0;
+  --tool-placeholder: #94a3b8;
+  --tool-violet-heading: #c4b5fd;
+  --tool-violet-body: #ede9fe;
+  --tool-violet-muted: rgba(196, 181, 253, 0.85);
+  --tool-empty-icon: rgba(167, 139, 250, 0.65);
+  --tool-surface-subtle: rgba(255, 255, 255, 0.03);
+  --tool-surface-border: rgba(255, 255, 255, 0.1);
+  --tool-chip-inactive-bg: rgba(255, 255, 255, 0.03);
+  --tool-chip-inactive-text: #cbd5e1;
+  --tool-on-fuchsia-tint: #fae8ff;
 }
 
 .light {
@@ -87,6 +108,25 @@
   --hover-bg: rgba(0, 0, 0, 0.03);
   --scrollbar-thumb: #cbd5e1;
   --scrollbar-thumb-hover: #94a3b8;
+
+  --bg-primary: var(--body-bg);
+
+  --tool-panel-bg: rgba(139, 92, 246, 0.07);
+  --tool-panel-bg-strong: rgba(139, 92, 246, 0.14);
+  --tool-panel-border: rgba(109, 40, 217, 0.22);
+  --tool-input-bg: #f8fafc;
+  --tool-input-border: rgba(15, 23, 42, 0.12);
+  --tool-input-text: #0f172a;
+  --tool-placeholder: #64748b;
+  --tool-violet-heading: #5b21b6;
+  --tool-violet-body: #4c1d95;
+  --tool-violet-muted: rgba(91, 33, 182, 0.92);
+  --tool-empty-icon: rgba(91, 33, 182, 0.55);
+  --tool-surface-subtle: rgba(15, 23, 42, 0.04);
+  --tool-surface-border: rgba(15, 23, 42, 0.12);
+  --tool-chip-inactive-bg: rgba(15, 23, 42, 0.06);
+  --tool-chip-inactive-text: #475569;
+  --tool-on-fuchsia-tint: #86198f;
 }
 
 @layer base {
@@ -152,6 +192,10 @@
   .force-scrollbar::-webkit-scrollbar-thumb:hover {
     background: #818cf8 !important;
   }
+
+  html.light .force-scrollbar::-webkit-scrollbar-thumb {
+    border: 3px solid #f1f5f9 !important;
+  }
 }
 
 /* ============================================================
@@ -193,6 +237,11 @@
   color: #e2e8f0;
 }
 
+html.light .settings-theme-fix select option {
+  background-color: #ffffff;
+  color: #1e293b;
+}
+
 .settings-theme-fix input:-webkit-autofill,
 .settings-theme-fix input:-webkit-autofill:hover,
 .settings-theme-fix input:-webkit-autofill:focus,
@@ -206,4 +255,9 @@
 .advanced-seo-theme select option {
   background-color: #0a0f1e;
   color: #e2e8f0;
+}
+
+html.light .advanced-seo-theme select option {
+  background-color: #ffffff;
+  color: #1e293b;
 }

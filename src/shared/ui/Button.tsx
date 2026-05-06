@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import { motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -25,7 +24,8 @@ export function Button({
   fullWidth = false,
   ...props
 }: ButtonProps) {
-  const baseStyles = 'inline-flex items-center justify-center font-bold transition-all duration-200 rounded-xl active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none gap-2';
+  const baseStyles =
+    'inline-flex touch-manipulation items-center justify-center gap-2 rounded-xl font-bold transition-[transform,box-shadow,opacity,background-color] duration-100 ease-out hover:brightness-[1.03] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50';
   
   const variants = {
     primary: 'bg-gradient-to-r from-indigo-600 to-violet-700 text-white shadow-[0_10px_20px_rgba(79,70,229,0.3)] hover:shadow-[0_15px_30px_rgba(79,70,229,0.4)] border border-white/10',
@@ -44,17 +44,16 @@ export function Button({
   };
 
   return (
-    <motion.button
-      whileHover={{ scale: 1.01 }}
-      whileTap={{ scale: 0.98 }}
+    <button
+      type="button"
       className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${fullWidth ? 'w-full' : ''} ${className}`}
       disabled={isLoading || disabled}
-      {...(props as any)}
+      {...props}
     >
-      {isLoading ? <Loader2 className="animate-spin w-4 h-4" /> : leftIcon}
+      {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : leftIcon}
       <span>{children}</span>
       {!isLoading && rightIcon}
-    </motion.button>
+    </button>
   );
 }
 

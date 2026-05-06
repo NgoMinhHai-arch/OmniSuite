@@ -181,10 +181,19 @@ type FullAuditResult = {
 };
 
 const BRAND = {
-  accent: 'text-violet-300',
-  panel: 'border-violet-400/25 bg-violet-500/[0.06]',
-  panelStrong: 'border-violet-400/35 bg-violet-500/[0.12]',
+  accent: 'text-[color:var(--tool-violet-heading)]',
+  panel: 'border-[color:var(--tool-panel-border)] bg-[color:var(--tool-panel-bg)]',
+  panelStrong: 'border-[color:var(--tool-panel-border)] bg-[color:var(--tool-panel-bg-strong)]',
 };
+
+const TOOL_TEXTAREA_CLASS =
+  'h-32 w-full rounded-2xl border p-4 text-sm outline-none focus:border-violet-400/40 disabled:cursor-not-allowed disabled:opacity-60 bg-[color:var(--tool-input-bg)] border-[color:var(--tool-input-border)] text-[color:var(--tool-input-text)] placeholder:text-[color:var(--tool-placeholder)]';
+
+const TOOL_INPUT_SM_CLASS =
+  'w-full rounded-xl border py-2 pl-9 pr-3 text-xs outline-none focus:border-violet-400/40 bg-[color:var(--tool-input-bg)] border-[color:var(--tool-input-border)] text-[color:var(--tool-input-text)] placeholder:text-[color:var(--tool-placeholder)]';
+
+const TOOL_SURFACE_CARD =
+  'rounded-xl border bg-[color:var(--tool-input-bg)] border-[color:var(--tool-input-border)]';
 
 export default function WebsiteCheckupPage() {
   const { startTask, getTask } = useTasks();
@@ -963,10 +972,10 @@ export default function WebsiteCheckupPage() {
 
   const renderTree = (nodes: HeadingNode[] = [], depth = 0) =>
     nodes.map((node, idx) => (
-      <div key={`${node.tag}-${node.text}-${idx}`} style={{ marginLeft: depth * 16 }} className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+      <div key={`${node.tag}-${node.text}-${idx}`} style={{ marginLeft: depth * 16 }} className={`${TOOL_SURFACE_CARD} p-3`}>
         <div className="flex items-center gap-2">
-          <span className="rounded bg-violet-500/20 px-2 py-0.5 text-[10px] font-bold uppercase text-violet-200">{node.tag}</span>
-          <span className="text-sm text-slate-200">{node.text}</span>
+          <span className="rounded bg-violet-500/20 px-2 py-0.5 text-[10px] font-bold uppercase text-[color:var(--tool-violet-body)]">{node.tag}</span>
+          <span className="text-sm text-[color:var(--body-text)]">{node.text}</span>
           {node.isSkippedLevel ? <span className="text-[10px] uppercase text-amber-300">skip-level</span> : null}
         </div>
         {node.children?.length ? <div className="mt-2 space-y-2">{renderTree(node.children, depth + 1)}</div> : null}
@@ -982,19 +991,19 @@ export default function WebsiteCheckupPage() {
               className="rounded-2xl border p-3.5 shadow-[0_0_15px_rgba(168,85,247,0.3)]"
               style={{ backgroundColor: 'rgba(168,85,247,0.12)', borderColor: 'rgba(168,85,247,0.35)' }}
             >
-              <Stethoscope className="text-violet-300" size={24} />
+              <Stethoscope className={BRAND.accent} size={24} />
             </div>
             <h1 className="text-2xl font-black tracking-tighter uppercase leading-none" style={{ color: 'var(--text-primary)' }}>
               KIỂM TRA SỨC KHỎE WEBSITE
             </h1>
           </div>
           <div className="flex items-center gap-4 px-2">
-            <div className="h-px w-12 bg-white/10" />
-            <p className="text-[10px] font-black uppercase tracking-widest text-violet-300/90">
+            <div className="h-px w-12 bg-[color:var(--tool-surface-border)]" />
+            <p className="text-[10px] font-black uppercase tracking-widest text-[color:var(--tool-violet-muted)]">
               CHẨN ĐOÁN CẤU TRÚC - NỘI DUNG - LIÊN KẾT SEO
             </p>
           </div>
-          <p className="px-2 text-xs font-semibold uppercase tracking-widest text-slate-400">{status}</p>
+          <p className="px-2 text-xs font-semibold uppercase tracking-widest text-[color:var(--text-muted)]">{status}</p>
         </div>
         <div className="flex items-center gap-2 rounded-xl border border-violet-400/25 bg-violet-500/[0.08] p-1">
           {[
@@ -1008,8 +1017,8 @@ export default function WebsiteCheckupPage() {
               onClick={() => setActiveDashboard(item.id as 'structure' | 'images' | 'links' | 'googlebot')}
               className={`rounded-lg border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${
                 activeDashboard === item.id
-                  ? 'border-violet-300/40 bg-violet-500/20 text-violet-100'
-                  : 'border-transparent bg-transparent text-slate-300 hover:border-violet-300/20 hover:bg-violet-500/10'
+                  ? 'border-[color:var(--tool-panel-border)] bg-[color:var(--tool-panel-bg-strong)] text-[color:var(--tool-violet-body)]'
+                  : 'border-transparent bg-transparent text-[color:var(--tool-chip-inactive-text)] hover:border-[color:var(--tool-panel-border)] hover:bg-[color:var(--tool-chip-inactive-bg)]'
               }`}
             >
               <span className="inline-flex items-center gap-1.5">
@@ -1026,7 +1035,7 @@ export default function WebsiteCheckupPage() {
         <div className={`rounded-3xl border p-6 lg:col-span-5 ${BRAND.panel}`}>
           <div className="mb-4 flex items-center gap-3">
             <div className="h-10 w-1 rounded-full bg-violet-400/80 shadow-[0_0_10px_rgba(168,85,247,0.45)]" />
-            <div className="flex items-center gap-2 text-slate-100">
+            <div className="flex items-center gap-2 text-[color:var(--text-primary)]">
               <Radar size={18} className={BRAND.accent} />
               <h2 className="text-base font-black uppercase tracking-wider">Nhập trang chủ</h2>
             </div>
@@ -1054,7 +1063,7 @@ export default function WebsiteCheckupPage() {
             disabled={loading}
             placeholder="Mỗi dòng 1 URL trang chủ (vd: https://example.com)"
             title={`Nhập URL trang chủ (tối đa ${HOMEPAGE_MAX_LINES} dòng): ${seedCount}/${HOMEPAGE_MAX_LINES}`}
-            className="h-32 w-full rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-slate-200 outline-none focus:border-violet-400/40 disabled:cursor-not-allowed disabled:opacity-60"
+            className={TOOL_TEXTAREA_CLASS}
           />
           {seedInputError ? (
             <p className="mt-2 text-xs font-semibold text-rose-300">{seedInputError}</p>
@@ -1062,7 +1071,7 @@ export default function WebsiteCheckupPage() {
           <button
             onClick={runDiscovery}
             disabled={loading || !seedInput.trim() || Boolean(seedInputError)}
-            className="mt-3 inline-flex items-center gap-2 rounded-xl border border-violet-300/30 bg-violet-500/20 px-4 py-2 text-xs font-bold uppercase tracking-wider text-violet-100 disabled:opacity-40"
+            className="mt-3 inline-flex items-center gap-2 rounded-xl border border-violet-300/30 bg-violet-500/20 px-4 py-2 text-xs font-bold uppercase tracking-wider text-[color:var(--tool-violet-body)] disabled:opacity-40"
           >
             <Globe size={14} />
             Khám phá URL
@@ -1072,7 +1081,7 @@ export default function WebsiteCheckupPage() {
         <div className={`rounded-3xl border p-6 lg:col-span-7 ${BRAND.panel}`}>
           <div className="mb-4 flex items-center gap-3">
             <div className="h-10 w-1 rounded-full bg-fuchsia-400/80 shadow-[0_0_10px_rgba(217,70,239,0.45)]" />
-            <div className="flex items-center gap-2 text-slate-100">
+            <div className="flex items-center gap-2 text-[color:var(--text-primary)]">
               <FlaskConical size={18} className="text-fuchsia-300" />
               <h2 className="text-base font-black uppercase tracking-wider">Danh sách URL quét</h2>
             </div>
@@ -1082,13 +1091,13 @@ export default function WebsiteCheckupPage() {
             onChange={(e) => setUrlInput(e.target.value)}
             disabled={loading}
             placeholder="Mỗi dòng một URL (có thể nhập/xóa thủ công)"
-            className="h-32 w-full rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-slate-200 outline-none focus:border-violet-400/40 disabled:cursor-not-allowed disabled:opacity-60"
+            className={TOOL_TEXTAREA_CLASS}
           />
           <div className="mt-3 flex gap-2">
             <button
               onClick={runScrape}
               disabled={loading || !urlInput.trim()}
-              className="inline-flex items-center gap-2 rounded-xl border border-fuchsia-300/30 bg-fuchsia-500/20 px-4 py-2 text-xs font-bold uppercase tracking-wider text-fuchsia-100 disabled:opacity-40"
+              className="inline-flex items-center gap-2 rounded-xl border border-fuchsia-300/30 bg-fuchsia-500/20 px-4 py-2 text-xs font-bold uppercase tracking-wider disabled:opacity-40 text-[color:var(--tool-on-fuchsia-tint)]"
             >
               <Stethoscope size={14} />
               Bắt đầu audit
@@ -1096,7 +1105,7 @@ export default function WebsiteCheckupPage() {
             <button
               onClick={exportCsv}
               disabled={loading || !results.length}
-              className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-100 disabled:opacity-40"
+              className="inline-flex items-center gap-2 rounded-xl border border-[color:var(--tool-surface-border)] bg-[color:var(--tool-surface-subtle)] px-4 py-2 text-xs font-bold uppercase tracking-wider text-[color:var(--text-primary)] disabled:opacity-40"
             >
               <Download size={14} />
               Xuất CSV
@@ -1108,17 +1117,17 @@ export default function WebsiteCheckupPage() {
       <section className={`rounded-3xl border p-6 ${BRAND.panel}`}>
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h2 className="text-base font-black uppercase tracking-wider text-slate-100">Hình ảnh</h2>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
+            <h2 className="text-base font-black uppercase tracking-wider text-[color:var(--text-primary)]">Hình ảnh</h2>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--tool-violet-muted)]">
               image audit từ danh sách URL đã quét
             </p>
           </div>
-          <div className="rounded-full border border-violet-300/30 bg-violet-500/15 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-violet-100">Live data</div>
+          <div className="rounded-full border border-violet-300/30 bg-violet-500/15 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-[color:var(--tool-violet-body)]">Live data</div>
         </div>
         <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-            <p className="text-[10px] uppercase tracking-wider text-slate-400">Tổng ảnh</p>
-            <p className="mt-1 text-xl font-black text-violet-100">{imageGroups.reduce((sum, x) => sum + x.total, 0)}</p>
+          <div className="rounded-xl border border-[color:var(--tool-input-border)] bg-[color:var(--tool-input-bg)] p-3">
+            <p className="text-[10px] uppercase tracking-wider text-[color:var(--text-muted)]">Tổng ảnh</p>
+            <p className="mt-1 text-xl font-black text-[color:var(--tool-violet-body)]">{imageGroups.reduce((sum, x) => sum + x.total, 0)}</p>
           </div>
           <div className="rounded-xl border border-rose-300/20 bg-rose-500/10 p-3">
             <p className="text-[10px] uppercase tracking-wider text-rose-200">Thiếu ALT</p>
@@ -1135,12 +1144,12 @@ export default function WebsiteCheckupPage() {
         </div>
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <div className="relative min-w-[240px] flex-1">
-            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--text-muted)]" />
             <input
               value={imageQuery}
               onChange={(e) => setImageQuery(e.target.value)}
               placeholder="Tìm theo URL trang..."
-              className="w-full rounded-xl border border-white/10 bg-black/20 py-2 pl-9 pr-3 text-xs text-slate-200 outline-none focus:border-violet-400/40"
+              className={TOOL_INPUT_SM_CLASS}
             />
           </div>
           {[
@@ -1153,17 +1162,17 @@ export default function WebsiteCheckupPage() {
               onClick={() => setImageFilter(item.id as 'all' | 'missing_alt' | 'missing_title')}
               className={`rounded-lg border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider ${
                 imageFilter === item.id
-                  ? 'border-violet-300/40 bg-violet-500/20 text-violet-100'
-                  : 'border-white/10 bg-white/[0.03] text-slate-300'
+                  ? 'border-violet-300/40 bg-violet-500/20 text-[color:var(--tool-violet-body)]'
+                  : 'border-[color:var(--tool-surface-border)] bg-[color:var(--tool-surface-subtle)] text-[color:var(--text-secondary)]'
               }`}
             >
               {item.label}
             </button>
           ))}
         </div>
-        <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-white/10">
+        <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-[color:var(--tool-surface-border)]">
           <table className="w-full min-w-[900px] text-left text-xs">
-            <thead className="bg-white/[0.03] uppercase text-slate-400">
+            <thead className="bg-[color:var(--tool-surface-subtle)] uppercase text-[color:var(--text-muted)]">
               <tr>
                 <th className="p-2">Page URL</th>
                 <th className="p-2">Tổng ảnh</th>
@@ -1174,16 +1183,16 @@ export default function WebsiteCheckupPage() {
             </thead>
             <tbody>
               {filteredImageGroups.map((group) => (
-                <tr key={group.groupId} className="border-t border-white/5">
-                  <td className="p-2 text-slate-300">{group.pageUrl}</td>
-                  <td className="p-2 text-slate-200">{group.total}</td>
-                  <td className="p-2 text-slate-200">{group.missingAlt}</td>
-                  <td className="p-2 text-slate-200">{group.missingTitle}</td>
+                <tr key={group.groupId} className="border-t border-[color:var(--border-color)]">
+                  <td className="p-2 text-[color:var(--text-secondary)]">{group.pageUrl}</td>
+                  <td className="p-2 text-[color:var(--body-text)]">{group.total}</td>
+                  <td className="p-2 text-[color:var(--body-text)]">{group.missingAlt}</td>
+                  <td className="p-2 text-[color:var(--body-text)]">{group.missingTitle}</td>
                   <td className="p-2">
                     <button
                       onClick={() => setImageDetailGroup(group)}
                       disabled={!group.total}
-                      className="rounded-lg border border-violet-300/30 bg-violet-500/20 px-3 py-1 text-xs font-bold text-violet-100 disabled:opacity-40"
+                      className="rounded-lg border border-violet-300/30 bg-violet-500/20 px-3 py-1 text-xs font-bold text-[color:var(--tool-violet-body)] disabled:opacity-40"
                     >
                       Chi tiết
                     </button>
@@ -1198,17 +1207,17 @@ export default function WebsiteCheckupPage() {
       <section className={`rounded-3xl border p-6 ${BRAND.panel}`}>
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h2 className="text-base font-black uppercase tracking-wider text-slate-100">Link</h2>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
+            <h2 className="text-base font-black uppercase tracking-wider text-[color:var(--text-primary)]">Link</h2>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--tool-violet-muted)]">
               link explorer từ URL đã quét
             </p>
           </div>
-          <div className="rounded-full border border-violet-300/30 bg-violet-500/15 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-violet-100">Live data</div>
+          <div className="rounded-full border border-violet-300/30 bg-violet-500/15 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-[color:var(--tool-violet-body)]">Live data</div>
         </div>
         <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-            <p className="text-[10px] uppercase tracking-wider text-slate-400">Tổng links</p>
-            <p className="mt-1 text-xl font-black text-violet-100">{linkRows.length}</p>
+          <div className="rounded-xl border border-[color:var(--tool-input-border)] bg-[color:var(--tool-input-bg)] p-3">
+            <p className="text-[10px] uppercase tracking-wider text-[color:var(--text-muted)]">Tổng links</p>
+            <p className="mt-1 text-xl font-black text-[color:var(--tool-violet-body)]">{linkRows.length}</p>
           </div>
           <div className="rounded-xl border border-emerald-300/20 bg-emerald-500/10 p-3">
             <p className="text-[10px] uppercase tracking-wider text-emerald-200">Internal</p>
@@ -1233,12 +1242,12 @@ export default function WebsiteCheckupPage() {
         </div>
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <div className="relative min-w-[240px] flex-1">
-            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--text-muted)]" />
             <input
               value={linkQuery}
               onChange={(e) => setLinkQuery(e.target.value)}
               placeholder="Tìm source/target/anchor..."
-              className="w-full rounded-xl border border-white/10 bg-black/20 py-2 pl-9 pr-3 text-xs text-slate-200 outline-none focus:border-violet-400/40"
+              className={TOOL_INPUT_SM_CLASS}
             />
           </div>
           {[
@@ -1253,17 +1262,17 @@ export default function WebsiteCheckupPage() {
               onClick={() => setLinkFilter(item.id as 'all' | 'internal' | 'external' | 'nofollow' | 'dofollow')}
               className={`rounded-lg border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider ${
                 linkFilter === item.id
-                  ? 'border-violet-300/40 bg-violet-500/20 text-violet-100'
-                  : 'border-white/10 bg-white/[0.03] text-slate-300'
+                  ? 'border-violet-300/40 bg-violet-500/20 text-[color:var(--tool-violet-body)]'
+                  : 'border-[color:var(--tool-surface-border)] bg-[color:var(--tool-surface-subtle)] text-[color:var(--text-secondary)]'
               }`}
             >
               {item.label}
             </button>
           ))}
         </div>
-        <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-white/10">
+        <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-[color:var(--tool-surface-border)]">
           <table className="w-full min-w-[1100px] text-left text-xs">
-            <thead className="bg-white/[0.03] uppercase text-slate-400">
+            <thead className="bg-[color:var(--tool-surface-subtle)] uppercase text-[color:var(--text-muted)]">
               <tr>
                 <th className="p-2">Source</th>
                 <th className="p-2">Target</th>
@@ -1280,13 +1289,13 @@ export default function WebsiteCheckupPage() {
                     ? 'bg-sky-500/20 text-sky-200'
                     : row.follow === 'nofollow'
                       ? 'bg-rose-500/20 text-rose-200'
-                      : 'bg-white/10 text-slate-300';
+                      : 'bg-[color:var(--tool-chip-inactive-bg)] text-[color:var(--text-secondary)]';
                 return (
-                  <tr key={`${row.source}-${row.target}-${idx}`} className="border-t border-white/5">
-                    <td className="p-2 text-slate-300">{row.source}</td>
-                    <td className="p-2 text-slate-300">{row.target}</td>
-                    <td className="p-2 text-slate-200">{row.anchor || '-'}</td>
-                    <td className="p-2 text-slate-200">{row.rel || '-'}</td>
+                  <tr key={`${row.source}-${row.target}-${idx}`} className="border-t border-[color:var(--border-color)]">
+                    <td className="p-2 text-[color:var(--text-secondary)]">{row.source}</td>
+                    <td className="p-2 text-[color:var(--text-secondary)]">{row.target}</td>
+                    <td className="p-2 text-[color:var(--body-text)]">{row.anchor || '-'}</td>
+                    <td className="p-2 text-[color:var(--body-text)]">{row.rel || '-'}</td>
                     <td className="p-2">
                       <span className={`rounded px-2 py-0.5 font-bold ${followClass}`}>
                         {row.follow}
@@ -1301,8 +1310,8 @@ export default function WebsiteCheckupPage() {
                 );
               })}
               {filteredLinkRows.length === 0 && (
-                <tr className="border-t border-white/5">
-                  <td colSpan={6} className="p-4 text-center text-slate-400">
+                <tr className="border-t border-[color:var(--border-color)]">
+                  <td colSpan={6} className="p-4 text-center text-[color:var(--text-muted)]">
                     Không có link nào khớp bộ lọc hiện tại.
                   </td>
                 </tr>
@@ -1316,20 +1325,20 @@ export default function WebsiteCheckupPage() {
         <section className={`rounded-3xl border p-6 ${BRAND.panel}`}>
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h2 className="text-base font-black uppercase tracking-wider text-slate-100 flex items-center gap-2">
-                <Eye size={16} className="text-violet-300" />
+              <h2 className="text-base font-black uppercase tracking-wider text-[color:var(--text-primary)] flex items-center gap-2">
+                <Eye size={16} className="text-[color:var(--tool-violet-heading)]" />
                 Googlebot's Eye
               </h2>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--tool-violet-muted)]">
                 Indexability + Robots/Sitemap + AI Bot Access + CWV
               </p>
             </div>
-            <div className="rounded-full border border-violet-300/30 bg-violet-500/15 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-violet-100">Live data</div>
+            <div className="rounded-full border border-violet-300/30 bg-violet-500/15 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-[color:var(--tool-violet-body)]">Live data</div>
           </div>
           <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-              <p className="text-[10px] uppercase tracking-wider text-slate-400">Tổng URL</p>
-              <p className="mt-1 truncate text-sm font-black text-violet-100">{indexabilitySummary.total}</p>
+            <div className="rounded-xl border border-[color:var(--tool-input-border)] bg-[color:var(--tool-input-bg)] p-3">
+              <p className="text-[10px] uppercase tracking-wider text-[color:var(--text-muted)]">Tổng URL</p>
+              <p className="mt-1 truncate text-sm font-black text-[color:var(--tool-violet-body)]">{indexabilitySummary.total}</p>
             </div>
             <div className="rounded-xl border border-emerald-300/20 bg-emerald-500/10 p-3">
               <p className="text-[10px] uppercase tracking-wider text-emerald-200">CAN INDEX</p>
@@ -1352,11 +1361,11 @@ export default function WebsiteCheckupPage() {
               <section className={`rounded-3xl border p-6 ${BRAND.panel}`}>
                 <div className="mb-4 flex items-center justify-between">
                   <div>
-                    <h3 className="text-sm font-black uppercase tracking-wider text-slate-100 flex items-center gap-2">
-                      <ShieldAlert size={14} className="text-violet-300" />
+                    <h3 className="text-sm font-black uppercase tracking-wider text-[color:var(--text-primary)] flex items-center gap-2">
+                      <ShieldAlert size={14} className="text-[color:var(--tool-violet-heading)]" />
                       Robots.txt &amp; Sitemap
                     </h3>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--tool-violet-muted)]">
                       Phân tích theo domain ({uniqueDomains.length})
                     </p>
                   </div>
@@ -1367,9 +1376,9 @@ export default function WebsiteCheckupPage() {
                     const loading = !!robotsLoadingDomains[domain];
                     if (!data) {
                       return (
-                        <div key={domain} className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                          <p className="truncate text-xs font-bold text-slate-200">{domain}</p>
-                          <p className="mt-2 text-[11px] text-slate-400">
+                        <div key={domain} className="rounded-2xl border border-[color:var(--tool-input-border)] bg-[color:var(--tool-input-bg)] p-4">
+                          <p className="truncate text-xs font-bold text-[color:var(--body-text)]">{domain}</p>
+                          <p className="mt-2 text-[11px] text-[color:var(--text-muted)]">
                             {loading ? 'Đang phân tích robots.txt + sitemap…' : 'Chưa có dữ liệu'}
                           </p>
                         </div>
@@ -1378,22 +1387,22 @@ export default function WebsiteCheckupPage() {
                     const robotsOk = data.robots.exists && data.robots.statusCode === 200;
                     const blockedAi = data.robots.blocksAiBots.filter((b) => b.blocked);
                     return (
-                      <div key={domain} className="space-y-3 rounded-2xl border border-white/10 bg-black/20 p-4">
+                      <div key={domain} className="space-y-3 rounded-2xl border border-[color:var(--tool-input-border)] bg-[color:var(--tool-input-bg)] p-4">
                         <div className="flex items-start justify-between gap-3">
-                          <p className="truncate text-xs font-bold text-slate-200" title={domain}>
+                          <p className="truncate text-xs font-bold text-[color:var(--body-text)]" title={domain}>
                             {domain}
                           </p>
                           <button
                             onClick={() => setRobotsRawModal(data)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-violet-300/20 bg-violet-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-violet-200"
+                            className="inline-flex items-center gap-1 rounded-lg border border-violet-300/20 bg-violet-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[color:var(--tool-violet-body)]"
                           >
                             <FileSearch size={11} /> Xem chi tiết
                           </button>
                         </div>
                         <div className="grid gap-3 md:grid-cols-2">
-                          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">robots.txt</p>
-                            <p className="mt-1 text-xs font-black text-slate-100">
+                          <div className="rounded-xl border border-[color:var(--tool-input-border)] bg-[color:var(--tool-input-bg)] p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--text-muted)]">robots.txt</p>
+                            <p className="mt-1 text-xs font-black text-[color:var(--text-primary)]">
                               {robotsOk ? `HTTP ${data.robots.statusCode}` : data.robots.statusCode ? `HTTP ${data.robots.statusCode}` : 'Không có'}
                             </p>
                             <div className="mt-2 flex flex-wrap gap-1 text-[10px] font-bold">
@@ -1425,13 +1434,13 @@ export default function WebsiteCheckupPage() {
                               )}
                             </div>
                           </div>
-                          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">sitemap</p>
-                            <p className="mt-1 text-xs font-black text-slate-100">
+                          <div className="rounded-xl border border-[color:var(--tool-input-border)] bg-[color:var(--tool-input-bg)] p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--text-muted)]">sitemap</p>
+                            <p className="mt-1 text-xs font-black text-[color:var(--text-primary)]">
                               {data.sitemap.found ? `${data.sitemap.urlCount} URL` : 'Không tìm thấy'}
                             </p>
                             {data.sitemap.url && (
-                              <p className="mt-1 truncate text-[10px] text-slate-400" title={data.sitemap.url}>
+                              <p className="mt-1 truncate text-[10px] text-[color:var(--text-muted)]" title={data.sitemap.url}>
                                 {data.sitemap.url}
                               </p>
                             )}
@@ -1441,7 +1450,7 @@ export default function WebsiteCheckupPage() {
                               </p>
                             )}
                             {data.sitemap.sampleUrls.length > 0 && (
-                              <ul className="mt-2 space-y-0.5 text-[10px] text-slate-400">
+                              <ul className="mt-2 space-y-0.5 text-[10px] text-[color:var(--text-muted)]">
                                 {data.sitemap.sampleUrls.slice(0, 5).map((u) => (
                                   <li key={u} className="truncate" title={u}>
                                     · {u}
@@ -1460,17 +1469,17 @@ export default function WebsiteCheckupPage() {
             <section className={`rounded-3xl border p-6 ${BRAND.panel}`}>
               <div className="mb-4 flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-100">
+                  <h3 className="text-sm font-black uppercase tracking-wider text-[color:var(--text-primary)]">
                     Meta Tags
                   </h3>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--tool-violet-muted)]">
                     title · description · image · url · type · site_name · card
                   </p>
                 </div>
               </div>
-              <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-white/10">
+              <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-[color:var(--tool-surface-border)]">
                 <table className="w-full min-w-[900px] text-left text-xs">
-                  <thead className="bg-white/[0.03] uppercase text-slate-400">
+                  <thead className="bg-[color:var(--tool-surface-subtle)] uppercase text-[color:var(--text-muted)]">
                     <tr>
                       <th className="p-2">URL</th>
                       <th className="p-2">title</th>
@@ -1484,15 +1493,15 @@ export default function WebsiteCheckupPage() {
                   </thead>
                   <tbody>
                     {metaTagRows.map((row) => (
-                      <tr key={row.sourceUrl} className="border-t border-white/5">
-                        <td className="p-2 text-slate-300 max-w-[180px] truncate" title={row.sourceUrl}>{row.sourceUrl}</td>
-                        <td className="p-2 text-slate-200 max-w-[160px] truncate" title={row.title}>{row.title}</td>
-                        <td className="p-2 text-slate-200 max-w-[220px] truncate" title={row.description}>{row.description}</td>
-                        <td className="p-2 text-slate-300 max-w-[180px] truncate" title={row.image}>{row.image}</td>
-                        <td className="p-2 text-slate-300 max-w-[180px] truncate" title={row.url}>{row.url}</td>
-                        <td className="p-2 text-slate-300">{row.type}</td>
-                        <td className="p-2 text-slate-300">{row.siteName}</td>
-                        <td className="p-2 text-slate-300">
+                      <tr key={row.sourceUrl} className="border-t border-[color:var(--border-color)]">
+                        <td className="p-2 text-[color:var(--text-secondary)] max-w-[180px] truncate" title={row.sourceUrl}>{row.sourceUrl}</td>
+                        <td className="p-2 text-[color:var(--body-text)] max-w-[160px] truncate" title={row.title}>{row.title}</td>
+                        <td className="p-2 text-[color:var(--body-text)] max-w-[220px] truncate" title={row.description}>{row.description}</td>
+                        <td className="p-2 text-[color:var(--text-secondary)] max-w-[180px] truncate" title={row.image}>{row.image}</td>
+                        <td className="p-2 text-[color:var(--text-secondary)] max-w-[180px] truncate" title={row.url}>{row.url}</td>
+                        <td className="p-2 text-[color:var(--text-secondary)]">{row.type}</td>
+                        <td className="p-2 text-[color:var(--text-secondary)]">{row.siteName}</td>
+                        <td className="p-2 text-[color:var(--text-secondary)]">
                           {row.cardLinks.length > 0 ? (
                             <div className="space-y-1">
                               {row.cardLinks.map((item) => (
@@ -1515,8 +1524,8 @@ export default function WebsiteCheckupPage() {
                       </tr>
                     ))}
                     {metaTagRows.length === 0 && (
-                      <tr className="border-t border-white/5">
-                        <td colSpan={8} className="p-4 text-center text-slate-400">
+                      <tr className="border-t border-[color:var(--border-color)]">
+                        <td colSpan={8} className="p-4 text-center text-[color:var(--text-muted)]">
                           Chưa có dữ liệu meta tags.
                         </td>
                       </tr>
@@ -1531,18 +1540,18 @@ export default function WebsiteCheckupPage() {
         <section className={`rounded-3xl border p-6 ${BRAND.panel}`}>
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-black uppercase tracking-wider text-slate-100 flex items-center gap-2">
-                <Bot size={14} className="text-violet-300" />
+              <h3 className="text-sm font-black uppercase tracking-wider text-[color:var(--text-primary)] flex items-center gap-2">
+                <Bot size={14} className="text-[color:var(--tool-violet-heading)]" />
                 Indexability per URL
               </h3>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--tool-violet-muted)]">
                 HTTP · Meta Robots · X-Robots-Tag · Canonical · Sitemap · AI Bot · JS Rendered
               </p>
             </div>
           </div>
-          <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-white/10">
+          <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-[color:var(--tool-surface-border)]">
             <table className="w-full min-w-[1400px] text-left text-xs">
-              <thead className="bg-white/[0.03] uppercase text-slate-400">
+              <thead className="bg-[color:var(--tool-surface-subtle)] uppercase text-[color:var(--text-muted)]">
                 <tr>
                   <th className="p-2">URL</th>
                   <th className="p-2">HTTP</th>
@@ -1565,7 +1574,7 @@ export default function WebsiteCheckupPage() {
                         ? 'bg-sky-500/20 text-sky-200'
                         : row.statusCode >= 400
                           ? 'bg-rose-500/20 text-rose-200'
-                          : 'bg-white/10 text-slate-300';
+                          : 'bg-[color:var(--tool-chip-inactive-bg)] text-[color:var(--text-secondary)]';
                   const verdictClass =
                     row.verdict === 'CAN_INDEX'
                       ? 'bg-emerald-500/20 text-emerald-200'
@@ -1574,32 +1583,32 @@ export default function WebsiteCheckupPage() {
                         : 'bg-rose-500/20 text-rose-200';
                   const tooltip = row.reasons.length ? row.reasons.join(' • ') : 'OK';
                   return (
-                    <tr key={row.url} className="border-t border-white/5">
-                      <td className="p-2 text-slate-300 max-w-[260px] truncate" title={row.url}>{row.url}</td>
+                    <tr key={row.url} className="border-t border-[color:var(--border-color)]">
+                      <td className="p-2 text-[color:var(--text-secondary)] max-w-[260px] truncate" title={row.url}>{row.url}</td>
                       <td className="p-2">
                         <span className={`rounded px-2 py-0.5 font-bold ${httpClass}`}>
                           {row.statusCode || '--'}
                         </span>
                       </td>
-                      <td className="p-2 text-slate-200 max-w-[160px] truncate" title={row.metaRobots}>{row.metaRobots}</td>
-                      <td className="p-2 text-slate-200 max-w-[140px] truncate" title={row.xRobots || '-'}>
-                        {row.xRobots || <span className="text-slate-500">-</span>}
+                      <td className="p-2 text-[color:var(--body-text)] max-w-[160px] truncate" title={row.metaRobots}>{row.metaRobots}</td>
+                      <td className="p-2 text-[color:var(--body-text)] max-w-[140px] truncate" title={row.xRobots || '-'}>
+                        {row.xRobots || <span className="text-[color:var(--text-muted)]">-</span>}
                       </td>
-                      <td className="p-2 text-slate-200 max-w-[200px]">
+                      <td className="p-2 text-[color:var(--body-text)] max-w-[200px]">
                         <div className="flex items-center gap-1">
                           {row.canonicalSelf ? (
                             <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-200">self</span>
                           ) : row.canonical && row.canonical !== '-' ? (
                             <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-200">other</span>
                           ) : (
-                            <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">-</span>
+                            <span className="rounded bg-[color:var(--tool-chip-inactive-bg)] px-1.5 py-0.5 text-[10px] font-bold text-[color:var(--text-secondary)]">-</span>
                           )}
-                          <span className="truncate text-[10px] text-slate-400" title={row.canonical}>{row.canonical}</span>
+                          <span className="truncate text-[10px] text-[color:var(--text-muted)]" title={row.canonical}>{row.canonical}</span>
                         </div>
                       </td>
                       <td className="p-2">
                         {row.inSitemap === null ? (
-                          <span className="text-slate-500">--</span>
+                          <span className="text-[color:var(--text-muted)]">--</span>
                         ) : row.inSitemap ? (
                           <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-200">✓</span>
                         ) : (
@@ -1632,7 +1641,7 @@ export default function WebsiteCheckupPage() {
                       </td>
                       <td className="p-2">
                         {row.jsStable === null ? (
-                          <span className="text-slate-500">--</span>
+                          <span className="text-[color:var(--text-muted)]">--</span>
                         ) : row.jsStable ? (
                           <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-200">STABLE</span>
                         ) : (
@@ -1664,8 +1673,8 @@ export default function WebsiteCheckupPage() {
                   );
                 })}
                 {indexabilityRows.length === 0 && (
-                  <tr className="border-t border-white/5">
-                    <td colSpan={10} className="p-4 text-center text-slate-400">
+                  <tr className="border-t border-[color:var(--border-color)]">
+                    <td colSpan={10} className="p-4 text-center text-[color:var(--text-muted)]">
                       Chưa có URL nào được phân tích.
                     </td>
                   </tr>
@@ -1678,16 +1687,16 @@ export default function WebsiteCheckupPage() {
         <section className={`rounded-3xl border p-6 ${BRAND.panel}`}>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-black uppercase tracking-wider text-slate-100 flex items-center gap-2">
-                <Gauge size={14} className="text-violet-300" />
+              <h3 className="text-sm font-black uppercase tracking-wider text-[color:var(--text-primary)] flex items-center gap-2">
+                <Gauge size={14} className="text-[color:var(--tool-violet-heading)]" />
                 Core Web Vitals (Lighthouse-lite)
               </h3>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--tool-violet-muted)]">
                 LCP / CLS / FCP / TTFB · mặc định tắt vì chậm
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <label className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-[11px] font-bold text-slate-200">
+              <label className="inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--tool-input-border)] bg-[color:var(--tool-input-bg)] px-3 py-1.5 text-[11px] font-bold text-[color:var(--body-text)]">
                 <input
                   type="checkbox"
                   checked={cwvAutoOn}
@@ -1699,7 +1708,7 @@ export default function WebsiteCheckupPage() {
               <button
                 onClick={() => runCwvForUrls(results.map((r) => r.url).filter((u) => !cwvByUrl[u]))}
                 disabled={cwvRunning || results.length === 0}
-                className="inline-flex items-center gap-1 rounded-lg border border-violet-300/30 bg-violet-500/15 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-violet-100 disabled:opacity-40"
+                className="inline-flex items-center gap-1 rounded-lg border border-violet-300/30 bg-violet-500/15 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-[color:var(--tool-violet-body)] disabled:opacity-40"
               >
                 <Gauge size={12} /> {cwvRunning ? `Running ${cwvProgress.done}/${cwvProgress.total}` : 'Run CWV (slow)'}
               </button>
@@ -1714,7 +1723,7 @@ export default function WebsiteCheckupPage() {
             </div>
           </div>
           {cwvRunning && (
-            <div className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-white/5">
+            <div className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-[color:var(--tool-surface-subtle)]">
               <div
                 className="h-full bg-violet-400 transition-all"
                 style={{
@@ -1723,9 +1732,9 @@ export default function WebsiteCheckupPage() {
               />
             </div>
           )}
-          <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-white/10">
+          <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-[color:var(--tool-surface-border)]">
             <table className="w-full min-w-[1000px] text-left text-xs">
-              <thead className="bg-white/[0.03] uppercase text-slate-400">
+              <thead className="bg-[color:var(--tool-surface-subtle)] uppercase text-[color:var(--text-muted)]">
                 <tr>
                   <th className="p-2">URL</th>
                   <th className="p-2">LCP (ms)</th>
@@ -1745,17 +1754,17 @@ export default function WebsiteCheckupPage() {
                         ? 'bg-amber-500/20 text-amber-200'
                         : s === 'poor'
                           ? 'bg-rose-500/20 text-rose-200'
-                          : 'bg-white/10 text-slate-400';
+                          : 'bg-[color:var(--tool-chip-inactive-bg)] text-[color:var(--text-muted)]';
                   return (
-                    <tr key={r.url} className="border-t border-white/5">
-                      <td className="p-2 text-slate-300 max-w-[280px] truncate" title={r.url}>{r.url}</td>
+                    <tr key={r.url} className="border-t border-[color:var(--border-color)]">
+                      <td className="p-2 text-[color:var(--text-secondary)] max-w-[280px] truncate" title={r.url}>{r.url}</td>
                       <td className="p-2">
                         {cwv ? (
                           <span className={`rounded px-2 py-0.5 font-bold ${cls(cwv.scoreLCP)}`}>
                             {cwv.LCP ?? '--'}
                           </span>
                         ) : (
-                          <span className="text-slate-500">--</span>
+                          <span className="text-[color:var(--text-muted)]">--</span>
                         )}
                       </td>
                       <td className="p-2">
@@ -1764,7 +1773,7 @@ export default function WebsiteCheckupPage() {
                             {cwv.CLS ?? '--'}
                           </span>
                         ) : (
-                          <span className="text-slate-500">--</span>
+                          <span className="text-[color:var(--text-muted)]">--</span>
                         )}
                       </td>
                       <td className="p-2">
@@ -1773,7 +1782,7 @@ export default function WebsiteCheckupPage() {
                             {cwv.FCP ?? '--'}
                           </span>
                         ) : (
-                          <span className="text-slate-500">--</span>
+                          <span className="text-[color:var(--text-muted)]">--</span>
                         )}
                       </td>
                       <td className="p-2">
@@ -1782,7 +1791,7 @@ export default function WebsiteCheckupPage() {
                             {cwv.TTFB ?? '--'}
                           </span>
                         ) : (
-                          <span className="text-slate-500">--</span>
+                          <span className="text-[color:var(--text-muted)]">--</span>
                         )}
                       </td>
                       <td className="p-2">
@@ -1795,7 +1804,7 @@ export default function WebsiteCheckupPage() {
                                   ? 'bg-amber-500/20 text-amber-200'
                                   : cwv.overall === 'poor'
                                     ? 'bg-rose-500/20 text-rose-200'
-                                    : 'bg-white/10 text-slate-300'
+                                    : 'bg-[color:var(--tool-chip-inactive-bg)] text-[color:var(--text-secondary)]'
                             }`}
                           >
                             {cwv.overall === 'unknown'
@@ -1803,15 +1812,15 @@ export default function WebsiteCheckupPage() {
                               : cwv.overall.replace('-', ' ')}
                           </span>
                         ) : (
-                          <span className="text-slate-500">{cwvRunning ? '…' : 'not run'}</span>
+                          <span className="text-[color:var(--text-muted)]">{cwvRunning ? '…' : 'not run'}</span>
                         )}
                       </td>
                     </tr>
                   );
                 })}
                 {results.length === 0 && (
-                  <tr className="border-t border-white/5">
-                    <td colSpan={6} className="p-4 text-center text-slate-400">
+                  <tr className="border-t border-[color:var(--border-color)]">
+                    <td colSpan={6} className="p-4 text-center text-[color:var(--text-muted)]">
                       Chưa có URL nào.
                     </td>
                   </tr>
@@ -1824,15 +1833,15 @@ export default function WebsiteCheckupPage() {
         <section className={`rounded-3xl border p-6 ${BRAND.panel}`}>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-black uppercase tracking-wider text-slate-100">
+              <h3 className="text-sm font-black uppercase tracking-wider text-[color:var(--text-primary)]">
                 Full SEO Audit (1:1 SEOmator - 251 rules)
               </h3>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--tool-violet-muted)]">
                 Core · Performance · Security · Crawlability · Schema · JS Render · Accessibility · v.v.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <label className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-[11px] font-bold text-slate-200">
+              <label className="inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--tool-input-border)] bg-[color:var(--tool-input-bg)] px-3 py-1.5 text-[11px] font-bold text-[color:var(--body-text)]">
                 <input
                   type="checkbox"
                   checked={fullAuditIncludeCwv}
@@ -1844,35 +1853,35 @@ export default function WebsiteCheckupPage() {
               <button
                 onClick={() => runFullAudit(results[0]?.url || '')}
                 disabled={fullAuditRunning || results.length === 0}
-                className="inline-flex items-center gap-1 rounded-lg border border-violet-300/30 bg-violet-500/15 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-violet-100 disabled:opacity-40"
+                className="inline-flex items-center gap-1 rounded-lg border border-violet-300/30 bg-violet-500/15 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-[color:var(--tool-violet-body)] disabled:opacity-40"
               >
                 {fullAuditRunning ? 'Running full audit…' : 'Run 1:1 full audit'}
               </button>
               <button
                 onClick={() => exportFullAudit('json')}
                 disabled={fullAuditRunning || fullAuditExporting || results.length === 0}
-                className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-200 disabled:opacity-40"
+                className="rounded-lg border border-[color:var(--tool-input-border)] bg-[color:var(--tool-input-bg)] px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[color:var(--body-text)] disabled:opacity-40"
               >
                 JSON
               </button>
               <button
                 onClick={() => exportFullAudit('html')}
                 disabled={fullAuditRunning || fullAuditExporting || results.length === 0}
-                className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-200 disabled:opacity-40"
+                className="rounded-lg border border-[color:var(--tool-input-border)] bg-[color:var(--tool-input-bg)] px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[color:var(--body-text)] disabled:opacity-40"
               >
                 HTML
               </button>
               <button
                 onClick={() => exportFullAudit('markdown')}
                 disabled={fullAuditRunning || fullAuditExporting || results.length === 0}
-                className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-200 disabled:opacity-40"
+                className="rounded-lg border border-[color:var(--tool-input-border)] bg-[color:var(--tool-input-bg)] px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[color:var(--body-text)] disabled:opacity-40"
               >
                 Markdown
               </button>
               <button
                 onClick={() => exportFullAudit('llm')}
                 disabled={fullAuditRunning || fullAuditExporting || results.length === 0}
-                className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-200 disabled:opacity-40"
+                className="rounded-lg border border-[color:var(--tool-input-border)] bg-[color:var(--tool-input-bg)] px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[color:var(--body-text)] disabled:opacity-40"
               >
                 LLM
               </button>
@@ -1886,13 +1895,13 @@ export default function WebsiteCheckupPage() {
           {fullAuditResult ? (
             <>
               <div className="mb-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                  <p className="text-[10px] uppercase tracking-wider text-slate-400">Overall score</p>
-                  <p className="mt-1 text-xl font-black text-violet-100">{fullAuditResult.overallScore}</p>
+                <div className="rounded-xl border border-[color:var(--tool-input-border)] bg-[color:var(--tool-input-bg)] p-3">
+                  <p className="text-[10px] uppercase tracking-wider text-[color:var(--text-muted)]">Overall score</p>
+                  <p className="mt-1 text-xl font-black text-[color:var(--tool-violet-body)]">{fullAuditResult.overallScore}</p>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                  <p className="text-[10px] uppercase tracking-wider text-slate-400">Categories</p>
-                  <p className="mt-1 text-xl font-black text-violet-100">{fullAuditResult.categoryResults.length}</p>
+                <div className="rounded-xl border border-[color:var(--tool-input-border)] bg-[color:var(--tool-input-bg)] p-3">
+                  <p className="text-[10px] uppercase tracking-wider text-[color:var(--text-muted)]">Categories</p>
+                  <p className="mt-1 text-xl font-black text-[color:var(--tool-violet-body)]">{fullAuditResult.categoryResults.length}</p>
                 </div>
                 <div className="rounded-xl border border-emerald-300/20 bg-emerald-500/10 p-3">
                   <p className="text-[10px] uppercase tracking-wider text-emerald-200">Total pass</p>
@@ -1907,9 +1916,9 @@ export default function WebsiteCheckupPage() {
                   </p>
                 </div>
               </div>
-              <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-white/10">
+              <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-[color:var(--tool-surface-border)]">
                 <table className="w-full min-w-[900px] text-left text-xs">
-                  <thead className="bg-white/[0.03] uppercase text-slate-400">
+                  <thead className="bg-[color:var(--tool-surface-subtle)] uppercase text-[color:var(--text-muted)]">
                     <tr>
                       <th className="p-2">Category</th>
                       <th className="p-2">Score</th>
@@ -1923,13 +1932,13 @@ export default function WebsiteCheckupPage() {
                     {fullAuditResult.categoryResults.map((cat) => {
                       const topFails = cat.results.filter((r) => r.status === 'fail').slice(0, 3);
                       return (
-                        <tr key={cat.categoryId} className="border-t border-white/5">
-                          <td className="p-2 text-slate-300">{cat.categoryId}</td>
-                          <td className="p-2 text-slate-200">{cat.score}</td>
+                        <tr key={cat.categoryId} className="border-t border-[color:var(--border-color)]">
+                          <td className="p-2 text-[color:var(--text-secondary)]">{cat.categoryId}</td>
+                          <td className="p-2 text-[color:var(--body-text)]">{cat.score}</td>
                           <td className="p-2 text-emerald-200">{cat.passCount}</td>
                           <td className="p-2 text-amber-200">{cat.warnCount}</td>
                           <td className="p-2 text-rose-200">{cat.failCount}</td>
-                          <td className="p-2 text-slate-300">
+                          <td className="p-2 text-[color:var(--text-secondary)]">
                             {topFails.length
                               ? topFails.map((f) => `${f.ruleId}: ${f.message}`).join(' | ')
                               : '-'}
@@ -1942,7 +1951,7 @@ export default function WebsiteCheckupPage() {
               </div>
             </>
           ) : (
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-[color:var(--text-muted)]">
               Chưa chạy full audit. Nhấn “Run 1:1 full audit” để chạy toàn bộ rule engine từ
               seo-audit-skill.
             </p>
@@ -1952,11 +1961,11 @@ export default function WebsiteCheckupPage() {
       )}
 
       {activeDashboard === 'structure' ? (
-      <section className="rounded-3xl border border-violet-500/20 bg-black/20 p-4">
+      <section className={`rounded-3xl border p-4 ${BRAND.panel}`}>
         <div className="mb-3 flex items-center justify-between">
           <div className="flex flex-col gap-1">
-            <h3 className="text-sm font-black uppercase tracking-wider text-slate-100">Kết quả kiểm tra ({results.length})</h3>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">Thu thập dữ liệu tự động</p>
+            <h3 className="text-sm font-black uppercase tracking-wider text-[color:var(--text-primary)]">Kết quả kiểm tra ({results.length})</h3>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--tool-violet-muted)]">Thu thập dữ liệu tự động</p>
           </div>
           <button
             onClick={() => {
@@ -1973,7 +1982,7 @@ export default function WebsiteCheckupPage() {
         {results.length > 0 ? (
           <div className="overflow-x-auto custom-scrollbar-indigo">
             <table className="w-full min-w-[900px] text-left text-sm">
-              <thead className="text-xs uppercase text-slate-400">
+              <thead className="text-xs uppercase text-[color:var(--text-muted)]">
                 <tr>
                   <th className="p-2">URL</th>
                   <th className="p-2">Status</th>
@@ -1986,11 +1995,11 @@ export default function WebsiteCheckupPage() {
               </thead>
               <tbody>
                 {results.map((r) => (
-                  <tr key={r.url} className="border-t border-white/5 transition-colors hover:bg-violet-600/[0.03]">
-                    <td className="p-2 text-slate-300">{r.url}</td>
-                    <td className="p-2 text-slate-200">{r.statusCode || 0}</td>
-                    <td className="p-2 text-slate-300">{r.h1 || 'N/A'}</td>
-                    <td className="p-2 text-violet-200">{r.keywordDensity || '0.00%'}</td>
+                  <tr key={r.url} className="border-t border-[color:var(--border-color)] transition-colors hover:bg-violet-600/[0.03]">
+                    <td className="p-2 text-[color:var(--text-secondary)]">{r.url}</td>
+                    <td className="p-2 text-[color:var(--body-text)]">{r.statusCode || 0}</td>
+                    <td className="p-2 text-[color:var(--text-secondary)]">{r.h1 || 'N/A'}</td>
+                    <td className="p-2 text-[color:var(--tool-violet-body)]">{r.keywordDensity || '0.00%'}</td>
                     <td className="p-2">
                       {(() => {
                         const issues = r.issues || [];
@@ -2006,11 +2015,11 @@ export default function WebsiteCheckupPage() {
                         );
                       })()}
                     </td>
-                    <td className="p-2 text-slate-300">{(r.linkStats?.internal || 0) + (r.linkStats?.external || 0)}</td>
+                    <td className="p-2 text-[color:var(--text-secondary)]">{(r.linkStats?.internal || 0) + (r.linkStats?.external || 0)}</td>
                     <td className="p-2">
                       <button
                         onClick={() => setDetail(r)}
-                        className="rounded-lg border border-violet-300/30 bg-violet-500/20 px-3 py-1 text-xs font-bold text-violet-100"
+                        className="rounded-lg border border-violet-300/30 bg-violet-500/20 px-3 py-1 text-xs font-bold text-[color:var(--tool-violet-body)]"
                       >
                         Xem
                       </button>
@@ -2023,11 +2032,11 @@ export default function WebsiteCheckupPage() {
         ) : (
           <div className="flex min-h-[280px] flex-col items-center justify-center gap-5 rounded-2xl border border-dashed border-violet-500/20 bg-violet-500/[0.03] text-center">
             <div className="rounded-[2rem] border border-violet-500/20 bg-violet-500/10 p-5">
-              <Stethoscope size={56} className="text-violet-300/50" />
+              <Stethoscope size={56} className="text-[color:var(--tool-empty-icon)]" />
             </div>
             <div className="space-y-2">
-              <p className="text-xl font-black uppercase tracking-widest text-slate-100">Sẵn sàng kiểm tra</p>
-              <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-500">
+              <p className="text-xl font-black uppercase tracking-widest text-[color:var(--text-primary)]">Sẵn sàng kiểm tra</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.35em] text-[color:var(--text-muted)]">
                 Nhập URL trang chủ để bắt đầu audit
               </p>
             </div>
@@ -2039,16 +2048,16 @@ export default function WebsiteCheckupPage() {
       {detail ? (
         <div className="fixed inset-0 z-[90] bg-black/70 p-6 backdrop-blur-sm">
           <div className="mx-auto h-[90vh] w-full max-w-5xl overflow-hidden rounded-3xl border border-violet-400/30 bg-slate-950">
-            <div className="flex items-center justify-between border-b border-white/10 p-4">
+            <div className="flex items-center justify-between border-b border-[color:var(--tool-surface-border)] p-4">
               <div>
-                <p className="text-sm font-bold text-slate-100">{detail.title || detail.url}</p>
-                <p className="text-xs text-slate-400">{detail.url}</p>
+                <p className="text-sm font-bold text-[color:var(--text-primary)]">{detail.title || detail.url}</p>
+                <p className="text-xs text-[color:var(--text-muted)]">{detail.url}</p>
               </div>
-              <button onClick={() => setDetail(null)} className="rounded-full p-2 text-slate-300 hover:bg-white/10">
+              <button onClick={() => setDetail(null)} className="rounded-full p-2 text-[color:var(--text-secondary)] hover:bg-[color:var(--tool-chip-inactive-bg)]">
                 <X size={18} />
               </button>
             </div>
-            <div className="flex gap-2 border-b border-white/10 p-3">
+            <div className="flex gap-2 border-b border-[color:var(--tool-surface-border)] p-3">
               {[
                 { id: 'keywords', label: 'Keywords', icon: Tags },
                 { id: 'headings', label: 'Heading Tree', icon: LayoutList },
@@ -2059,7 +2068,7 @@ export default function WebsiteCheckupPage() {
                   key={t.id}
                   onClick={() => setTab(t.id as 'keywords' | 'headings' | 'links' | 'issues')}
                   className={`rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-wider ${
-                    tab === t.id ? 'bg-violet-500/20 text-violet-100 border border-violet-300/30' : 'text-slate-400'
+                    tab === t.id ? 'bg-violet-500/20 text-[color:var(--tool-violet-body)] border border-violet-300/30' : 'text-[color:var(--text-muted)]'
                   }`}
                 >
                   <span className="inline-flex items-center gap-2"><t.icon size={13} /> {t.label}</span>
@@ -2070,9 +2079,9 @@ export default function WebsiteCheckupPage() {
               {tab === 'keywords' ? (
                 <div className="space-y-2">
                   {(detail.topKeywords || []).map((k) => (
-                    <div key={`${k.word}-${k.count}`} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                      <span className="text-slate-200">{k.word}</span>
-                      <span className="text-slate-300">{k.count} · {k.density}</span>
+                    <div key={`${k.word}-${k.count}`} className="flex items-center justify-between rounded-xl border border-[color:var(--tool-surface-border)] bg-[color:var(--tool-surface-subtle)] p-3">
+                      <span className="text-[color:var(--body-text)]">{k.word}</span>
+                      <span className="text-[color:var(--text-secondary)]">{k.count} · {k.density}</span>
                     </div>
                   ))}
                 </div>
@@ -2083,8 +2092,8 @@ export default function WebsiteCheckupPage() {
                   {detail.headingTree?.length
                     ? renderTree(detail.headingTree)
                     : (detail.headings || []).map((h, idx) => (
-                        <div key={`${h.tag}-${h.text}-${idx}`} className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-slate-200">
-                          <span className="mr-2 rounded bg-violet-500/20 px-2 py-0.5 text-[10px] font-bold uppercase text-violet-200">{h.tag}</span>
+                        <div key={`${h.tag}-${h.text}-${idx}`} className="rounded-xl border border-[color:var(--tool-surface-border)] bg-[color:var(--tool-surface-subtle)] p-3 text-[color:var(--body-text)]">
+                          <span className="mr-2 rounded bg-violet-500/20 px-2 py-0.5 text-[10px] font-bold uppercase text-[color:var(--tool-violet-body)]">{h.tag}</span>
                           {h.text}
                         </div>
                       ))}
@@ -2093,19 +2102,19 @@ export default function WebsiteCheckupPage() {
 
               {tab === 'links' ? (
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
-                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-violet-200">Anchor Links</p>
-                    <p className="text-xs text-slate-300">Internal: {detail.linkStats?.anchor?.internal || 0}</p>
-                    <p className="text-xs text-slate-300">External: {detail.linkStats?.anchor?.external || 0}</p>
-                    <p className="text-xs text-slate-300">Nofollow: {detail.linkStats?.anchor?.nofollow || 0}</p>
-                    <p className="text-xs text-slate-300">Dofollow: {detail.linkStats?.anchor?.dofollow || 0}</p>
+                  <div className="rounded-2xl border border-[color:var(--tool-surface-border)] bg-[color:var(--tool-surface-subtle)] p-3">
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-[color:var(--tool-violet-body)]">Anchor Links</p>
+                    <p className="text-xs text-[color:var(--text-secondary)]">Internal: {detail.linkStats?.anchor?.internal || 0}</p>
+                    <p className="text-xs text-[color:var(--text-secondary)]">External: {detail.linkStats?.anchor?.external || 0}</p>
+                    <p className="text-xs text-[color:var(--text-secondary)]">Nofollow: {detail.linkStats?.anchor?.nofollow || 0}</p>
+                    <p className="text-xs text-[color:var(--text-secondary)]">Dofollow: {detail.linkStats?.anchor?.dofollow || 0}</p>
                   </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
-                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-violet-200">Resource Links</p>
-                    <p className="text-xs text-slate-300">Internal: {detail.linkStats?.resource?.internal || 0}</p>
-                    <p className="text-xs text-slate-300">External: {detail.linkStats?.resource?.external || 0}</p>
-                    <p className="text-xs text-slate-300">Nofollow: {detail.linkStats?.resource?.nofollow || 0}</p>
-                    <p className="text-xs text-slate-300">Dofollow: {detail.linkStats?.resource?.dofollow || 0}</p>
+                  <div className="rounded-2xl border border-[color:var(--tool-surface-border)] bg-[color:var(--tool-surface-subtle)] p-3">
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-[color:var(--tool-violet-body)]">Resource Links</p>
+                    <p className="text-xs text-[color:var(--text-secondary)]">Internal: {detail.linkStats?.resource?.internal || 0}</p>
+                    <p className="text-xs text-[color:var(--text-secondary)]">External: {detail.linkStats?.resource?.external || 0}</p>
+                    <p className="text-xs text-[color:var(--text-secondary)]">Nofollow: {detail.linkStats?.resource?.nofollow || 0}</p>
+                    <p className="text-xs text-[color:var(--text-secondary)]">Dofollow: {detail.linkStats?.resource?.dofollow || 0}</p>
                   </div>
                 </div>
               ) : null}
@@ -2146,17 +2155,17 @@ export default function WebsiteCheckupPage() {
       {robotsRawModal ? (
         <div className="fixed inset-0 z-[96] bg-black/70 p-6 backdrop-blur-sm">
           <div className="mx-auto flex h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-violet-400/30 bg-slate-950">
-            <div className="flex items-center justify-between border-b border-white/10 p-4">
+            <div className="flex items-center justify-between border-b border-[color:var(--tool-surface-border)] p-4">
               <div>
-                <p className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                  <ShieldAlert size={14} className="text-violet-300" />
+                <p className="text-sm font-bold text-[color:var(--text-primary)] flex items-center gap-2">
+                  <ShieldAlert size={14} className="text-[color:var(--tool-violet-heading)]" />
                   robots.txt — {robotsRawModal.domain}
                 </p>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--tool-violet-muted)]">
                   HTTP {robotsRawModal.robots.statusCode || 'N/A'} · sitemap refs: {robotsRawModal.robots.sitemapRefs.length}
                 </p>
               </div>
-              <button onClick={() => setRobotsRawModal(null)} className="rounded-full p-2 text-slate-300 hover:bg-white/10">
+              <button onClick={() => setRobotsRawModal(null)} className="rounded-full p-2 text-[color:var(--text-secondary)] hover:bg-[color:var(--tool-chip-inactive-bg)]">
                 <X size={18} />
               </button>
             </div>
@@ -2174,16 +2183,16 @@ export default function WebsiteCheckupPage() {
                   </span>
                 ))}
               </div>
-              <pre className="whitespace-pre-wrap break-all rounded-2xl border border-white/10 bg-black/40 p-4 text-[11px] leading-relaxed text-slate-200">
+              <pre className="whitespace-pre-wrap break-all rounded-2xl border border-[color:var(--tool-surface-border)] bg-[color:var(--tool-input-bg)] p-4 text-[11px] leading-relaxed text-[color:var(--body-text)]">
                 {(robotsRawModal.robots.raw || '').split('\n').map((line, idx) => {
                   const lower = line.toLowerCase();
-                  let cls = 'text-slate-300';
-                  if (lower.startsWith('user-agent')) cls = 'text-violet-300 font-bold';
+                  let cls = 'text-[color:var(--text-secondary)]';
+                  if (lower.startsWith('user-agent')) cls = 'text-[color:var(--tool-violet-heading)] font-bold';
                   else if (lower.startsWith('disallow')) cls = 'text-rose-300';
                   else if (lower.startsWith('allow')) cls = 'text-emerald-300';
                   else if (lower.startsWith('sitemap')) cls = 'text-sky-300';
                   else if (lower.startsWith('crawl-delay')) cls = 'text-amber-300';
-                  else if (lower.startsWith('#')) cls = 'text-slate-500 italic';
+                  else if (lower.startsWith('#')) cls = 'text-[color:var(--text-muted)] italic';
                   return (
                     <div key={idx} className={cls}>
                       {line || '\u00A0'}
@@ -2199,20 +2208,20 @@ export default function WebsiteCheckupPage() {
       {imageDetailGroup ? (
         <div className="fixed inset-0 z-[95] bg-black/70 p-6 backdrop-blur-sm">
           <div className="mx-auto h-[85vh] w-full max-w-6xl overflow-hidden rounded-3xl border border-violet-400/30 bg-slate-950">
-            <div className="flex items-center justify-between border-b border-white/10 p-4">
+            <div className="flex items-center justify-between border-b border-[color:var(--tool-surface-border)] p-4">
               <div>
-                <p className="text-sm font-bold text-slate-100">Chi tiết hình ảnh theo URL</p>
-                <p className="text-xs text-slate-400">{imageDetailGroup.pageUrl}</p>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300/80">{imageDetailGroup.images.length} ảnh</p>
+                <p className="text-sm font-bold text-[color:var(--text-primary)]">Chi tiết hình ảnh theo URL</p>
+                <p className="text-xs text-[color:var(--text-muted)]">{imageDetailGroup.pageUrl}</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--tool-violet-muted)]">{imageDetailGroup.images.length} ảnh</p>
               </div>
-              <button onClick={() => setImageDetailGroup(null)} className="rounded-full p-2 text-slate-300 hover:bg-white/10">
+              <button onClick={() => setImageDetailGroup(null)} className="rounded-full p-2 text-[color:var(--text-secondary)] hover:bg-[color:var(--tool-chip-inactive-bg)]">
                 <X size={18} />
               </button>
             </div>
             <div className="h-[calc(85vh-72px)] overflow-auto custom-scrollbar-indigo p-4">
-              <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-white/10">
+              <div className="overflow-x-auto custom-scrollbar-indigo rounded-2xl border border-[color:var(--tool-surface-border)]">
                 <table className="w-full min-w-[900px] text-left text-xs">
-                  <thead className="bg-white/[0.03] uppercase text-slate-400">
+                  <thead className="bg-[color:var(--tool-surface-subtle)] uppercase text-[color:var(--text-muted)]">
                     <tr>
                       <th className="p-2">Ảnh nhỏ</th>
                       <th className="p-2">Image URL</th>
@@ -2225,18 +2234,18 @@ export default function WebsiteCheckupPage() {
                   </thead>
                   <tbody>
                     {imageDetailGroup.images.map((img, idx) => (
-                      <tr key={`${img.src}-${idx}`} className="border-t border-white/5">
+                      <tr key={`${img.src}-${idx}`} className="border-t border-[color:var(--border-color)]">
                         <td className="p-2">
                           <a href={img.src} target="_blank" rel="noreferrer" className="block w-fit">
-                            <img src={img.src} alt={img.alt || 'image'} loading="lazy" className="h-12 w-20 rounded border border-white/10 object-cover" />
+                            <img src={img.src} alt={img.alt || 'image'} loading="lazy" className="h-12 w-20 rounded border border-[color:var(--tool-surface-border)] object-cover" />
                           </a>
                         </td>
-                        <td className="p-2 text-slate-300">{img.src}</td>
-                        <td className="p-2 text-slate-200">{img.alt || <span className="text-rose-300">Missing</span>}</td>
-                        <td className="p-2 text-slate-200">{img.title || <span className="text-amber-300">Missing</span>}</td>
-                        <td className="p-2 text-slate-300">{img.sizeKb ?? '--'}</td>
-                        <td className="p-2 text-slate-300">{img.width ? `${img.width}px` : '--'}</td>
-                        <td className="p-2 text-slate-300">{img.height ? `${img.height}px` : '--'}</td>
+                        <td className="p-2 text-[color:var(--text-secondary)]">{img.src}</td>
+                        <td className="p-2 text-[color:var(--body-text)]">{img.alt || <span className="text-rose-300">Missing</span>}</td>
+                        <td className="p-2 text-[color:var(--body-text)]">{img.title || <span className="text-amber-300">Missing</span>}</td>
+                        <td className="p-2 text-[color:var(--text-secondary)]">{img.sizeKb ?? '--'}</td>
+                        <td className="p-2 text-[color:var(--text-secondary)]">{img.width ? `${img.width}px` : '--'}</td>
+                        <td className="p-2 text-[color:var(--text-secondary)]">{img.height ? `${img.height}px` : '--'}</td>
                       </tr>
                     ))}
                   </tbody>

@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -19,7 +19,6 @@ import {
   LogOut,
   BarChart,
   PanelLeft,
-  PanelRight
 } from 'lucide-react';
 import { useSession, signIn, signOut } from "next-auth/react";
 import Image from 'next/image';
@@ -51,8 +50,13 @@ const navGroups = [
   }
 ];
 
+const DASHBOARD_NAV_HREFS = Array.from(
+  new Set(navGroups.flatMap((g) => g.items.map((i) => i.href).filter((h) => h && !h.startsWith('#')))),
+) as string[];
+
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [isMonitorOpen, setIsMonitorOpen] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   /** SSR/first paint = expanded; sync from localStorage after mount to avoid empty-shell flash */
@@ -63,25 +67,45 @@ export default function Sidebar() {
   const isGoogleConnected = status === "authenticated";
   const isConnecting = status === "loading";
 
-  useEffect(() => {
-    // Check saved theme
-    const savedTheme = localStorage.getItem('omnisuite-theme') as 'dark' | 'light' | null;
-    const initialTheme = savedTheme || 'dark';
-    setTheme(initialTheme);
-    document.documentElement.classList.toggle('light', initialTheme === 'light');
+  /** Sync theme + sidebar from localStorage before paint to avoid flash and layout jumps */
+  useLayoutEffect(() => {
+    try {
+      const savedTheme = localStorage.getItem('omnisuite-theme') as 'dark' | 'light' | null;
+      const initialTheme = savedTheme || 'dark';
+      setTheme(initialTheme);
+      document.documentElement.classList.toggle('light', initialTheme === 'light');
 
-    // Listen for theme changes
+      const savedCollapsed = localStorage.getItem('omnisuite-sidebar-collapsed') === 'true';
+      setIsCollapsed(savedCollapsed);
+      document.documentElement.style.setProperty('--sidebar-width', savedCollapsed ? '80px' : '300px');
+    } catch {
+      document.documentElement.style.setProperty('--sidebar-width', '300px');
+    }
+  }, []);
+
+  useEffect(() => {
     const observer = new MutationObserver(() => {
       setTheme(document.documentElement.classList.contains('light') ? 'light' : 'dark');
     });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-
-    // Check saved sidebar state
-    const savedCollapsed = localStorage.getItem('omnisuite-sidebar-collapsed') === 'true';
-    setIsCollapsed(savedCollapsed);
-    document.documentElement.style.setProperty('--sidebar-width', savedCollapsed ? '80px' : '300px');
-    
     return () => observer.disconnect();
+  }, []);
+
+  /** Warm route bundles so sidebar navigations feel instant */
+  useEffect(() => {
+    DASHBOARD_NAV_HREFS.forEach((href) => router.prefetch(href));
+  }, [router]);
+
+  /** Other tabs / windows: keep sidebar width in sync */
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== 'omnisuite-sidebar-collapsed' || e.storageArea !== localStorage) return;
+      const collapsed = e.newValue === 'true';
+      setIsCollapsed(collapsed);
+      document.documentElement.style.setProperty('--sidebar-width', collapsed ? '80px' : '300px');
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, []);
 
   const toggleTheme = () => {
@@ -101,18 +125,20 @@ export default function Sidebar() {
 
   return (
     <aside 
-      className={`fixed left-0 top-0 h-screen z-50 flex flex-col font-inter will-change-transform ${isCollapsed ? 'w-[80px]' : 'w-[300px]'}`} 
+      className="fixed left-0 top-0 z-50 flex h-screen flex-col font-inter will-change-transform"
       style={{ 
+        width: 'var(--sidebar-width, 300px)',
         backgroundColor: 'var(--sidebar-bg)', 
         borderRight: '1px solid var(--border-color)',
-        transition: 'width 300ms cubic-bezier(0.4, 0, 0.2, 1)'
+        transition: 'width 200ms cubic-bezier(0.4, 0, 0.2, 1)',
       }}
     >
       {/* Branding Area with Toggle */}
-      <div className={`flex items-center transition-all duration-300 ${isCollapsed ? 'p-3 justify-center h-[72px]' : 'p-6 justify-between h-[88px]'}`}>
+      <div className={`flex items-center transition-[padding,height] duration-200 ease-out ${isCollapsed ? 'p-3 justify-center h-[72px]' : 'p-6 justify-between h-[88px]'}`}>
         <Link 
           href="/" 
-          className={`overflow-hidden transition-all duration-300 ${isCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}
+          prefetch
+          className={`overflow-hidden transition-[opacity,width,max-width] duration-150 ease-out ${isCollapsed ? 'pointer-events-none w-0 max-w-0 opacity-0' : 'max-w-[280px] opacity-100'}`}
         >
           <h1 className="text-2xl font-black tracking-tighter whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
             OmniSuite <span className="text-indigo-500 drop-shadow-[0_0_12px_rgba(99,102,241,0.4)]">AI</span>
@@ -122,12 +148,12 @@ export default function Sidebar() {
         {/* Collapse Toggle Button */}
         <button
           onClick={toggleSidebar}
-          className="p-2 rounded-xl transition-all duration-200 hover:scale-110 hover:bg-white/5 shrink-0"
+          className="touch-manipulation shrink-0 rounded-xl p-2 transition-colors duration-100 hover:bg-white/5"
           style={{ 
             backgroundColor: 'var(--active-bg)', 
             border: '1px solid var(--border-color)',
             transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
-            transition: 'transform 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 200ms'
+            transition: 'transform 180ms cubic-bezier(0.4, 0, 0.2, 1), background-color 100ms ease-out'
           }}
           title={isCollapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
         >
@@ -142,7 +168,7 @@ export default function Sidebar() {
             {/* Group Title - only show when expanded */}
             {!isCollapsed && (
               <div 
-                className="px-4 py-2 text-[10px] font-black tracking-widest uppercase overflow-hidden transition-all duration-300"
+                className="overflow-hidden px-4 py-2 text-[10px] font-black uppercase tracking-widest transition-opacity duration-150"
                 style={{ color: 'var(--text-muted)' }}
               >
                 {group.title}
@@ -166,55 +192,76 @@ export default function Sidebar() {
                 const isActive = isExactMatch || (isParentMatch && !longerMatchExists);
                 const isMonitor = item.href === '#monitor';
                 
+                const itemClass = `touch-manipulation group relative flex items-center overflow-hidden rounded-xl transition-[background-color,border-color,opacity] duration-100 ease-out ${isCollapsed ? 'justify-center px-2 py-3' : 'px-4 py-3'} ${
+                  isActive ? 'border border-indigo-500/30' : 'hover:bg-white/5'
+                }`;
+                const itemStyle = { backgroundColor: isActive ? 'var(--active-bg)' : 'transparent' } as const;
+
                 return (
-                  <button
+                  <div
                     key={item.href}
-                    onClick={(e) => {
-                      if (isMonitor) {
-                        e.preventDefault();
-                        setIsMonitorOpen(true);
-                      }
-                    }}
                     className={`w-full ${isCollapsed ? 'text-center' : 'text-left'}`}
-                    title={isCollapsed ? item.name : undefined}
                   >
-                    <Link
-                      href={isMonitor ? '#' : item.href}
-                      className={`flex items-center ${isCollapsed ? 'justify-center px-2 py-3' : 'px-4 py-3'} transition-all duration-200 group rounded-xl relative overflow-hidden ${
-                        isActive 
-                          ? 'border border-indigo-500/30' 
-                          : 'hover:bg-white/5'
-                      }`}
-                      style={{ 
-                        backgroundColor: isActive ? 'var(--active-bg)' : 'transparent'
-                      }}
-                    >
-                      {/* Active Indicator Line */}
-                      {isActive && (
-                        <div className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-indigo-500 rounded-r-full shadow-[0_0_10px_rgba(99,102,241,0.8)]" />
-                      )}
-                      
-                      <div className={`flex items-center relative z-10 ${isCollapsed ? 'justify-center' : 'gap-3 w-full'}`}>
-                        <item.icon 
-                          size={isCollapsed ? 22 : 20} 
-                          className={`transition-all duration-200 shrink-0 ${isCollapsed ? 'mx-auto' : ''}`} 
-                          style={{ color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)' }} 
-                        />
-                        {!isCollapsed && (
-                          <span 
-                            className="text-[14px] font-semibold tracking-tight transition-all duration-300 whitespace-nowrap overflow-hidden"
-                            style={{ 
-                              color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
-                              maxWidth: isCollapsed ? '0' : '200px',
-                              opacity: isCollapsed ? '0' : '1'
-                            }} 
-                          >
-                            {item.name}
-                          </span>
+                    {isMonitor ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsMonitorOpen(true)}
+                        className={`${itemClass} w-full active:scale-[0.99]`}
+                        style={itemStyle}
+                        title={isCollapsed ? item.name : undefined}
+                      >
+                        {isActive && (
+                          <div className="absolute left-0 top-1/4 bottom-1/4 w-1 rounded-r-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.8)]" />
                         )}
-                      </div>
-                    </Link>
-                  </button>
+                        <div className={`relative z-10 flex items-center ${isCollapsed ? 'justify-center' : 'w-full gap-3'}`}>
+                          <item.icon
+                            size={isCollapsed ? 22 : 20}
+                            className={`shrink-0 transition-colors duration-100 ${isCollapsed ? 'mx-auto' : ''}`}
+                            style={{ color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)' }}
+                          />
+                          {!isCollapsed && (
+                            <span
+                              className="overflow-hidden whitespace-nowrap text-[14px] font-semibold tracking-tight transition-opacity duration-100"
+                              style={{
+                                color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                              }}
+                            >
+                              {item.name}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    ) : (
+                      <Link
+                        href={item.href}
+                        prefetch
+                        className={`${itemClass} w-full active:scale-[0.99]`}
+                        style={itemStyle}
+                        title={isCollapsed ? item.name : undefined}
+                      >
+                        {isActive && (
+                          <div className="absolute left-0 top-1/4 bottom-1/4 w-1 rounded-r-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.8)]" />
+                        )}
+                        <div className={`relative z-10 flex items-center ${isCollapsed ? 'justify-center' : 'w-full gap-3'}`}>
+                          <item.icon
+                            size={isCollapsed ? 22 : 20}
+                            className={`shrink-0 transition-colors duration-100 ${isCollapsed ? 'mx-auto' : ''}`}
+                            style={{ color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)' }}
+                          />
+                          {!isCollapsed && (
+                            <span
+                              className="overflow-hidden whitespace-nowrap text-[14px] font-semibold tracking-tight transition-opacity duration-100"
+                              style={{
+                                color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                              }}
+                            >
+                              {item.name}
+                            </span>
+                          )}
+                        </div>
+                      </Link>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -227,7 +274,7 @@ export default function Sidebar() {
         <div className="flex flex-col gap-6">
           <div className={`flex items-center ${isCollapsed ? 'flex-col gap-2' : 'justify-between'}`}>
             <div className={`flex items-center gap-3 group/user overflow-hidden ${isCollapsed ? 'flex-col' : ''}`}>
-              <div className={`rounded-full flex items-center justify-center font-black text-[12px] border uppercase shadow-lg transition-all duration-500 overflow-hidden relative ${
+              <div className={`relative flex items-center justify-center overflow-hidden rounded-full border font-black text-[12px] uppercase shadow-lg transition-[width,height] duration-200 ease-out ${
                 isGoogleConnected 
                   ? 'bg-white border-sky-500/30' 
                   : 'bg-gradient-to-br from-indigo-600 to-violet-600 border-white/10'
@@ -254,11 +301,16 @@ export default function Sidebar() {
               </div>
               {!isCollapsed && (
                 <div className="flex flex-col min-w-0">
-                  <p className={`text-[13px] font-black leading-none uppercase tracking-wide truncate transition-colors ${isGoogleConnected ? 'text-sky-400' : 'text-white'}`}>
+                  <p
+                    className={`text-[13px] font-black leading-none uppercase tracking-wide truncate transition-colors ${isGoogleConnected ? 'text-sky-400' : ''}`}
+                    style={!isGoogleConnected ? { color: 'var(--text-primary)' } : undefined}
+                  >
                      {isConnecting ? 'Đang đồng bộ...' : (session?.user?.name || 'Quản trị viên')}
                   </p>
                   {!isGoogleConnected && !isConnecting && (
-                     <span className="text-[9px] font-bold text-slate-500 mt-1.5 uppercase tracking-widest">HỆ THỐNG NỘI BỘ</span>
+                     <span className="text-[9px] font-bold mt-1.5 uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>
+                       HỆ THỐNG NỘI BỘ
+                     </span>
                   )}
                 </div>
               )}
@@ -268,7 +320,7 @@ export default function Sidebar() {
               {/* Theme Toggle Button */}
               <button
                 onClick={toggleTheme}
-                className={`rounded-xl transition-all duration-200 hover:scale-105 ${isCollapsed ? 'p-1.5' : 'p-2.5'}`}
+                className={`touch-manipulation rounded-xl transition-colors duration-100 ${isCollapsed ? 'p-1.5' : 'p-2.5'} hover:bg-[color:var(--hover-bg)]`}
                 style={{ backgroundColor: 'var(--active-bg)', border: '1px solid var(--border-color)' }}
                 title={theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
               >
@@ -283,7 +335,7 @@ export default function Sidebar() {
               {isGoogleConnected && (
                 <button
                   onClick={() => signOut()}
-                  className={`rounded-xl transition-all duration-200 hover:scale-105 hover:bg-rose-500/10 text-slate-500 hover:text-rose-500 ${isCollapsed ? 'p-1.5' : 'p-2.5'}`}
+                  className={`touch-manipulation rounded-xl text-slate-500 transition-colors duration-100 hover:bg-rose-500/10 hover:text-rose-500 ${isCollapsed ? 'p-1.5' : 'p-2.5'}`}
                   style={{ border: '1px solid var(--border-color)' }}
                   title="Đăng xuất"
                 >
@@ -296,7 +348,7 @@ export default function Sidebar() {
           {!isGoogleConnected && !isConnecting && !isCollapsed && (
             <button 
               onClick={() => signIn('google')}
-              className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-white transition-all flex items-center justify-center gap-2 group"
+              className="group flex w-full touch-manipulation items-center justify-center gap-2 rounded-xl border py-3 text-[10px] font-black uppercase tracking-[0.2em] transition-[background-color,color,border-color] duration-100 bg-[color:var(--hover-bg)] border-[color:var(--border-color)] text-[color:var(--text-secondary)] hover:bg-[color:var(--active-bg)] hover:text-[color:var(--text-primary)] active:scale-[0.99]"
             >
                <div className="w-1.5 h-1.5 rounded-full bg-slate-600 group-hover:bg-sky-500 transition-colors" />
                KẾT NỐI TÀI KHOẢN GOOGLE

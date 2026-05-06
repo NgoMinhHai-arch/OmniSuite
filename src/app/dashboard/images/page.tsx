@@ -625,7 +625,7 @@ export default function ImagesDashboard() {
                           >
                             <div className="p-10 border-b flex items-center justify-between" style={{ backgroundColor: 'var(--hover-bg)', borderColor: 'var(--border-color)' }}>
                          <div className="flex flex-col gap-1">
-                            <Typography variant="h3" className="mb-0 text-3xl font-bold uppercase text-white">TÀI NGUYÊN ĐÃ TÌM THẤY</Typography>
+                            <Typography variant="h3" className="mb-0 text-3xl font-bold uppercase" style={{ color: 'var(--text-primary)' }}>TÀI NGUYÊN ĐÃ TÌM THẤY</Typography>
                             <p className="text-[10px] font-semibold text-indigo-400 uppercase tracking-widest leading-none">HÀNG LƯỚI HÌNH ẢNH AI</p>
                          </div>
                          <Button variant="success" size="sm" className="px-10 h-14 font-bold uppercase text-xs tracking-widest" onClick={() => {}} leftIcon={<Download size={20} />}>XUẤT BẢN</Button>
@@ -646,7 +646,7 @@ export default function ImagesDashboard() {
                                       <button 
                                         key={g.provider} 
                                         onClick={() => setBrowserProvider(g.provider)} 
-                                        className={`w-full text-left px-4 py-4 rounded-2xl text-[12px] font-bold transition-all flex flex-col mb-1.5 relative overflow-hidden group ${isSelected ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-900/20' : 'hover:bg-white/5'}`}
+                                        className={`w-full text-left px-4 py-4 rounded-2xl text-[12px] font-bold transition-all flex flex-col mb-1.5 relative overflow-hidden group ${isSelected ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-900/20' : 'hover:bg-[color:var(--hover-bg)]'}`}
                                         style={isSelected ? {} : { color: 'var(--text-muted)' }}
                                       >
                                         <div className="flex items-center justify-between z-10">
@@ -768,7 +768,7 @@ export default function ImagesDashboard() {
                       {usePremiumApi && (
                         <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="flex items-center gap-2 border-l border-white/10 pl-4 whitespace-nowrap overflow-hidden">
                            {['serpapi'].map(p => (
-                             <button key={p} type="button" disabled={loading} onClick={() => !loading && setPremiumProvider(p)} className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase transition-all disabled:cursor-not-allowed disabled:opacity-70 ${premiumProvider === p ? 'bg-amber-500 text-white shadow-xl scale-105' : 'bg-white/5 text-slate-500 hover:text-white'}`}>
+                             <button key={p} type="button" disabled={loading} onClick={() => !loading && setPremiumProvider(p)} className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase transition-all disabled:cursor-not-allowed disabled:opacity-70 ${premiumProvider === p ? 'bg-amber-500 text-white shadow-xl scale-105' : 'bg-[color:var(--hover-bg)] text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] border border-[color:var(--border-color)]'}`}>
                                {p}
                              </button>
                            ))}
@@ -824,8 +824,8 @@ export default function ImagesDashboard() {
             <div className="flex items-center gap-8 font-bold">
               <Typography variant="body" className="font-bold">Đã chọn: <strong className="text-indigo-400 text-2xl">{selectedCount}</strong> / {results.length}</Typography>
               <div className="flex gap-5 border-l border-white/10 pl-8">
-                <button onClick={selectAll} className="text-[10px] font-black text-indigo-400 hover:text-white uppercase tracking-widest transition-all">Chọn hết</button>
-                <button onClick={deselectAll} className="text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-widest transition-all">Bỏ chọn</button>
+                <button onClick={selectAll} className="text-[10px] font-black text-indigo-500 hover:text-indigo-600 uppercase tracking-widest transition-all">Chọn hết</button>
+                <button onClick={deselectAll} className="text-[10px] font-black text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] uppercase tracking-widest transition-all">Bỏ chọn</button>
                 <button onClick={handleClearAll} className="text-[10px] font-black text-red-500/70 hover:red-400 uppercase tracking-widest flex items-center gap-2 transition-all"><Trash2 size={14} /> Xóa sạch</button>
               </div>
             </div>
@@ -856,7 +856,7 @@ export default function ImagesDashboard() {
                          <div className="relative group">
                             <div className="absolute inset-0 bg-indigo-500/20 blur-3xl opacity-50 group-hover:opacity-100 transition-all rounded-full" />
                             <div className="p-12 rounded-[4rem] border-4 border-dashed relative z-10 shadow-2xl skew-x-[-2deg]" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
-                              <ImageIcon size={120} className="text-white opacity-[0.05]" />
+                              <ImageIcon size={120} className="text-[color:var(--text-primary)] opacity-[0.07]" />
                             </div>
                          </div>
                          <div className="space-y-6">
@@ -877,7 +877,7 @@ export default function ImagesDashboard() {
                 style={item.selected ? {} : { borderColor: 'var(--border-color)' }}
               >
                 <img src={`/api/images/proxy?url=${encodeURIComponent(item.thumbnail || item.url)}`} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" alt="img" loading="lazy" />
-                <div className={`absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center transition-all ${item.selected ? 'bg-indigo-600 text-white shadow-lg' : 'bg-black/40 text-transparent border border-white/10'}`}><CheckCircle2 size={18} /></div>
+                <div className={`absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center transition-all ${item.selected ? 'bg-indigo-600 text-white shadow-lg' : 'bg-black/35 text-transparent border border-white/20'}`}><CheckCircle2 size={18} /></div>
                 <div className="absolute inset-x-0 bottom-0 p-4 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex justify-between items-center opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-2 group-hover:translate-y-0">
                     <div className="flex items-center gap-2">
                       <button onClick={(e) => { e.stopPropagation(); handleDownloadSingle(item); }} className="p-2.5 bg-white/10 hover:bg-emerald-500 text-white rounded-xl backdrop-blur-md transition-all active:scale-90"><Download size={14} /></button>

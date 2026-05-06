@@ -45,7 +45,7 @@ export function ToolShell({
           <div className="flex items-start gap-4 min-w-0">
             <a
               href="/dashboard/seo-tools"
-              className="text-cyan-400 hover:text-cyan-300 mt-1.5 shrink-0"
+              className="mt-1.5 shrink-0 text-[color:var(--tool-violet-heading)] hover:opacity-80"
               aria-label="Quay lại Bộ công cụ SEO"
             >
               <ArrowLeft size={22} />

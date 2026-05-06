@@ -565,8 +565,8 @@ export default function MapsPage() {
                            <Map size={80} className="text-violet-400/20 animate-pulse" />
                         </div>
                         <div className="space-y-4">
-                           <Typography variant="h3" className="text-white font-black uppercase text-2xl tracking-widest mb-0">Sẵn sàng quét</Typography>
-                           <p className="text-xs font-black text-slate-600 uppercase tracking-[0.4em] leading-loose">Vui lòng nhập từ khóa và địa điểm để bắt đầu quét bản đồ.</p>
+                           <Typography variant="h3" className="font-black uppercase text-2xl tracking-widest mb-0" style={{ color: 'var(--text-primary)' }}>Sẵn sàng quét</Typography>
+                           <p className="text-xs font-black uppercase tracking-[0.4em] leading-loose" style={{ color: 'var(--text-muted)' }}>Vui lòng nhập từ khóa và địa điểm để bắt đầu quét bản đồ.</p>
                         </div>
                      </div>
                   </div>

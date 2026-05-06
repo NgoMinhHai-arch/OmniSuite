@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated / vendored scratch (not app source)
+    ".tmp/**",
   ]),
 ]);
 
