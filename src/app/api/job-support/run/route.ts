@@ -22,6 +22,8 @@ export async function POST(req: NextRequest) {
       ecoMode: typeof body.ecoMode === 'boolean' ? body.ecoMode : undefined,
       maxQueries: typeof body.maxQueries === 'number' ? body.maxQueries : undefined,
       applyJobUrls: typeof body.applyJobUrls === 'string' ? body.applyJobUrls : undefined,
+      searchUrl: typeof body.searchUrl === 'string' ? body.searchUrl : undefined,
+      maxPages: typeof body.maxPages === 'number' ? body.maxPages : undefined,
     });
     const status = result.ok ? 200 : result.errorCode === 'INVALID_INPUT' || result.errorCode === 'MISSING_APPROVAL' ? 400 : 500;
     return NextResponse.json(result, { status });

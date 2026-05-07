@@ -1,6 +1,6 @@
 export type JobWorkspace = 'find-jobs' | 'tailor-cv' | 'auto-apply';
 
-export type JobSupportProvider = 'vn-job-feed' | 'manual-apply' | 'ai-resume-tailor';
+export type JobSupportProvider = 'vn-job-feed' | 'manual-apply' | 'ai-resume-tailor' | 'crawl4ai-url';
 
 export type JobSupportErrorCode =
   | 'INVALID_INPUT'
@@ -52,6 +52,9 @@ export type JobSupportRequest = {
   maxQueries?: number;
   /** Multiline URLs for manual apply (one per line); preferred over repurposing jdText */
   applyJobUrls?: string;
+  /** Optional URL-in crawling mode powered by Job Ops + Crawl4AI */
+  searchUrl?: string;
+  maxPages?: number;
 };
 
 export type JobSupportRunResult = {
@@ -84,6 +87,37 @@ export type JobSupportRunResult = {
 export type JobSupportApiResponse = {
   ok: boolean;
   output?: JobSupportRunResult;
+  error?: string;
+  errorCode?: JobSupportErrorCode;
+  hint?: string;
+};
+
+export type JobDetailCostMode = 'free_only' | 'free_then_paid' | 'paid_priority';
+
+export type JobDetailEnrichment = {
+  description?: string;
+  requirements?: string[];
+  benefits?: string[];
+  source: string;
+  updatedAt: string;
+};
+
+export type JobDetailStrategy = 'free_fetch' | 'tavily' | 'serpapi';
+
+export type JobDetailEnrichRequest = {
+  link: string;
+  title?: string;
+  costMode: JobDetailCostMode;
+  serpapi_key?: string;
+  tavily_api_key?: string;
+};
+
+export type JobDetailEnrichResponse = {
+  ok: boolean;
+  detail?: JobDetailEnrichment;
+  strategyUsed?: JobDetailStrategy;
+  fallbackUsed?: boolean;
+  creditsEstimate?: number;
   error?: string;
   errorCode?: JobSupportErrorCode;
   hint?: string;

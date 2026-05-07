@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BriefcaseBusiness, Copy, ExternalLink, LayoutGrid, List, Map, Maximize2, Minimize2, RefreshCw, Search, ShieldCheck } from 'lucide-react';
 import Card from '@/shared/ui/Card';
@@ -21,15 +21,20 @@ const PRESET_SOURCES: Record<string, string> = {
   Marketing: ['vietnamworks.com', 'topcv.vn', 'careerlink.vn', 'glints.com', 'linkedin.com/jobs'].join('\n'),
 };
 const QUICK_KEYWORDS = ['Remote', 'Intern', 'Junior', 'Middle', 'Senior'];
+const SHOW_EXTRA_BOARD_ACTIONS = false;
+const SHOW_VIEW_MODE_TOGGLES = false;
 type SortMode = 'relevance' | 'latest' | 'title';
 type PanelTab = 'quick' | 'filters' | 'sources';
 type ViewMode = 'cards' | 'table';
 type CrawlMode = 'eco' | 'more' | 'full';
+type DetailCostMode = 'free_only' | 'free_then_paid' | 'paid_priority';
+type DetailStrategy = 'free_fetch' | 'tavily' | 'serpapi';
+type BatchStatus = 'pending' | 'done' | 'failed' | 'cached';
 
 const MODE_CONFIG: Record<CrawlMode, { label: string; ecoMode: boolean; maxQueries: number; tip: string }> = {
-  eco: { label: 'Tiết kiệm', ecoMode: true, maxQueries: 4, tip: 'Tiết kiệm (max là 4).' },
-  more: { label: 'Nhiều hơn', ecoMode: false, maxQueries: 6, tip: 'Nhiều hơn (max là 6).' },
-  full: { label: 'Đầy đủ', ecoMode: false, maxQueries: 10, tip: 'Đầy đủ (max là 10).' },
+  eco: { label: 'Tiết kiệm', ecoMode: true, maxQueries: 6, tip: 'Tiết kiệm (max là 6).' },
+  more: { label: 'Nhiều hơn', ecoMode: false, maxQueries: 12, tip: 'Nhiều hơn (max là 12).' },
+  full: { label: 'Đầy đủ', ecoMode: false, maxQueries: 20, tip: 'Đầy đủ (max là 20).' },
 };
 
 function detectSmartPreset(jobTitle: string): keyof typeof PRESET_SOURCES {
@@ -37,6 +42,13 @@ function detectSmartPreset(jobTitle: string): keyof typeof PRESET_SOURCES {
   if (/(dev|developer|engineer|frontend|backend|fullstack|data|ai|it|qa|tester)/.test(k)) return 'Tech';
   if (/(marketing|content|seo|brand|social|media|ads|growth|pr|copywriter)/.test(k)) return 'Marketing';
   return 'General';
+}
+
+function buildDefaultCrawlSearchUrl(jobTitle: string, location: string): string {
+  const keyword = encodeURIComponent(jobTitle.trim() || 'việc làm');
+  const loc = location.trim();
+  const locationPart = loc ? `&location=${encodeURIComponent(loc)}` : '';
+  return `https://www.topcv.vn/tim-viec-lam?keyword=${keyword}${locationPart}`;
 }
 
 type FindRunPayload = {
@@ -52,9 +64,46 @@ type FindRunPayload = {
   hint?: string;
 };
 
+type JobDetailCacheItem = {
+  description?: string;
+  requirements?: string[];
+  benefits?: string[];
+  source?: string;
+  updatedAt?: string;
+};
+
+type EnrichPayload = {
+  ok?: boolean;
+  detail?: JobDetailCacheItem;
+  strategyUsed?: DetailStrategy;
+  fallbackUsed?: boolean;
+  creditsEstimate?: number;
+  error?: string;
+  errorCode?: string;
+  hint?: string;
+};
+
+type BatchProgressSnapshot = {
+  total: number;
+  processed: number;
+  done: number;
+  failed: number;
+  cached: number;
+  credits: number;
+  currentLink: string;
+};
+
+const DETAIL_MODE_CONFIG: Record<DetailCostMode, { label: string; tip: string }> = {
+  free_only: { label: 'Miễn phí', tip: 'Chỉ fetch URL trực tiếp và dùng cache.' },
+  free_then_paid: { label: 'Tiết kiệm + fallback', tip: 'Miễn phí trước, thiếu dữ liệu thì mới gọi API trả phí.' },
+  paid_priority: { label: 'Ưu tiên đầy đủ', tip: 'Ưu tiên provider trả phí để lấy dữ liệu đầy hơn.' },
+};
+
 export default function FindJobsDashboardPage() {
   const [jobTitle, setJobTitle] = useState('');
   const [location, setLocation] = useState('');
+  const [crawlUrl, setCrawlUrl] = useState('');
+  const [useApiFastMode, setUseApiFastMode] = useState(false);
   const [companyPortals, setCompanyPortals] = useState(DEFAULT_SOURCES);
   const [result, setResult] = useState<string>('');
   const [jobs, setJobs] = useState<JobListing[]>([]);
@@ -63,6 +112,7 @@ export default function FindJobsDashboardPage() {
   const [errorCode, setErrorCode] = useState<string>('');
   const [hint, setHint] = useState<string>('');
   const [providerInfo, setProviderInfo] = useState<string>('');
+  const [apiCapabilityInfo, setApiCapabilityInfo] = useState<string>('');
   const [running, setRunning] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [keywordFilter, setKeywordFilter] = useState<string>('');
@@ -71,18 +121,38 @@ export default function FindJobsDashboardPage() {
   const [crawlMode, setCrawlMode] = useState<CrawlMode>('eco');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [panelTab, setPanelTab] = useState<PanelTab>('quick');
-  const [viewMode, setViewMode] = useState<ViewMode>('cards');
+  const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [focusDetail, setFocusDetail] = useState(false);
   const [boardExpanded, setBoardExpanded] = useState(false);
+  const [pageSize, setPageSize] = useState(20);
+  const [pageIndex, setPageIndex] = useState(0);
   const [mounted, setMounted] = useState(false);
   const [cacheReady, setCacheReady] = useState(false);
   const [cursorTip, setCursorTip] = useState<{ x: number; y: number; lines: string[] } | null>(null);
+  const [detailCostMode, setDetailCostMode] = useState<DetailCostMode>('free_only');
+  const [detailCacheByLink, setDetailCacheByLink] = useState<Record<string, JobDetailCacheItem>>({});
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailStatus, setDetailStatus] = useState<string>('');
+  const [isBatchRunning, setIsBatchRunning] = useState(false);
+  const [batchStatusByLink, setBatchStatusByLink] = useState<Record<string, BatchStatus>>({});
+  const [batchProgress, setBatchProgress] = useState<BatchProgressSnapshot>({
+    total: 0,
+    processed: 0,
+    done: 0,
+    failed: 0,
+    cached: 0,
+    credits: 0,
+    currentLink: '',
+  });
+  const cancelBatchRef = useRef(false);
   const currentMode = MODE_CONFIG[crawlMode];
 
   const serpHint = useMemo(
     () =>
-      'Chọn chế độ chạy để cân bằng giữa tiết kiệm credit và độ phủ kết quả.',
-    [],
+      useApiFastMode
+        ? 'Bật API để chạy nhanh hơn nhưng có thể ít kết quả và phụ thuộc quota.'
+        : 'Tắt API để dùng Crawl4AI URL-in: có thể nhập URL hoặc để trống để tự tạo từ từ khóa và địa điểm.',
+    [useApiFastMode],
   );
 
   useEffect(() => {
@@ -92,15 +162,21 @@ export default function FindJobsDashboardPage() {
       const parsed = raw ? JSON.parse(raw) : null;
       const hasSerp = Boolean(parsed?.serpapi_key?.trim?.());
       const hasTavily = Boolean(parsed?.tavily_api_key?.trim?.());
-      setProviderInfo(
+      setApiCapabilityInfo(
         hasSerp || hasTavily
           ? `API khả dụng: ${[hasTavily ? 'Tavily' : '', hasSerp ? 'SerpApi' : ''].filter(Boolean).join(' + ')}.`
           : 'Chưa thấy Tavily/SerpApi trong Cài đặt — nhập ít nhất một key trong Settings hoặc env server.',
       );
     } catch {
-      setProviderInfo('Không đọc được settings local để kiểm tra Tavily/SerpApi.');
+      setApiCapabilityInfo('Không đọc được settings local để kiểm tra Tavily/SerpApi.');
     }
   }, []);
+
+  useEffect(() => {
+    setProviderInfo(
+      useApiFastMode ? apiCapabilityInfo : 'Crawl4AI URL-in đang được bật mặc định.',
+    );
+  }, [useApiFastMode, apiCapabilityInfo]);
 
   useEffect(() => {
     setMounted(true);
@@ -115,6 +191,8 @@ export default function FindJobsDashboardPage() {
       if (parsed) {
         if (typeof parsed.jobTitle === 'string') setJobTitle(parsed.jobTitle);
         if (typeof parsed.location === 'string') setLocation(parsed.location);
+        if (typeof parsed.crawlUrl === 'string') setCrawlUrl(parsed.crawlUrl);
+        if (typeof parsed.useApiFastMode === 'boolean') setUseApiFastMode(parsed.useApiFastMode);
         if (typeof parsed.companyPortals === 'string' && parsed.companyPortals.trim()) setCompanyPortals(parsed.companyPortals);
         if (typeof parsed.result === 'string') setResult(parsed.result);
         if (Array.isArray(parsed.jobs)) setJobs(parsed.jobs as JobListing[]);
@@ -127,6 +205,28 @@ export default function FindJobsDashboardPage() {
         if (typeof parsed.hideDuplicates === 'boolean') setHideDuplicates(parsed.hideDuplicates);
         if (parsed.crawlMode === 'eco' || parsed.crawlMode === 'more' || parsed.crawlMode === 'full') setCrawlMode(parsed.crawlMode);
         if (typeof parsed.showAdvanced === 'boolean') setShowAdvanced(parsed.showAdvanced);
+        if (parsed.detailCostMode === 'free_only' || parsed.detailCostMode === 'free_then_paid' || parsed.detailCostMode === 'paid_priority') {
+          setDetailCostMode(parsed.detailCostMode);
+        }
+        if (parsed.detailCacheByLink && typeof parsed.detailCacheByLink === 'object') {
+          setDetailCacheByLink(parsed.detailCacheByLink as Record<string, JobDetailCacheItem>);
+        }
+        if (parsed.batchStatusByLink && typeof parsed.batchStatusByLink === 'object') {
+          setBatchStatusByLink(parsed.batchStatusByLink as Record<string, BatchStatus>);
+        }
+        if (parsed.batchProgress && typeof parsed.batchProgress === 'object') {
+          const p = parsed.batchProgress as Partial<BatchProgressSnapshot>;
+          setBatchProgress((prev) => ({
+            ...prev,
+            total: Number.isFinite(p.total) ? Number(p.total) : prev.total,
+            processed: Number.isFinite(p.processed) ? Number(p.processed) : prev.processed,
+            done: Number.isFinite(p.done) ? Number(p.done) : prev.done,
+            failed: Number.isFinite(p.failed) ? Number(p.failed) : prev.failed,
+            cached: Number.isFinite(p.cached) ? Number(p.cached) : prev.cached,
+            credits: Number.isFinite(p.credits) ? Number(p.credits) : prev.credits,
+            currentLink: typeof p.currentLink === 'string' ? p.currentLink : prev.currentLink,
+          }));
+        }
         if (typeof parsed.selectedJobLink === 'string' && Array.isArray(parsed.jobs)) {
           const picked = (parsed.jobs as JobListing[]).find((j) => j.link === parsed.selectedJobLink) || null;
           setSelectedJob(picked);
@@ -161,6 +261,10 @@ export default function FindJobsDashboardPage() {
     }
   }, [viewMode, focusDetail, panelTab]);
 
+  useEffect(() => {
+    setDetailStatus('');
+  }, [selectedJob?.link]);
+
   // Persist Find Jobs session cache whenever data changes
   useEffect(() => {
     if (typeof window === 'undefined' || !cacheReady) return;
@@ -170,6 +274,8 @@ export default function FindJobsDashboardPage() {
         JSON.stringify({
           jobTitle,
           location,
+          crawlUrl,
+          useApiFastMode,
           companyPortals,
           result,
           jobs,
@@ -183,6 +289,10 @@ export default function FindJobsDashboardPage() {
           hideDuplicates,
           crawlMode,
           showAdvanced,
+          detailCostMode,
+          detailCacheByLink,
+          batchStatusByLink,
+          batchProgress,
         }),
       );
     } catch {
@@ -192,6 +302,8 @@ export default function FindJobsDashboardPage() {
     cacheReady,
     jobTitle,
     location,
+    crawlUrl,
+    useApiFastMode,
     companyPortals,
     result,
     jobs,
@@ -205,6 +317,10 @@ export default function FindJobsDashboardPage() {
     hideDuplicates,
     crawlMode,
     showAdvanced,
+    detailCostMode,
+    detailCacheByLink,
+    batchStatusByLink,
+    batchProgress,
   ]);
 
   const run = async () => {
@@ -212,9 +328,25 @@ export default function FindJobsDashboardPage() {
     setResult('');
     setJobs([]);
     setQueriesUsed([]);
+    // Reset filters at the start of each run to avoid hiding fresh results
+    // because of stale session filters from previous searches.
+    setSourceFilter('all');
+    setKeywordFilter('');
+    setSortMode('relevance');
+    setPageIndex(0);
     setSelectedJob(null);
     setErrorCode('');
     setHint('');
+    setBatchStatusByLink({});
+    setBatchProgress({
+      total: 0,
+      processed: 0,
+      done: 0,
+      failed: 0,
+      cached: 0,
+      credits: 0,
+      currentLink: '',
+    });
     try {
       let serpapi_key = '';
       let tavily_api_key = '';
@@ -227,6 +359,11 @@ export default function FindJobsDashboardPage() {
         /* ignore */
       }
 
+      const hasAnyApiKey = Boolean(serpapi_key || tavily_api_key);
+      const shouldUseApiFastMode = useApiFastMode && hasAnyApiKey;
+      const effectiveSearchUrl =
+        crawlUrl.trim() || buildDefaultCrawlSearchUrl(jobTitle, location);
+
       const res = await fetch('/api/job-support/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -236,15 +373,29 @@ export default function FindJobsDashboardPage() {
         body: JSON.stringify({
           workspace: 'find-jobs',
           mode: 'dry-run',
-          jobTitle,
-          location,
+          // Keep title/location for all modes so backend fallback can
+          // build more relevant queries when crawl URL is blocked.
+          jobTitle: jobTitle.trim() || undefined,
+          location: location.trim() || undefined,
+          searchUrl: shouldUseApiFastMode ? undefined : effectiveSearchUrl,
+          maxPages: shouldUseApiFastMode
+            ? undefined
+            : currentMode.maxQueries >= 20
+              ? 3
+              : currentMode.maxQueries >= 12
+                ? 2
+                : 1,
           companyPortals:
-            companyPortals.trim() === DEFAULT_SOURCES.trim()
+            shouldUseApiFastMode && companyPortals.trim() === DEFAULT_SOURCES.trim()
               ? PRESET_SOURCES[detectSmartPreset(jobTitle)]
-              : companyPortals,
+              : shouldUseApiFastMode
+                ? companyPortals
+                : undefined,
+          // Always forward keys when present so backend can use API fallback
+          // even if UI is currently in Crawl4AI mode.
           serpapi_key: serpapi_key || undefined,
           tavily_api_key: tavily_api_key || undefined,
-          ecoMode: currentMode.ecoMode,
+          ecoMode: shouldUseApiFastMode ? currentMode.ecoMode : undefined,
           maxQueries: currentMode.maxQueries,
         }),
       });
@@ -276,7 +427,15 @@ export default function FindJobsDashboardPage() {
       setJobs(parsedJobs);
       setQueriesUsed(parsedQueries);
       setSelectedJob(parsedJobs[0] || null);
-      setHint(out?.hint || data.hint || '');
+      const fallbackEmptyHint =
+        !shouldUseApiFastMode && parsedJobs.length === 0
+          ? 'Đã chạy crawl nhưng chưa trích xuất được job nào. Thử URL TopCV dạng /tim-viec-lam?keyword=... hoặc đổi keyword cụ thể hơn.'
+          : '';
+      setHint(
+        !shouldUseApiFastMode && useApiFastMode
+          ? `Không thấy SerpApi/Tavily key, đã tự chuyển sang Crawl4AI URL-in: ${effectiveSearchUrl}`
+          : out?.hint || data.hint || fallbackEmptyHint,
+      );
       const stderr = (out?.stderr || '').trim();
       setResult(stderr ? `${out?.stdout?.trim() || ''}\n\n--- stderr ---\n${stderr}` : out?.stdout?.trim() || 'Done.');
     } catch {
@@ -286,7 +445,9 @@ export default function FindJobsDashboardPage() {
     }
   };
 
-  const canRun = Boolean(jobTitle.trim() || location.trim());
+  const canRun = useApiFastMode
+    ? Boolean(jobTitle.trim() || location.trim())
+    : Boolean(crawlUrl.trim() || jobTitle.trim() || location.trim());
 
   const sourceOptions = useMemo(() => {
     const uniq = [...new Set(jobs.map((j) => j.source))].filter(Boolean);
@@ -329,10 +490,220 @@ export default function FindJobsDashboardPage() {
   }, [dedupedJobs, sourceFilter, keywordFilter, sortMode]);
 
   const currentJob = selectedJob && filteredJobs.find((j) => j.link === selectedJob.link) ? selectedJob : filteredJobs[0] || null;
+  const currentDetail = currentJob ? detailCacheByLink[currentJob.link] : undefined;
+  const batchTotal = batchProgress.total || filteredJobs.length;
+  const totalPages = Math.max(1, Math.ceil(filteredJobs.length / pageSize));
+  const safePageIndex = Math.min(pageIndex, totalPages - 1);
+  const pagedJobs = useMemo(() => {
+    const start = safePageIndex * pageSize;
+    return filteredJobs.slice(start, start + pageSize);
+  }, [filteredJobs, safePageIndex, pageSize]);
   const companiesCount = useMemo(() => new Set(filteredJobs.map((j) => (j.company || '').trim()).filter(Boolean)).size, [filteredJobs]);
   const withSalaryCount = useMemo(() => filteredJobs.filter((j) => Boolean(j.salary?.trim())).length, [filteredJobs]);
   const isEmpty = dedupedJobs.length === 0 && !running;
   const noResults = !running && jobs.length > 0 && filteredJobs.length === 0;
+  const emptyAfterRun = !running && jobs.length === 0 && Boolean(result || hint || errorCode);
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [sourceFilter, keywordFilter, sortMode, hideDuplicates, jobs.length, pageSize]);
+
+  const applyDetailToJobState = (jobLink: string, detail: JobDetailCacheItem, strategy?: DetailStrategy) => {
+    setDetailCacheByLink((prev) => ({
+      ...prev,
+      [jobLink]: {
+        ...detail,
+        source: detail.source || strategy,
+        updatedAt: detail.updatedAt || new Date().toISOString(),
+      },
+    }));
+    setJobs((prev) =>
+      prev.map((j) =>
+        j.link === jobLink
+          ? {
+              ...j,
+              description: detail.description || j.description,
+              requirements: detail.requirements?.length ? detail.requirements : j.requirements,
+              benefits: detail.benefits?.length ? detail.benefits : j.benefits,
+            }
+          : j,
+      ),
+    );
+    setSelectedJob((prev) =>
+      prev && prev.link === jobLink
+        ? {
+            ...prev,
+            description: detail.description || prev.description,
+            requirements: detail.requirements?.length ? detail.requirements : prev.requirements,
+            benefits: detail.benefits?.length ? detail.benefits : prev.benefits,
+          }
+        : prev,
+    );
+  };
+
+  const readProviderKeys = () => {
+    let serpapi_key = '';
+    let tavily_api_key = '';
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem(SETTINGS_KEY) : null;
+      const parsed = raw ? JSON.parse(raw) : null;
+      serpapi_key = (parsed?.serpapi_key || '').trim();
+      tavily_api_key = (parsed?.tavily_api_key || '').trim();
+    } catch {
+      /* ignore */
+    }
+    return { serpapi_key, tavily_api_key };
+  };
+
+  const enrichJobViaApi = async (job: JobListing): Promise<{ ok: boolean; detail?: JobDetailCacheItem; strategy?: DetailStrategy; credits?: number; error?: string }> => {
+    const { serpapi_key, tavily_api_key } = readProviderKeys();
+    const res = await fetch('/api/job-support/enrich', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        link: job.link,
+        title: job.title,
+        costMode: detailCostMode,
+        serpapi_key: serpapi_key || undefined,
+        tavily_api_key: tavily_api_key || undefined,
+      }),
+    });
+    const data = (await res.json()) as EnrichPayload;
+    if (!res.ok || !data.ok || !data.detail) {
+      return { ok: false, error: data.hint || data.error || 'Không lấy được chi tiết cho job này.' };
+    }
+    return {
+      ok: true,
+      detail: data.detail,
+      strategy: data.strategyUsed,
+      credits: typeof data.creditsEstimate === 'number' ? data.creditsEstimate : 0,
+    };
+  };
+
+  const enrichCurrentJob = async () => {
+    if (!currentJob || detailLoading || isBatchRunning) return;
+    setDetailLoading(true);
+    setDetailStatus('');
+    try {
+      const result = await enrichJobViaApi(currentJob);
+      if (!result.ok || !result.detail) {
+        setDetailStatus(result.error || 'Không lấy được chi tiết cho job này.');
+        return;
+      }
+      applyDetailToJobState(currentJob.link, result.detail, result.strategy);
+      setBatchStatusByLink((prev) => ({ ...prev, [currentJob.link]: 'done' }));
+      const strategyText = result.strategy ? `Nguồn: ${result.strategy}` : 'Đã cập nhật chi tiết.';
+      const creditText = typeof result.credits === 'number' ? ` · Ước tính credit: ${result.credits}` : '';
+      setDetailStatus(`${strategyText}${creditText}`);
+    } catch {
+      setDetailStatus('Không gọi được API lấy chi tiết.');
+      setBatchStatusByLink((prev) => ({ ...prev, [currentJob.link]: 'failed' }));
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const enrichAllJobsSequential = async () => {
+    if (isBatchRunning || filteredJobs.length === 0) return;
+    cancelBatchRef.current = false;
+    setIsBatchRunning(true);
+    const queue = filteredJobs;
+    let processed = 0;
+    let done = 0;
+    let failed = 0;
+    let cached = 0;
+    let credits = 0;
+    setBatchProgress({
+      total: queue.length,
+      processed: 0,
+      done: 0,
+      failed: 0,
+      cached: 0,
+      credits: 0,
+      currentLink: '',
+    });
+    setDetailStatus('');
+    for (const job of queue) {
+      if (cancelBatchRef.current) break;
+      setBatchProgress((prev) => ({ ...prev, currentLink: job.link }));
+      const hasCached = Boolean(detailCacheByLink[job.link]);
+      if (hasCached) {
+        cached += 1;
+        processed += 1;
+        setBatchStatusByLink((prev) => ({ ...prev, [job.link]: 'cached' }));
+        setBatchProgress((prev) => ({ ...prev, processed, cached, currentLink: job.link }));
+        continue;
+      }
+      try {
+        const result = await enrichJobViaApi(job);
+        if (result.ok && result.detail) {
+          done += 1;
+          credits += result.credits || 0;
+          applyDetailToJobState(job.link, result.detail, result.strategy);
+          setBatchStatusByLink((prev) => ({ ...prev, [job.link]: 'done' }));
+        } else {
+          failed += 1;
+          setBatchStatusByLink((prev) => ({ ...prev, [job.link]: 'failed' }));
+        }
+      } catch {
+        failed += 1;
+        setBatchStatusByLink((prev) => ({ ...prev, [job.link]: 'failed' }));
+      } finally {
+        processed += 1;
+        setBatchProgress((prev) => ({
+          ...prev,
+          processed,
+          done,
+          failed,
+          cached,
+          credits,
+          currentLink: job.link,
+        }));
+      }
+    }
+    if (cancelBatchRef.current) {
+      setDetailStatus('Đã dừng batch theo yêu cầu.');
+    } else {
+      setDetailStatus(`Batch hoàn tất: ${done} thành công, ${cached} cache, ${failed} lỗi.`);
+    }
+    setIsBatchRunning(false);
+    cancelBatchRef.current = false;
+  };
+
+  const exportCurrentTableToExcel = async () => {
+    const rows = filteredJobs.map((j, idx) => {
+      const detail = detailCacheByLink[j.link];
+      const requirements = detail?.requirements?.length ? detail.requirements : j.requirements;
+      const benefits = detail?.benefits?.length ? detail.benefits : j.benefits;
+      return {
+        STT: idx + 1,
+        Title: j.title || '',
+        Company: j.company || '',
+        Location: j.location || '',
+        Salary: j.salary || '',
+        Requirement: Array.isArray(requirements) ? requirements.join(' | ') : '',
+        Benefits: Array.isArray(benefits) ? benefits.join(' | ') : '',
+        Status: batchStatusByLink[j.link] || 'pending',
+        Source: j.source || '',
+        Link: j.link || '',
+      };
+    });
+    if (!rows.length) {
+      setDetailStatus('Không có dữ liệu để xuất Excel.');
+      return;
+    }
+    try {
+      const XLSX = await import('xlsx');
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, ws, 'JobDetails');
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      XLSX.writeFile(wb, `job-details-${stamp}.xlsx`);
+      setDetailStatus(`Đã xuất Excel ${rows.length} dòng.`);
+    } catch {
+      setDetailStatus('Xuất Excel thất bại.');
+    }
+  };
 
   return (
     <div className="flex flex-col gap-10 min-h-screen font-inter">
@@ -391,9 +762,32 @@ export default function FindJobsDashboardPage() {
               <div className="rounded-2xl border overflow-hidden" style={{ borderColor: JOB_SUPPORT_ACCENT_BORDER, backgroundColor: 'var(--card-bg)' }}>
                 <div className="flex items-center gap-3 px-4 py-3" style={{ backgroundColor: 'var(--hover-bg)' }}>
                   <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: JOB_SUPPORT_ACCENT }}>Query</span>
-                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{currentMode.label}</span>
+                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    {useApiFastMode ? `API ${currentMode.label}` : 'Crawl4AI URL-in (mặc định)'}
+                  </span>
                 </div>
                 <div className="p-4 space-y-3">
+                  <label className="flex items-center justify-between gap-3 rounded-xl border px-4 py-3" style={{ backgroundColor: 'var(--hover-bg)', borderColor: 'var(--border-color)' }}>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>Bật API (nhanh hơn nhưng ít hơn)</p>
+                      <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                        Tắt = dùng Crawl4AI URL-in, linh hoạt cho mọi website.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setUseApiFastMode((v) => !v)}
+                      className="h-8 min-w-[76px] rounded-lg border px-3 text-[10px] font-black uppercase tracking-wider"
+                      style={{
+                        backgroundColor: useApiFastMode ? JOB_SUPPORT_ACCENT_SOFT : 'var(--card-bg)',
+                        borderColor: useApiFastMode ? JOB_SUPPORT_ACCENT_BORDER : 'var(--border-color)',
+                        color: useApiFastMode ? JOB_SUPPORT_ACCENT : 'var(--text-muted)',
+                      }}
+                    >
+                      {useApiFastMode ? 'Bật' : 'Tắt'}
+                    </button>
+                  </label>
+
                   <input
                     value={jobTitle}
                     onChange={(e) => setJobTitle(e.target.value)}
@@ -410,6 +804,16 @@ export default function FindJobsDashboardPage() {
                     className="w-full h-12 rounded-xl px-4 outline-none"
                     style={{ backgroundColor: 'var(--hover-bg)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                   />
+                  {!useApiFastMode && (
+                    <input
+                      value={crawlUrl}
+                      onChange={(e) => setCrawlUrl(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && canRun && !running && run()}
+                      placeholder="URL crawl (để trống sẽ tự tạo từ từ khóa + địa điểm)"
+                      className="w-full h-12 rounded-xl px-4 outline-none"
+                      style={{ backgroundColor: 'var(--hover-bg)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                    />
+                  )}
 
 
                   <button
@@ -426,6 +830,7 @@ export default function FindJobsDashboardPage() {
 
                   {showAdvanced && (
                     <div className="space-y-3 pt-1">
+                      {useApiFastMode && (
                       <div className="p-4 rounded-2xl border" style={{ backgroundColor: 'var(--hover-bg)', borderColor: 'var(--border-color)' }}>
                         <div className="flex items-center gap-3 mb-3">
                           <ShieldCheck size={16} style={{ color: JOB_SUPPORT_ACCENT }} />
@@ -459,7 +864,9 @@ export default function FindJobsDashboardPage() {
                           })}
                         </div>
                       </div>
+                      )}
 
+                      {useApiFastMode && (
                       <div className="space-y-2">
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Nguồn (site:)</p>
@@ -476,6 +883,7 @@ export default function FindJobsDashboardPage() {
                           style={{ backgroundColor: 'var(--hover-bg)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                         />
                       </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -486,7 +894,7 @@ export default function FindJobsDashboardPage() {
                     type="button"
                     onClick={run}
                     disabled={running || !canRun}
-                    onMouseEnter={(e) => showTip(e, ['Chạy gom tin', 'Gọi SerpApi/Tavily và trả về danh sách job'])}
+                    onMouseEnter={(e) => showTip(e, ['Chạy gom tin', useApiFastMode ? 'Gọi SerpApi/Tavily và trả về danh sách job' : 'Gọi Crawl4AI URL-in để thu thập trực tiếp từ website'])}
                     onMouseMove={moveTip}
                     onMouseLeave={hideTip}
                     className="w-full h-14 text-sm font-black tracking-widest uppercase rounded-2xl border inline-flex items-center justify-center gap-3"
@@ -501,7 +909,13 @@ export default function FindJobsDashboardPage() {
                     {running ? <RefreshCw size={18} className="animate-spin" /> : <Search size={18} />}
                     {running ? 'ĐANG CHẠY...' : 'CHẠY'}
                   </button>
-                  {!canRun && <p className="text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>Nhập ít nhất từ khóa hoặc địa điểm để chạy.</p>}
+                  {!canRun && (
+                    <p className="text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>
+                      {useApiFastMode
+                        ? 'Nhập ít nhất từ khóa hoặc địa điểm để chạy.'
+                        : 'Nhập từ khóa/địa điểm hoặc URL tìm kiếm để chạy Crawl4AI.'}
+                    </p>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
@@ -568,53 +982,112 @@ export default function FindJobsDashboardPage() {
                       {boardExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
                       {boardExpanded ? 'Thu nhỏ' : 'Phóng to'}
                     </button>
-                    <IconToggle
-                      active={viewMode === 'cards'}
-                      onClick={() => setViewMode('cards')}
-                      icon={<LayoutGrid size={16} />}
-                      label="Cards"
-                      accent={JOB_SUPPORT_ACCENT}
-                    />
-                    <IconToggle
-                      active={viewMode === 'table'}
-                      onClick={() => setViewMode('table')}
-                      icon={<List size={16} />}
-                      label="Table"
-                      accent={JOB_SUPPORT_ACCENT}
-                    />
-                    <IconToggle
-                      active={focusDetail}
-                      onClick={() => setFocusDetail((v) => !v)}
-                      icon={<Map size={16} />}
-                      label="Focus"
-                      accent={JOB_SUPPORT_ACCENT}
-                    />
+                    {SHOW_VIEW_MODE_TOGGLES && (
+                      <>
+                        <IconToggle
+                          active={viewMode === 'cards'}
+                          onClick={() => setViewMode('cards')}
+                          icon={<LayoutGrid size={16} />}
+                          label="Cards"
+                          accent={JOB_SUPPORT_ACCENT}
+                        />
+                        <IconToggle
+                          active={viewMode === 'table'}
+                          onClick={() => setViewMode('table')}
+                          icon={<List size={16} />}
+                          label="Table"
+                          accent={JOB_SUPPORT_ACCENT}
+                        />
+                      </>
+                    )}
+                    {SHOW_EXTRA_BOARD_ACTIONS && (
+                      <>
+                        <IconToggle
+                          active={focusDetail}
+                          onClick={() => setFocusDetail((v) => !v)}
+                          icon={<Map size={16} />}
+                          label="Focus"
+                          accent={JOB_SUPPORT_ACCENT}
+                        />
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const text = JSON.stringify({ jobTitle, location, sourceFilter, keywordFilter, sortMode }, null, 2);
+                            try {
+                              await navigator.clipboard.writeText(text);
+                            } catch {
+                              /* ignore */
+                            }
+                          }}
+                          className="rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest border inline-flex items-center gap-2"
+                          style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+                        >
+                          <Copy size={14} />
+                          Copy
+                        </button>
+                        <button
+                          type="button"
+                          onClick={exportCurrentTableToExcel}
+                          className="rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest border inline-flex items-center gap-2"
+                          style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+                        >
+                          Export Excel
+                        </button>
+                      </>
+                    )}
                     <button
                       type="button"
-                      onClick={async () => {
-                        const text = JSON.stringify({ jobTitle, location, sourceFilter, keywordFilter, sortMode }, null, 2);
-                        try {
-                          await navigator.clipboard.writeText(text);
-                        } catch {
-                          /* ignore */
-                        }
-                      }}
+                      onClick={enrichAllJobsSequential}
+                      disabled={isBatchRunning || filteredJobs.length === 0}
                       className="rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest border inline-flex items-center gap-2"
-                      style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+                      style={{
+                        backgroundColor: JOB_SUPPORT_ACCENT_SOFT,
+                        borderColor: JOB_SUPPORT_ACCENT_BORDER,
+                        color: JOB_SUPPORT_ACCENT,
+                        opacity: isBatchRunning || filteredJobs.length === 0 ? 0.6 : 1,
+                      }}
                     >
-                      <Copy size={14} />
-                      Copy
+                      {isBatchRunning ? <RefreshCw size={14} className="animate-spin" /> : <Search size={14} />}
+                      Lấy chi tiết tất cả
                     </button>
+                    {isBatchRunning && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          cancelBatchRef.current = true;
+                        }}
+                        className="rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest border inline-flex items-center gap-2"
+                        style={{ backgroundColor: 'var(--card-bg)', borderColor: 'rgba(244,63,94,0.35)', color: '#fb7185' }}
+                      >
+                        Dừng
+                      </button>
+                    )}
                   </div>
 
                   </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Pill accent={JOB_SUPPORT_ACCENT} label={`${filteredJobs.length}/${dedupedJobs.length} jobs`} />
-                    <Pill accent={JOB_SUPPORT_ACCENT} label={`${companiesCount} companies`} />
-                    <Pill accent={JOB_SUPPORT_ACCENT} label={`${withSalaryCount} salary`} />
-                    <Pill accent={JOB_SUPPORT_ACCENT} label={`${queriesUsed.length} queries`} />
-                    <span className="text-[10px] font-bold" style={{ color: 'var(--text-muted)' }}>{providerInfo}</span>
-                  </div>
+                  {false && (
+                    <>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Pill accent={JOB_SUPPORT_ACCENT} label={`${filteredJobs.length}/${dedupedJobs.length} jobs`} />
+                        <Pill accent={JOB_SUPPORT_ACCENT} label={`${companiesCount} companies`} />
+                        <Pill accent={JOB_SUPPORT_ACCENT} label={`${withSalaryCount} salary`} />
+                        <Pill accent={JOB_SUPPORT_ACCENT} label={`${queriesUsed.length} queries`} />
+                        <span className="text-[10px] font-bold" style={{ color: 'var(--text-muted)' }}>{providerInfo}</span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap text-[10px]">
+                        <Pill accent={JOB_SUPPORT_ACCENT} label={`Batch ${batchProgress.processed}/${batchTotal}`} />
+                        <Pill accent={JOB_SUPPORT_ACCENT} label={`Done ${batchProgress.done}`} />
+                        <Pill accent={JOB_SUPPORT_ACCENT} label={`Cache ${batchProgress.cached}`} />
+                        <Pill accent={JOB_SUPPORT_ACCENT} label={`Fail ${batchProgress.failed}`} />
+                        <Pill accent={JOB_SUPPORT_ACCENT} label={`Credit ~${batchProgress.credits}`} />
+                        {batchProgress.currentLink && (
+                          <span className="text-[10px] truncate max-w-[260px]" style={{ color: 'var(--text-muted)' }}>
+                            {batchProgress.currentLink}
+                          </span>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {(errorCode || hint) && (
@@ -683,107 +1156,92 @@ export default function FindJobsDashboardPage() {
                   </div>
                 )}
 
-                <div className="px-8 md:px-10 py-8 flex-1">
-                  <div className={`grid grid-cols-1 ${focusDetail ? '' : 'lg:grid-cols-2'} gap-6`}>
-                    {!focusDetail && (
-                      <div className="rounded-2xl overflow-hidden border border-[var(--border-color)]" style={{ backgroundColor: 'var(--card-bg)' }}>
-                        <div className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider" style={{ backgroundColor: 'var(--hover-bg)', color: 'var(--text-muted)' }}>
-                          Job stream ({filteredJobs.length})
-                        </div>
-                        <div
-                          className="overflow-auto p-3 space-y-2"
-                          style={{ maxHeight: boardExpanded ? 'calc(100vh - 320px)' : '560px' }}
+                <div className="px-8 md:px-10 py-8 flex-1 space-y-6">
+                  <div className="rounded-2xl overflow-hidden border border-[var(--border-color)]" style={{ backgroundColor: 'var(--card-bg)' }}>
+                    <div
+                      className="px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-[10px] font-bold uppercase tracking-wider"
+                      style={{ backgroundColor: 'var(--hover-bg)', color: 'var(--text-muted)' }}
+                    >
+                      <span>Bảng kết quả ({filteredJobs.length} jobs)</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Rows</span>
+                        <select
+                          value={pageSize}
+                          onChange={(e) => setPageSize(Number(e.target.value))}
+                          className="h-8 rounded-lg px-2 text-[11px]"
+                          style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                         >
-                          {viewMode === 'table' ? (
-                            <table className="w-full text-left text-[11px]">
-                              <thead className="sticky top-0 z-10" style={{ backgroundColor: 'var(--card-bg)' }}>
-                                <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
-                                  <th className="p-3 w-[52%]">Tiêu đề</th>
-                                  <th className="p-3 w-[20%]">Lương</th>
-                                  <th className="p-3">Nguồn</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {filteredJobs.map((j, idx) => {
-                                  const active = currentJob?.link === j.link;
-                                  return (
-                                    <tr
-                                      key={`${j.link}-${idx}`}
-                                      onClick={() => setSelectedJob(j)}
-                                      className="cursor-pointer"
-                                      style={{
-                                        borderBottom: '1px solid var(--border-color)',
-                                        backgroundColor: active ? JOB_SUPPORT_ACCENT_SOFT : 'transparent',
-                                      }}
-                                    >
-                                      <td className="p-3 align-top" style={{ color: 'var(--text-primary)' }}>
-                                        <span className="font-bold">{j.title}</span>
-                                        {(j.company || j.location) && (
-                                          <div className="text-[10px] opacity-75 mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                                            {[j.company, j.location].filter(Boolean).join(' · ')}
-                                          </div>
-                                        )}
-                                      </td>
-                                      <td className="p-3 align-top" style={{ color: 'var(--text-secondary)' }}>{j.salary || '-'}</td>
-                                      <td className="p-3 align-top" style={{ color: 'var(--text-secondary)' }}>
-                                        {j.source}
-                                        {j.engine && <span className="opacity-70"> ({j.engine})</span>}
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          ) : (
-                            filteredJobs.map((j, idx) => {
-                              const active = currentJob?.link === j.link;
-                              const hasSalary = Boolean(j.salary && j.salary !== '-');
-                              return (
-                                <button
-                                  type="button"
-                                  key={`${j.link}-${idx}`}
-                                  onClick={() => setSelectedJob(j)}
-                                  className="w-full text-left rounded-2xl border px-4 py-3 transition-all"
-                                  style={{
-                                    backgroundColor: active ? JOB_SUPPORT_ACCENT_SOFT : 'var(--hover-bg)',
-                                    borderColor: active ? JOB_SUPPORT_ACCENT_BORDER : 'var(--border-color)',
-                                    boxShadow: active ? `0 0 0 1px ${JOB_SUPPORT_ACCENT_BORDER}` : 'none',
-                                  }}
-                                >
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <p className="text-sm font-black uppercase tracking-wide truncate" style={{ color: 'var(--text-primary)' }}>
-                                        {j.title}
-                                      </p>
-                                      <p className="text-[11px] mt-1 truncate" style={{ color: 'var(--text-secondary)' }}>
-                                        {[j.company, j.location].filter(Boolean).join(' · ') || '—'}
-                                      </p>
-                                    </div>
-                                    <div className="flex flex-col items-end gap-1 shrink-0">
-                                      <span
-                                        className="text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-full border"
-                                        style={{
-                                          borderColor: hasSalary ? JOB_SUPPORT_ACCENT_BORDER : 'var(--border-color)',
-                                          color: hasSalary ? JOB_SUPPORT_ACCENT : 'var(--text-muted)',
-                                          backgroundColor: hasSalary ? 'rgba(249,115,22,0.10)' : 'transparent',
-                                        }}
-                                      >
-                                        {j.salary || '—'}
-                                      </span>
-                                      <span className="text-[10px] font-bold" style={{ color: 'var(--text-muted)' }}>
-                                        {j.source}{j.engine ? ` · ${j.engine}` : ''}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </button>
-                              );
-                            })
-                          )}
-                        </div>
+                          <option value={10}>10</option>
+                          <option value={20}>20</option>
+                          <option value={30}>30</option>
+                          <option value={50}>50</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => setPageIndex((v) => Math.max(0, v - 1))}
+                          disabled={safePageIndex <= 0}
+                          className="h-8 px-2 rounded-lg border text-[10px] font-black"
+                          style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)', opacity: safePageIndex <= 0 ? 0.45 : 1 }}
+                        >
+                          Prev
+                        </button>
+                        <span className="text-[10px] min-w-[64px] text-center" style={{ color: 'var(--text-secondary)' }}>
+                          {safePageIndex + 1}/{totalPages}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setPageIndex((v) => Math.min(totalPages - 1, v + 1))}
+                          disabled={safePageIndex >= totalPages - 1}
+                          className="h-8 px-2 rounded-lg border text-[10px] font-black"
+                          style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)', opacity: safePageIndex >= totalPages - 1 ? 0.45 : 1 }}
+                        >
+                          Next
+                        </button>
                       </div>
-                    )}
+                    </div>
+                    <div className="px-4 py-2 text-[10px]" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-color)' }}>
+                      Hiển thị {pagedJobs.length} dòng trong trang hiện tại
+                    </div>
+                    <div className="overflow-auto" style={{ maxHeight: boardExpanded ? 'calc(100vh - 300px)' : '600px' }}>
+                      <table className="w-full table-fixed text-left text-[12px]">
+                        <thead className="sticky top-0 z-10" style={{ backgroundColor: 'var(--card-bg)' }}>
+                          <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                            <th className="p-3 w-[34%]">Vị trí</th>
+                            <th className="p-3 w-[22%]">Công ty</th>
+                            <th className="p-3 w-[14%]">Cấp bậc</th>
+                            <th className="p-3 w-[16%]">Địa điểm</th>
+                            <th className="p-3 w-[14%] text-right">Mức lương (VNĐ)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pagedJobs.map((j, idx) => {
+                            const active = currentJob?.link === j.link;
+                            return (
+                              <tr
+                                key={`${j.link}-${idx}`}
+                                onClick={() => setSelectedJob(j)}
+                                className="cursor-pointer"
+                                style={{
+                                  borderBottom: '1px solid var(--border-color)',
+                                  backgroundColor: active ? 'rgba(249, 115, 22, 0.18)' : idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.006)',
+                                }}
+                              >
+                                <td className="p-3 align-middle h-14" style={{ color: 'var(--text-primary)' }}>
+                                  <span className="font-semibold block truncate">{j.title || '—'}</span>
+                                </td>
+                                <td className="p-3 align-middle h-14 truncate" style={{ color: 'var(--text-secondary)' }}>{j.company || '—'}</td>
+                                <td className="p-3 align-middle h-14 truncate" style={{ color: 'var(--text-secondary)' }}>{inferLevelForJob(j)}</td>
+                                <td className="p-3 align-middle h-14 truncate" style={{ color: 'var(--text-secondary)' }}>{j.location || '—'}</td>
+                                <td className="p-3 align-middle h-14 text-right truncate" style={{ color: 'var(--text-secondary)' }}>{inferSalaryForJob(j)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
 
-                    <div className="rounded-2xl border p-5 space-y-4" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--hover-bg)' }}>
+                  <div className="rounded-2xl border p-5 space-y-4" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--hover-bg)' }}>
                       {!currentJob ? (
                         <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Chọn một dòng ở bảng để xem chi tiết việc làm.</p>
                       ) : (
@@ -794,16 +1252,49 @@ export default function FindJobsDashboardPage() {
                               {[currentJob.company, currentJob.location, currentJob.postedAt].filter(Boolean).join(' · ') || 'Thông tin cơ bản'}
                             </p>
                           </div>
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <Field label="Mức lương" value={currentJob.salary || 'Chưa có'} />
-                            <Field label="Nguồn" value={currentJob.source} />
+                          <div className="overflow-x-auto rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
+                            <table className="w-full text-left text-[12px]" style={{ backgroundColor: 'var(--card-bg)' }}>
+                              <thead style={{ backgroundColor: 'var(--hover-bg)' }}>
+                                <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                                  <th className="p-3">Vị trí</th>
+                                  <th className="p-3">Công ty</th>
+                                  <th className="p-3">Cấp bậc</th>
+                                  <th className="p-3">Địa điểm</th>
+                                  <th className="p-3">Mức lương (VNĐ)</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(() => {
+                                  const fallbackText = [
+                                    currentDetail?.description,
+                                    currentJob.description,
+                                    currentJob.snippet,
+                                    currentJob.title,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' \n ');
+                                  const parsedCompany = inferCompanyFromText(fallbackText);
+                                  const parsedLocation = inferLocationFromText(fallbackText);
+                                  const parsedSalary = inferSalaryFromText(fallbackText);
+
+                                  return (
+                                    <tr style={{ color: 'var(--text-primary)' }}>
+                                      <td className="p-3 align-top font-semibold">{currentJob.title || '—'}</td>
+                                      <td className="p-3 align-top">{currentJob.company || parsedCompany || currentJob.source || '—'}</td>
+                                      <td className="p-3 align-top">{inferLevelForJob(currentJob)}</td>
+                                      <td className="p-3 align-top">{currentJob.location || parsedLocation || '—'}</td>
+                                      <td className="p-3 align-top">{currentJob.salary || parsedSalary || inferSalaryForJob(currentJob) || '—'}</td>
+                                    </tr>
+                                  );
+                                })()}
+                              </tbody>
+                            </table>
                           </div>
-                          <DetailBlock
-                            title="Mô tả công việc"
-                            content={currentJob.description || currentJob.snippet || 'Chưa có mô tả chi tiết từ nguồn index.'}
-                          />
-                          <ListBlock title="Yêu cầu ứng viên" items={currentJob.requirements} emptyText="Chưa tách được yêu cầu từ nguồn này." />
-                          <ListBlock title="Phúc lợi" items={currentJob.benefits} emptyText="Chưa tách được phúc lợi từ nguồn này." />
+                          {currentDetail?.updatedAt && (
+                            <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                              Chi tiết cập nhật: {new Date(currentDetail.updatedAt).toLocaleString()} {currentDetail.source ? `· ${currentDetail.source}` : ''}
+                            </p>
+                          )}
                           <a
                             href={currentJob.link}
                             target="_blank"
@@ -816,7 +1307,6 @@ export default function FindJobsDashboardPage() {
                           </a>
                         </>
                       )}
-                    </div>
                   </div>
 
                   <pre className="rounded-2xl p-3 text-[11px] whitespace-pre-wrap max-h-[180px] overflow-auto mt-6" style={{ backgroundColor: 'var(--hover-bg)', color: 'var(--text-secondary)' }}>
@@ -841,6 +1331,28 @@ export default function FindJobsDashboardPage() {
                     <p className="text-xs font-black uppercase tracking-[0.4em] leading-loose" style={{ color: 'var(--text-muted)' }}>
                       {running ? 'Hệ thống đang gom dữ liệu tuyển dụng. Vui lòng chờ…' : 'Nhập từ khóa và địa điểm để bắt đầu gom tin tuyển dụng.'}
                     </p>
+                    {emptyAfterRun && (
+                      <div className="rounded-2xl p-4 border text-left space-y-2" style={{ backgroundColor: 'var(--hover-bg)', borderColor: JOB_SUPPORT_ACCENT_BORDER }}>
+                        <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: JOB_SUPPORT_ACCENT }}>
+                          Đã chạy nhưng chưa lấy được job
+                        </p>
+                        {errorCode && (
+                          <p className="text-[11px]" style={{ color: '#fb7185' }}>
+                            <strong>Error:</strong> {errorCode}
+                          </p>
+                        )}
+                        {hint && (
+                          <p className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                            <strong>Gợi ý:</strong> {hint}
+                          </p>
+                        )}
+                        {!hint && (
+                          <p className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                            Thử URL TopCV dạng `https://www.topcv.vn/tim-viec-lam?keyword=seo` hoặc tắt API và để trống URL để hệ thống tự tạo.
+                          </p>
+                        )}
+                      </div>
+                    )}
                     {isEmpty && providerInfo && (
                       <p className="text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>{providerInfo}</p>
                     )}
@@ -924,31 +1436,80 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-function DetailBlock({ title, content }: { title: string; content: string }) {
-  return (
-    <div className="space-y-1">
-      <p className="text-[11px] font-black uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{title}</p>
-      <p className="text-xs leading-relaxed" style={{ color: 'var(--text-primary)' }}>{content}</p>
-    </div>
-  );
+function inferLevelFromTitle(title?: string): string {
+  const text = (title || '').toLowerCase();
+  if (/(intern|thực tập)/.test(text)) return 'Intern';
+  if (/(fresher|junior|nhân viên)/.test(text)) return 'Junior';
+  if (/(middle|mid[- ]level|chuyên viên)/.test(text)) return 'Middle';
+  if (/(senior|sr\\.?|lead|trưởng|manager|giám đốc|head)/.test(text)) return 'Senior+';
+  return '—';
 }
 
-function ListBlock({ title, items, emptyText }: { title: string; items?: string[]; emptyText: string }) {
-  const valid = Array.isArray(items) ? items.filter(Boolean).slice(0, 6) : [];
-  return (
-    <div className="space-y-1">
-      <p className="text-[11px] font-black uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{title}</p>
-      {valid.length === 0 ? (
-        <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{emptyText}</p>
-      ) : (
-        <ul className="text-xs space-y-1" style={{ color: 'var(--text-primary)' }}>
-          {valid.map((item, idx) => (
-            <li key={`${title}-${idx}`}>- {item}</li>
-          ))}
-        </ul>
-      )}
-    </div>
+function inferLevelForJob(job: JobListing): string {
+  const fromTitle = inferLevelFromTitle(job.title);
+  if (fromTitle !== '—') return fromTitle;
+  const combined = [
+    job.title,
+    job.snippet,
+    job.description,
+    Array.isArray(job.requirements) ? job.requirements.join(' ') : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  if (/(intern|thực tập|fresher)/.test(combined)) return 'Intern/Junior';
+  if (/(junior|nhân viên|staff|associate)/.test(combined)) return 'Junior';
+  if (/(middle|mid[- ]level|chuyên viên)/.test(combined)) return 'Middle';
+  if (/(senior|sr\\.?|lead|trưởng|manager|giám đốc|head|director)/.test(combined)) return 'Senior+';
+  return '—';
+}
+
+function inferCompanyFromText(text: string): string | null {
+  const companyMatch =
+    text.match(/(?:CÔNG TY|CTY)\s+[^|,\n]{4,120}/i) ||
+    text.match(/(?:COMPANY)\s*[:\-]?\s*[^|,\n]{4,120}/i);
+  return companyMatch?.[0]?.trim() || null;
+}
+
+function inferLocationFromText(text: string): string | null {
+  const locationMatch = text.match(
+    /(?:Hồ Chí Minh|TP\.?\s*HCM|Hà Nội|Đà Nẵng|Bình Dương|Cần Thơ|Hải Phòng|Nha Trang|Remote)/i,
   );
+  return locationMatch?.[0]?.trim() || null;
+}
+
+function inferSalaryFromText(text: string): string | null {
+  const salaryMatch = text.match(
+    /\d{1,3}(?:[.,]\d{3})+(?:\s*-\s*\d{1,3}(?:[.,]\d{3})+)?\s*(?:VNĐ|VND)|\d{1,2}(?:[.,]\d+)?\s*(?:triệu|tr|m)(?:\s*-\s*\d{1,2}(?:[.,]\d+)?\s*(?:triệu|tr|m))?|USD\s*\d+(?:[.,]\d+)?(?:\s*-\s*\d+(?:[.,]\d+)?)?/i,
+  );
+  return salaryMatch?.[0]?.trim() || null;
+}
+
+function inferSalaryForJob(job: JobListing): string {
+  if (job.salary?.trim()) return job.salary.trim();
+  const combined = [job.snippet, job.description, job.title].filter(Boolean).join(' ');
+  return inferSalaryFromText(combined) || '—';
+}
+
+function oneLineSummary(items?: string[]): string {
+  if (!Array.isArray(items) || items.length === 0) return '—';
+  const first = items.find((x) => typeof x === 'string' && x.trim()) || '';
+  const trimmed = first.trim();
+  if (!trimmed) return '—';
+  return trimmed.length > 56 ? `${trimmed.slice(0, 55)}…` : trimmed;
+}
+
+function statusStyle(status: BatchStatus | undefined): { label: string; style: React.CSSProperties } {
+  if (status === 'done') {
+    return { label: 'done', style: { color: '#22c55e', borderColor: 'rgba(34,197,94,0.35)', backgroundColor: 'rgba(34,197,94,0.12)' } };
+  }
+  if (status === 'cached') {
+    return { label: 'cached', style: { color: JOB_SUPPORT_ACCENT, borderColor: JOB_SUPPORT_ACCENT_BORDER, backgroundColor: JOB_SUPPORT_ACCENT_SOFT } };
+  }
+  if (status === 'failed') {
+    return { label: 'failed', style: { color: '#fb7185', borderColor: 'rgba(244,63,94,0.35)', backgroundColor: 'rgba(244,63,94,0.12)' } };
+  }
+  return { label: 'pending', style: { color: 'var(--text-muted)', borderColor: 'var(--border-color)', backgroundColor: 'transparent' } };
 }
 
 function Pill({ label, accent }: { label: string; accent: string }) {

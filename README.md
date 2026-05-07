@@ -81,11 +81,20 @@
 | `npm run dev` | Run dev mode (frontend + backend) |
 | `npm run dev:next` | Run Next.js only |
 | `npm run dev:engine` | Run Python backend only |
+| `npm run security:scan` | Scan tracked files for obvious secrets before push |
+| `npm run security:scan:staged` | Scan staged diff for secrets before commit |
+| `npm run security:install-hooks` | Install local pre-commit/pre-push security hooks |
 
 ### System Requirements
 *   **Node.js 18+** - [Download here](https://nodejs.org/)
 *   **Python 3.10+** - [Download here](https://www.python.org/downloads/)
 *   **API Keys** - Add to `.env` file (Gemini, OpenAI, etc.)
+
+### Security Before GitHub Push
+1. Copy `.env.example` to `.env` and fill local secrets only on your machine.
+2. Never commit `.env` (already ignored by `.gitignore`).
+3. Run `npm run security:install-hooks` once per clone.
+4. Run `npm run security:scan` before each push (CI also enforces this via GitHub Actions).
 
 ---
 
