@@ -1030,10 +1030,7 @@ export default function AdvancedSeoPage() {
                   <BarChart3 size={28} />
                 </div>
                 <h2 className="text-xl font-black uppercase" style={{ color: 'var(--text-primary)' }}>Bảng phân tích đang chờ dữ liệu</h2>
-                <p className="mt-3 max-w-md text-sm font-bold leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                  Nhập domain, thêm keyword hạt giống nếu muốn xem SERP và keyword ideas, rồi chạy phân tích.
-                </p>
-              </div>
+                              </div>
             </div>
           ) : isLoading ? (
             <div className="space-y-8">
