@@ -218,4 +218,4 @@ Use **`/integrations`** in the AI support UI for the live registry.
 *Developed and maintained by NgoMinhHai.*
 
 **Note:** `OmniSuite.exe` is not included in the repository; run `npm run build:exe` after cloning.
-Invisible Potential: The true power of this framework lies beneath the surface. To unlock 200% of its performance, you are encouraged to explore the internal logic of our integrations and runners.
+ Invisible Potential: The true power of this framework lies beneath the surface. To unlock 200% of its performance, you are encouraged to explore the internal logic of our integrations and runners.
