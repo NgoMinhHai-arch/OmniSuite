@@ -9,6 +9,8 @@ interface ClientKeys {
   groq_api_key?: string;
   deepseek_api_key?: string;
   openrouter_api_key?: string;
+  ollama_base_url?: string;
+  ollama_api_key?: string;
 }
 
 function buildKeys(client?: ClientKeys): LlmKeys {
@@ -20,13 +22,16 @@ function buildKeys(client?: ClientKeys): LlmKeys {
     groq_api_key: client?.groq_api_key || sys.groq_api_key,
     deepseek_api_key: client?.deepseek_api_key || sys.deepseek_api_key,
     openrouter_api_key: client?.openrouter_api_key || sys.openrouter_api_key,
+    ollama_base_url: client?.ollama_base_url || sys.ollama_base_url,
+    ollama_api_key: client?.ollama_api_key || sys.ollama_api_key,
   };
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { system, prompt, provider, model, jsonMode, temperature, maxTokens, keys } = body || {};
+    const { system, prompt, provider, model, jsonMode, temperature, maxTokens, keys, preferredProvider } =
+      body || {};
     if (!prompt || typeof prompt !== "string") {
       return NextResponse.json({ error: "Thiếu prompt" }, { status: 400 });
     }
@@ -36,6 +41,7 @@ export async function POST(req: Request) {
         prompt,
         provider,
         model,
+        preferredProvider: typeof preferredProvider === "string" ? preferredProvider : undefined,
         jsonMode: !!jsonMode,
         temperature,
         maxTokens,

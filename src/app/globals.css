@@ -196,6 +196,26 @@
   html.light .force-scrollbar::-webkit-scrollbar-thumb {
     border: 3px solid #f1f5f9 !important;
   }
+
+  /* Content tool / emerald-themed thin scrollbar */
+  .custom-scrollbar-emerald {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(16, 185, 129, 0.45) transparent;
+  }
+  .custom-scrollbar-emerald::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .custom-scrollbar-emerald::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar-emerald::-webkit-scrollbar-thumb {
+    background: rgba(16, 185, 129, 0.35);
+    border-radius: 9999px;
+  }
+  .custom-scrollbar-emerald::-webkit-scrollbar-thumb:hover {
+    background: rgba(16, 185, 129, 0.55);
+  }
 }
 
 /* ============================================================

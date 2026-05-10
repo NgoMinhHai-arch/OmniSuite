@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { MagicIcon } from '@/shared/ui/Icons';
 import Typography from '@/shared/ui/Typography';
+import { getLlmCredentialsFromSettings } from '@/shared/lib/client-llm-credentials';
 
 const SETTINGS_KEY = 'omnisuite_settings';
 
@@ -28,6 +29,9 @@ const providers = [
   { id: 'OpenAI', name: 'OpenAI', icon: Cpu },
   { id: 'Claude', name: 'Claude', icon: Cpu },
   { id: 'Groq', name: 'Groq', icon: Cpu },
+  { id: 'DeepSeek', name: 'DeepSeek', icon: Cpu },
+  { id: 'OpenRouter', name: 'OpenRouter', icon: Cpu },
+  { id: 'Ollama', name: 'Ollama', icon: Cpu },
 ];
 
 export default function ContentPreview() {
@@ -79,6 +83,11 @@ export default function ContentPreview() {
       if (parsed.openai_api_key) connected.push('OpenAI');
       if (parsed.claude_api_key) connected.push('Claude');
       if (parsed.groq_api_key) connected.push('Groq');
+      if (parsed.deepseek_api_key) connected.push('DeepSeek');
+      if (parsed.openrouter_api_key) connected.push('OpenRouter');
+      if (parsed.ollama_base_url?.trim() || parsed.ollama_api_key?.trim() || parsed.default_provider === 'Ollama') {
+        connected.push('Ollama');
+      }
       setConnectedProviders(connected);
 
       const defaultProvider = parsed.default_provider || 'Gemini';
@@ -88,7 +97,8 @@ export default function ContentPreview() {
   }, []);
 
   useEffect(() => {
-    if (selectedProvider && settings[`${selectedProvider.toLowerCase()}_api_key`]) {
+    const { apiKey } = getLlmCredentialsFromSettings(selectedProvider, settings);
+    if (selectedProvider && (selectedProvider === 'Ollama' || apiKey)) {
       fetchModels(selectedProvider);
     } else {
       setAvailableModels([]);
@@ -96,15 +106,19 @@ export default function ContentPreview() {
   }, [selectedProvider, settings]);
 
   const fetchModels = async (provider: string) => {
-    const apiKey = settings[`${provider.toLowerCase()}_api_key`];
-    if (!apiKey) return;
+    const { apiKey, customBaseUrl } = getLlmCredentialsFromSettings(provider, settings);
+    if (provider !== 'Ollama' && !apiKey) return;
 
     setIsLoadingModels(true);
     try {
       const resp = await fetch('/api/list-models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, apiKey })
+        body: JSON.stringify({
+          provider,
+          apiKey: apiKey || 'ollama',
+          ...(customBaseUrl ? { customBaseUrl } : {}),
+        })
       });
       const data = await resp.json();
       
@@ -186,14 +200,22 @@ export default function ContentPreview() {
     setIsLoading(true);
     if (type === 'outline') setOutline(''); else setFullArticle('');
     
-    const apiKey = settings[`${selectedProvider.toLowerCase()}_api_key`];
+    const { apiKey, customBaseUrl } = getLlmCredentialsFromSettings(selectedProvider, settings);
     
     try {
       if (type === 'outline') {
         const response = await fetch('/api/generate-outline', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keyword, masterContext: rawData, framework, modelName, provider: selectedProvider, apiKey }),
+          body: JSON.stringify({
+            keyword,
+            masterContext: rawData,
+            framework,
+            modelName,
+            provider: selectedProvider,
+            apiKey,
+            ...(customBaseUrl ? { customBaseUrl } : {}),
+          }),
         });
         const data = await response.json();
         setOutline(data.outline || '# Dàn ý mẫu\n\n1. Mở bài\n2. Thân bài\n3. Kết bài');
@@ -240,7 +262,8 @@ export default function ContentPreview() {
               framework,
               provider: selectedProvider,
               modelName,
-              apiKey
+              apiKey,
+              ...(customBaseUrl ? { customBaseUrl } : {}),
             }),
           });
 

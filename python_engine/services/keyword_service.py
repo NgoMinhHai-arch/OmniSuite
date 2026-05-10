@@ -72,16 +72,38 @@ class UniversalIntentManager:
             },
             "deepseek": {"base_url": "https://api.deepseek.com/v1", "default": "deepseek-chat"},
             "openrouter": {"base_url": "https://openrouter.ai/api/v1", "default": "openai/gpt-4o-mini"},
+            # Ollama: OpenAI-compatible /v1; base_url chỉ là placeholder, runtime
+            # sẽ chuẩn hoá theo api_keys["ollama_base_url"] hoặc settings.OLLAMA_BASE_URL.
+            "ollama": {"base_url": "http://localhost:11434/v1", "default": "llama3.2"},
         }
         self.model_cache = {}
 
-    async def _auto_select_model(self, provider: str, api_key: str):
+    @staticmethod
+    def _resolve_ollama_v1_base(custom_base_url: str | None) -> str:
+        """Chuẩn hoá origin Ollama (local hoặc tunnel) → base /v1."""
+        raw = (custom_base_url or settings.OLLAMA_BASE_URL or "http://localhost:11434").strip()
+        raw = raw.rstrip("/")
+        if not raw:
+            return "http://localhost:11434/v1"
+        # Loại bỏ các đuôi user hay dán nhầm.
+        for tail in ("/v1/chat/completions", "/api/tags"):
+            if raw.lower().endswith(tail):
+                raw = raw[: -len(tail)]
+                break
+        if raw.lower().endswith("/v1"):
+            return raw
+        return f"{raw}/v1"
+
+    async def _auto_select_model(
+        self, provider: str, api_key: str, custom_base_url: str | None = None
+    ):
         """Tự động tìm model mới nhất từ API của Provider"""
         import time
 
         now = time.time()
-        if provider in self.model_cache:
-            model, expiry = self.model_cache[provider]
+        cache_key = f"{provider}|{custom_base_url or ''}" if provider == "ollama" else provider
+        if cache_key in self.model_cache:
+            model, expiry = self.model_cache[cache_key]
             if now < expiry:
                 return model
         try:
@@ -98,8 +120,41 @@ class UniversalIntentManager:
                         ]
                         if flash_models:
                             best = sorted(flash_models, reverse=True)[0]
-                            self.model_cache[provider] = (best, now + 3600)
+                            self.model_cache[cache_key] = (best, now + 3600)
                             return best
+                elif provider == "ollama":
+                    # Ưu tiên /api/tags (Ollama native), fallback /v1/models cho tunnel.
+                    base_v1 = self._resolve_ollama_v1_base(custom_base_url)
+                    origin = base_v1[: -len("/v1")] if base_v1.endswith("/v1") else base_v1
+                    headers: dict[str, str] = {}
+                    if api_key and api_key != "ollama":
+                        headers["Authorization"] = f"Bearer {api_key}"
+                    try:
+                        resp = await client.get(f"{origin}/api/tags", headers=headers)
+                        if resp.status_code == 200:
+                            tagged = [
+                                m.get("name") or m.get("model")
+                                for m in (resp.json().get("models") or [])
+                            ]
+                            tagged = [m for m in tagged if m]
+                            if tagged:
+                                best = tagged[0]
+                                self.model_cache[cache_key] = (best, now + 600)
+                                return best
+                    except Exception:
+                        pass
+                    try:
+                        resp = await client.get(f"{base_v1}/models", headers=headers)
+                        if resp.status_code == 200:
+                            ids = [
+                                m.get("id") for m in (resp.json().get("data") or []) if m.get("id")
+                            ]
+                            if ids:
+                                best = ids[0]
+                                self.model_cache[cache_key] = (best, now + 600)
+                                return best
+                    except Exception:
+                        pass
         except Exception:
             pass
         return self.providers.get(provider, {}).get("default", "gpt-4")
@@ -115,6 +170,7 @@ class UniversalIntentManager:
             return {kw: "I" for kw in keywords}
 
         api_key = None
+        custom_base_url: str | None = None
         if api_keys:
             key_map = {
                 "google": "gemini",
@@ -123,8 +179,12 @@ class UniversalIntentManager:
                 "claude": "claude",
                 "deepseek": "deepseek",
                 "openrouter": "openrouter",
+                "ollama": "ollama",
             }
             api_key = api_keys.get(key_map.get(provider, ""), "")
+            if provider == "ollama":
+                # Frontend gửi kèm `ollama_base_url` để định tuyến local/tunnel.
+                custom_base_url = api_keys.get("ollama_base_url") or None
 
         if not api_key:
             if provider == "google":
@@ -139,11 +199,16 @@ class UniversalIntentManager:
                 api_key = settings.DEEPSEEK_API_KEY
             elif provider == "openrouter":
                 api_key = settings.OPENROUTER_API_KEY
+            elif provider == "ollama":
+                api_key = settings.OLLAMA_API_KEY
 
-        if not api_key:
+        if provider == "ollama":
+            # Local Ollama không cần Bearer thật; SDK chấp nhận placeholder "ollama".
+            api_key = (api_key or "ollama").strip() or "ollama"
+        elif not api_key:
             return {kw: "I" for kw in keywords}
 
-        selected_model = model or await self._auto_select_model(provider, api_key)
+        selected_model = model or await self._auto_select_model(provider, api_key, custom_base_url)
 
         system_prompt = (
             "Phân tích ý định tìm kiếm (Search Intent) của danh sách từ khóa. "
@@ -192,24 +257,30 @@ class UniversalIntentManager:
                     if resp.status_code == 200:
                         text = resp.json()["content"][0]["text"]
                         return self._parse_json_res(text)
-                else:  # OpenAI, Groq, DeepSeek, OpenRouter
-                    url = f"{self.providers[provider]['base_url']}/chat/completions"
+                else:  # OpenAI, Groq, DeepSeek, OpenRouter, Ollama
+                    if provider == "ollama":
+                        base = self._resolve_ollama_v1_base(custom_base_url)
+                    else:
+                        base = self.providers[provider]["base_url"]
+                    url = f"{base}/chat/completions"
                     headers = {
                         "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json",
                     }
-                    # OpenRouter requires special headers
                     if provider == "openrouter":
                         headers["HTTP-Referer"] = "http://localhost:3000"
                         headers["X-Title"] = "OmniSuite AI"
-                    payload = {
+                    payload: dict = {
                         "model": selected_model,
                         "messages": [
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": json.dumps(keywords)},
                         ],
-                        "response_format": {"type": "json_object"},
                     }
+                    # Ollama bản cũ chưa hỗ trợ response_format=json_object;
+                    # đa số model llama3.x vẫn trả JSON khi prompt rõ ràng.
+                    if provider != "ollama":
+                        payload["response_format"] = {"type": "json_object"}
                     resp = await client.post(url, headers=headers, json=payload)
                     if resp.status_code == 200:
                         text = resp.json()["choices"][0]["message"]["content"]

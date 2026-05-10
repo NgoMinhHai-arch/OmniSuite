@@ -20,10 +20,17 @@
 # production
 /build
 
+# Nested upstream clone (own .git) — không nhúng gitlink; dùng git submodule hoặc clone riêng nếu cần.
+/open-interpreter/
+
+# OpenManus /run: browser-use 0.1.x pip --target (song song submodule browser-use moi)
+integrations/ai-support/runners/.legacy-browser-use-deps/
+
 # misc
 .DS_Store
 *.pem
 
+# Optional upstream mirror đồng bộ bằng scripts/clone-integrations.* (Quản gia /integrations).
 # debug
 npm-debug.log*
 yarn-debug.log*
@@ -66,6 +73,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .venv/
+.venv-runners/
 venv/
 
 # Agent files

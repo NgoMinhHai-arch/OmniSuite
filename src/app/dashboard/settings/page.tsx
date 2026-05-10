@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Save, Shield, Key, Globe, Map, Zap, CheckCircle2, 
   Share2, Settings, MessageSquare, Terminal, Search, 
   RefreshCw, Activity, AlertCircle, LayoutGrid, Database,
-  Cpu, Rocket, Lock, Wand2, ArrowRight, XCircle, Trash2,
-  Plug, ZapOff, Upload, BarChart, TrendingUp, Info
+  Cpu, Rocket,   Lock, Wand2, ArrowRight, XCircle, Trash2,
+  Plug, ZapOff, Upload, BarChart, TrendingUp, Info, HardDrive
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { trackToolUsage, addHistory } from '@/shared/utils/metrics';
@@ -14,6 +14,17 @@ import { identifyKey, getFieldCapability } from '@/shared/utils/api-validator';
 import { useSession, signIn } from "next-auth/react";
 
 const SETTINGS_KEY = 'omnisuite_settings';
+
+type OpenRouterModelMeta = {
+  id: string;
+  displayName: string;
+  isFree: boolean;
+  inputCostPer1M: number;
+  outputCostPer1M: number;
+  contextWindow: number;
+  modality: string;
+  category: 'balanced' | 'reasoning' | 'coding' | 'fast' | 'general';
+};
 
 interface SettingField {
   id: string;
@@ -39,6 +50,8 @@ export default function SettingsPage() {
     groq_api_key: '',
     deepseek_api_key: '',
     openrouter_api_key: '',
+    ollama_base_url: '',
+    ollama_api_key: '',
     serpapi_key: '',
     pexels_api_key: '',
     outscraper_key: '',
@@ -47,6 +60,8 @@ export default function SettingsPage() {
     google_maps_api_key: '',
     tavily_api_key: '',
     scraperapi_key: '',
+    /** Khớp AI_SUPPORT_RUNNER_SECRET trong .env (nếu có) — header x-internal-token cho /run. */
+    ai_support_runner_secret: '',
     // Google Search Console
     gsc_service_account_key: '',
     gsc_property_uri: '',
@@ -70,8 +85,38 @@ export default function SettingsPage() {
 
   const [isSaved, setIsSaved] = useState(false);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [openrouterCatalog, setOpenrouterCatalog] = useState<OpenRouterModelMeta[]>([]);
+  const [openrouterFilter, setOpenrouterFilter] = useState<'all' | 'free' | 'paid'>('all');
   const [isFetchingModels, setIsFetchingModels] = useState(false);
-  const [systemStatus, setSystemStatus] = useState<Record<string, boolean>>({});
+  const [keyAvailability, setKeyAvailability] = useState<{
+    merged: Record<string, boolean>;
+    envOnly: Record<string, boolean>;
+  }>({ merged: {}, envOnly: {} });
+
+  const syncKeyAvailability = useCallback((keysPayload?: Record<string, unknown>) => {
+    const keys =
+      keysPayload ??
+      (() => {
+        try {
+          return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+        } catch {
+          return {};
+        }
+      })();
+    fetch('/api/system/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keys }),
+    })
+      .then((res) => res.json())
+      .then((data: { merged?: Record<string, boolean>; envOnly?: Record<string, boolean> }) => {
+        setKeyAvailability({
+          merged: data.merged || {},
+          envOnly: data.envOnly || {},
+        });
+      })
+      .catch((err) => console.error('Failed to fetch system status', err));
+  }, []);
   const [validationResults, setValidationResults] = useState<Record<string, { provider: string, status: 'valid'|'invalid'|'checking'|'mismatch', color: string }>>({});
   const [smartInput, setSmartInput] = useState('');
   const [smartStatus, setSmartStatus] = useState<{ type: 'success'|'error'|'idle', text: string }>({ type: 'idle', text: '' });
@@ -122,34 +167,42 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const saved = localStorage.getItem(SETTINGS_KEY);
+    let parsed: Record<string, unknown> = {};
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
-        setSettings(prev => ({ ...prev, ...parsed }));
-        
+        parsed = JSON.parse(saved);
+        const migrated =
+          typeof (parsed as Record<string, unknown>).internal_token === 'string' &&
+          String((parsed as Record<string, unknown>).internal_token).trim() &&
+          !(typeof (parsed as Record<string, unknown>).ai_support_runner_secret === 'string' &&
+            String((parsed as Record<string, unknown>).ai_support_runner_secret).trim())
+            ? {
+                ...parsed,
+                ai_support_runner_secret: String((parsed as Record<string, unknown>).internal_token),
+              }
+            : parsed;
+        setSettings((prev) => ({ ...prev, ...migrated }));
+
         // Auto-fetch for initial provider if key exists
-        const provider = parsed.default_provider || 'Gemini';
+        const provider = (parsed.default_provider as string) || 'Gemini';
         let apiKey = '';
-        if (provider === 'OpenAI') apiKey = parsed.openai_api_key;
-        else if (provider === 'Gemini') apiKey = parsed.gemini_api_key;
-        else if (provider === 'Claude') apiKey = parsed.claude_api_key;
-        else if (provider === 'Groq') apiKey = parsed.groq_api_key;
-        else if (provider === 'DeepSeek') apiKey = parsed.deepseek_api_key;
-        else if (provider === 'OpenRouter') apiKey = parsed.openrouter_api_key;
-        
-        if (apiKey) {
-          fetchModels(provider, apiKey);
+        if (provider === 'OpenAI') apiKey = (parsed.openai_api_key as string) || '';
+        else if (provider === 'Gemini') apiKey = (parsed.gemini_api_key as string) || '';
+        else if (provider === 'Claude') apiKey = (parsed.claude_api_key as string) || '';
+        else if (provider === 'Groq') apiKey = (parsed.groq_api_key as string) || '';
+        else if (provider === 'DeepSeek') apiKey = (parsed.deepseek_api_key as string) || '';
+        else if (provider === 'OpenRouter') apiKey = (parsed.openrouter_api_key as string) || '';
+        else if (provider === 'Ollama') apiKey = (parsed.ollama_api_key as string) || 'ollama';
+
+        if (apiKey || provider === 'Ollama') {
+          fetchModels(provider, apiKey, provider === 'Ollama' ? (parsed.ollama_base_url as string) : undefined);
         }
       } catch (e) {
         console.error('Failed to parse settings');
       }
     }
-    // Fetch global system status
-    fetch('/api/system/status')
-      .then(res => res.json())
-      .then(data => setSystemStatus(data))
-      .catch(err => console.error("Failed to fetch system status", err));
-  }, []);
+    syncKeyAvailability(parsed);
+  }, [syncKeyAvailability]);
 
   // Automatic Key Recognition & Validation
   useEffect(() => {
@@ -175,14 +228,16 @@ export default function SettingsPage() {
 
   const handleSave = () => {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    syncKeyAvailability(settings as unknown as Record<string, unknown>);
     setIsSaved(true);
     addHistory('Hệ thống', 'Lưu cấu hình', 'Đã cập nhật toàn bộ API Keys và cài đặt.', 'success');
     setTimeout(() => setIsSaved(false), 3000);
   };
 
-  const fetchModels = async (providerOverride?: string, keyOverride?: string) => {
+  const fetchModels = async (providerOverride?: string, keyOverride?: string, baseUrlOverride?: string) => {
     const provider = providerOverride || settings.default_provider;
     let apiKey = keyOverride || '';
+    let customBaseUrl: string | undefined;
     
     if (!keyOverride) {
       if (provider === 'OpenAI') apiKey = settings.openai_api_key;
@@ -191,25 +246,37 @@ export default function SettingsPage() {
       else if (provider === 'Groq') apiKey = settings.groq_api_key;
       else if (provider === 'DeepSeek') apiKey = settings.deepseek_api_key;
       else if (provider === 'OpenRouter') apiKey = settings.openrouter_api_key;
+      else if (provider === 'Ollama') {
+        apiKey = settings.ollama_api_key || 'ollama';
+        customBaseUrl = settings.ollama_base_url || undefined;
+      }
+    } else if (provider === 'Ollama') {
+      customBaseUrl = baseUrlOverride || settings.ollama_base_url || undefined;
     }
 
-    if (!apiKey) return;
+    if (!apiKey && provider !== 'Ollama') return;
 
     setIsFetchingModels(true);
     try {
       const resp = await fetch('/api/list-models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, apiKey })
+        body: JSON.stringify({
+          provider,
+          apiKey: apiKey || 'ollama',
+          ...(customBaseUrl || provider === 'Ollama' ? { customBaseUrl: customBaseUrl || settings.ollama_base_url } : {}),
+        })
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || "Không thể hỗ trợ quét Model");
       
       setAvailableModels(data.models);
+      setOpenrouterCatalog(Array.isArray(data.openrouterCatalog) ? data.openrouterCatalog : []);
       addHistory('Hệ thống', 'Quét Model', `Đã tìm thấy ${data.models.length} model cho ${provider}`, 'success');
       return data.models;
     } catch (err: any) {
       addHistory('Hệ thống', 'Lỗi Quét Model', err.message, 'failed');
+      setOpenrouterCatalog([]);
       return null;
     } finally {
       setIsFetchingModels(false);
@@ -252,6 +319,11 @@ export default function SettingsPage() {
   };
 
   const disconnectProvider = (providerId: string) => {
+    if (providerId === 'Ollama') {
+      setSettings(prev => ({ ...prev, ollama_api_key: '', ollama_base_url: '' }));
+      addHistory('Hệ thống', 'Ngắt kết nối', 'Đã xóa cấu hình Ollama (URL / key).', 'info');
+      return;
+    }
     const fieldName = `${providerId.toLowerCase()}_api_key`;
     setSettings(prev => ({ ...prev, [fieldName]: '' }));
     addHistory('Hệ thống', 'Ngắt kết nối', `Đã xóa Key của ${providerId}`, 'info');
@@ -272,9 +344,10 @@ export default function SettingsPage() {
       else if (provider === 'Groq') apiKey = settings.groq_api_key;
       else if (provider === 'DeepSeek') apiKey = settings.deepseek_api_key;
       else if (provider === 'OpenRouter') apiKey = settings.openrouter_api_key;
+      else if (provider === 'Ollama') apiKey = settings.ollama_api_key || 'ollama';
       
-      if (apiKey) {
-        fetchModels(provider, apiKey);
+      if (apiKey || provider === 'Ollama') {
+        fetchModels(provider, apiKey, provider === 'Ollama' ? settings.ollama_base_url : undefined);
       }
     }
   };
@@ -297,6 +370,11 @@ export default function SettingsPage() {
     { id: 'Groq', key: settings.groq_api_key, icon: Zap },
     { id: 'DeepSeek', key: settings.deepseek_api_key, icon: Zap },
     { id: 'OpenRouter', key: settings.openrouter_api_key, icon: Globe },
+    ...(settings.ollama_base_url?.trim() ||
+    settings.ollama_api_key?.trim() ||
+    settings.default_provider === 'Ollama'
+      ? [{ id: 'Ollama' as const, key: settings.ollama_api_key || settings.ollama_base_url || 'local', icon: HardDrive }]
+      : []),
   ].filter(p => p.key);
 
   const sections: SettingSection[] = [
@@ -305,9 +383,24 @@ export default function SettingsPage() {
       icon: Cpu,
       description: 'Hệ thống tự động nhận diện Key và Model viết bài.',
       fields: [
-        { id: 'default_provider', label: 'Nhà cung cấp AI mặc định', type: 'select', options: ['OpenAI', 'Gemini', 'Claude', 'Groq', 'DeepSeek', 'OpenRouter'] },
+        { id: 'default_provider', label: 'Nhà cung cấp AI mặc định', type: 'select', options: ['OpenAI', 'Gemini', 'Claude', 'Groq', 'DeepSeek', 'OpenRouter', 'Ollama'] },
         { id: 'default_model', label: 'Model viết bài mặc định', type: availableModels.length > 0 ? 'select' : 'text', options: availableModels, placeholder: 'Quét để xem model' },
         { id: 'openrouter_api_key', label: 'OpenRouter API Key', placeholder: 'sk-or-v1-...', type: 'password' },
+        {
+          id: 'ollama_base_url',
+          label: 'Ollama — URL máy chủ',
+          placeholder: 'http://localhost:11434 (mặc định nếu để trống)',
+          type: 'text',
+          tooltip:
+            'Chạy local: để trống hoặc ghi http://localhost:11434 (Ollama mặc định). Remote/tunnel: dán origin không có /v1, ví dụ https://xxx.trycloudflare.com — có thể dán cả /v1/chat/completions, hệ thống chuẩn hóa.',
+        },
+        {
+          id: 'ollama_api_key',
+          label: 'Ollama — API Key (tuỳ chọn)',
+          placeholder: 'Token tunnel/reverse proxy (nếu có)',
+          type: 'password',
+          tooltip: 'Colab tunnel thường không cần key. Chỉ điền khi endpoint của bạn yêu cầu Bearer token.',
+        },
       ]
     },
     {
@@ -353,6 +446,14 @@ export default function SettingsPage() {
       icon: Zap,
       description: 'Cấu hình tích hợp kỹ thuật.',
       fields: [
+        {
+          id: 'ai_support_runner_secret',
+          label: 'Runner secret (AI_SUPPORT_RUNNER_SECRET)',
+          placeholder: 'Chỉ khi .env có AI_SUPPORT_RUNNER_SECRET=...',
+          type: 'password',
+          tooltip:
+            'Biến riêng cho runner — không dùng INTERNAL_TOKEN (tránh trùng biến môi trường Windows). Để trống .env + để trống ô này = /run không cần header.',
+        },
         { id: 'scraperapi_key', label: 'ScraperAPI Key', placeholder: 'Key proxy cào dữ liệu', type: 'password' },
       ]
     },
@@ -469,14 +570,24 @@ export default function SettingsPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 {sections[0].fields.map(field => {
-                  const isGlobalActive = !!systemStatus[field.id];
+                  const dashVal = (settings as Record<string, unknown>)[field.id];
+                  const hasDashboardKey =
+                    typeof dashVal === 'string'
+                      ? dashVal.trim().length > 0
+                      : typeof dashVal === 'boolean'
+                        ? dashVal
+                        : false;
+                  const showEnvBadge =
+                    field.type !== 'select' &&
+                    !!keyAvailability.envOnly[field.id] &&
+                    !hasDashboardKey;
 
                   return (
                     <div key={field.id} className="space-y-2 flex flex-col">
                       <div className="flex justify-between items-center pr-1">
                         <label className="text-[10px] font-black uppercase tracking-widest min-h-[24px] flex items-center" style={{ color: 'var(--text-muted)' }}>{field.label}</label>
-                        {isGlobalActive && !settings[field.id as keyof typeof settings] && (
-                          <span className="text-[8px] font-black text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded uppercase tracking-tighter">System Default Active</span>
+                        {showEnvBadge && (
+                          <span className="text-[8px] font-black text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded uppercase tracking-tighter">Fallback máy chủ (.env)</span>
                         )}
                       </div>
                       <div className="relative">
@@ -499,7 +610,7 @@ export default function SettingsPage() {
                           ) : (
                           <div className="relative group">
                             <input
-                              type="text" name={field.id} value={(settings as any)[field.id]} onChange={handleChange} placeholder={isGlobalActive ? 'Đang dùng cấu hình hệ thống...' : field.placeholder}
+                              type={field.type === 'password' ? 'password' : 'text'} name={field.id} value={(settings as any)[field.id]} onChange={handleChange} placeholder={showEnvBadge ? 'Đang dùng key trên máy chủ (.env). Nhập key tại đây để chỉ dùng trên trình duyệt này…' : field.placeholder}
                               className="w-full h-12 rounded-xl pl-10 pr-4 text-xs font-medium focus:outline-none focus:ring-2 font-mono leading-none"
                               style={{ backgroundColor: 'var(--hover-bg)', border: '1px solid rgba(99,102,241,0.2)', color: 'var(--text-primary)' }}
                             />
@@ -511,6 +622,73 @@ export default function SettingsPage() {
                   );
                 })}
               </div>
+
+              {settings.default_provider === 'OpenRouter' && openrouterCatalog.length > 0 && (
+                <div className="rounded-2xl p-4 space-y-3" style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em]" style={{ color: 'var(--text-muted)' }}>
+                      OpenRouter Model Insight
+                    </p>
+                    <div className="flex items-center gap-2">
+                      {(['all', 'free', 'paid'] as const).map((filter) => (
+                        <button
+                          key={filter}
+                          type="button"
+                          onClick={() => setOpenrouterFilter(filter)}
+                          className="px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition"
+                          style={{
+                            backgroundColor: openrouterFilter === filter ? 'rgba(99,102,241,0.2)' : 'var(--hover-bg)',
+                            color: openrouterFilter === filter ? '#818cf8' : 'var(--text-muted)',
+                            border: '1px solid var(--border-color)',
+                          }}
+                        >
+                          {filter === 'all' ? 'Tất cả' : filter === 'free' ? 'Free' : 'Trả phí'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                    {openrouterCatalog
+                      .filter((m) => {
+                        if (openrouterFilter === 'free') return m.isFree;
+                        if (openrouterFilter === 'paid') return !m.isFree;
+                        return true;
+                      })
+                      .slice(0, 30)
+                      .map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => setSettings((prev) => ({ ...prev, default_model: m.id }))}
+                          className="w-full text-left rounded-xl px-3 py-2.5 transition hover:opacity-90"
+                          style={{ backgroundColor: 'var(--hover-bg)', border: '1px solid var(--border-color)' }}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[11px] font-black truncate" style={{ color: 'var(--text-primary)' }}>
+                              {m.displayName}
+                            </p>
+                            <span
+                              className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full"
+                              style={{
+                                color: m.isFree ? '#34d399' : '#f59e0b',
+                                backgroundColor: m.isFree ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
+                              }}
+                            >
+                              {m.isFree ? 'FREE' : 'PAID'}
+                            </span>
+                          </div>
+                          <div className="mt-1.5 flex items-center gap-3 text-[9px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                            <span>{m.category.toUpperCase()}</span>
+                            <span>{m.contextWindow > 0 ? `${Math.round(m.contextWindow / 1000)}k ctx` : 'ctx ?'}</span>
+                            <span>${m.inputCostPer1M.toFixed(2)}/1M in</span>
+                            <span>${m.outputCostPer1M.toFixed(2)}/1M out</span>
+                          </div>
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Status Side */}
@@ -569,7 +747,19 @@ export default function SettingsPage() {
 
             <div className="space-y-6 flex-1">
               {section.fields.map(field => {
-                  const isGlobalActive = !!systemStatus[field.id];
+                  const dashVal = (settings as Record<string, unknown>)[field.id];
+                  const hasDashboardKey =
+                    typeof dashVal === 'string'
+                      ? dashVal.trim().length > 0
+                      : typeof dashVal === 'boolean'
+                        ? dashVal
+                        : false;
+                  const showEnvBadge =
+                    field.type !== 'select' &&
+                    field.type !== 'checkbox' &&
+                    field.type !== 'file' &&
+                    !!keyAvailability.envOnly[field.id] &&
+                    !hasDashboardKey;
                   return (
                     <div key={field.id} className="space-y-1.5">
                       <div className="relative mb-1.5 ml-1">
@@ -690,12 +880,12 @@ export default function SettingsPage() {
                           <>
                             <input
                               type={field.type} name={field.id} value={(settings as any)[field.id] || ''} onChange={handleChange} 
-                              placeholder={isGlobalActive ? 'Đang dùng cấu hình hệ thống...' : field.placeholder}
+                              placeholder={showEnvBadge ? 'Đang dùng key trên máy chủ (.env). Nhập key tại đây để chỉ dùng trên trình duyệt này…' : field.placeholder}
                               className="w-full h-12 rounded-xl px-10 text-xs font-medium focus:outline-none focus:ring-2 font-mono leading-none"
                               style={{ backgroundColor: 'var(--hover-bg)', border: '1px solid rgba(99,102,241,0.2)', color: 'var(--text-primary)' }}
                             />
                             <div className="absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-indigo-500 font-black" style={{ color: 'var(--text-muted)' }}>
-                              {isGlobalActive && !settings[field.id as keyof typeof settings] ? (
+                              {showEnvBadge ? (
                                 <div className="w-5 h-5 rounded-full bg-sky-500/20 flex items-center justify-center -ml-1"><CheckCircle2 size={12} className="text-sky-400" /></div>
                               ) : (
                                 <Key size={12} />

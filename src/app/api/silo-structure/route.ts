@@ -1,4 +1,12 @@
 import { NextResponse } from 'next/server';
+import {
+  defaultOllamaTimeoutMs,
+  normalizeOllamaOrigin,
+  ollamaOpenAiV1Base,
+  readOllamaKeepAlive,
+  readOllamaNumCtx,
+  withOllamaInferenceLock,
+} from '@/shared/lib/ollama';
 
 const SYSTEM_PROMPT = `Please ignore all previous instructions. Respond only in Vietnamese. You are a Keyword Research Expert. Create a detailed SILO structure for: "{seed_keyword}".
 Rule 1: Generate exactly 5 UNIQUE pillar pages (trang trụ cột). Each pillar must represent a distinct major topic angle of the seed keyword. Ensure no overlapping meanings between pillars.
@@ -39,7 +47,11 @@ function getModelTier(modelId: string): number {
   return 5;
 }
 
-async function fetchModels(provider: string, apiKey: string): Promise<string[]> {
+async function fetchModels(
+  provider: string,
+  apiKey: string,
+  ollamaBase?: string
+): Promise<string[]> {
   let models: string[] = [];
   try {
     if (provider === 'google' || provider === 'gemini') {
@@ -81,6 +93,14 @@ async function fetchModels(provider: string, apiKey: string): Promise<string[]> 
         models = data.data?.map((m: any) => m.id) || [];
       }
       if (models.length === 0) models = ['deepseek-chat'];
+    } else if (provider === 'ollama') {
+      const origin = normalizeOllamaOrigin(ollamaBase || process.env.OLLAMA_BASE_URL);
+      const resp = await fetch(`${origin}/api/tags`, { cache: 'no-store' });
+      if (resp.ok) {
+        const data = await resp.json();
+        models = (data.models || []).map((m: { name?: string }) => m.name).filter(Boolean);
+      }
+      if (models.length === 0) models = ['llama3.2'];
     }
   } catch { models = ['gpt-4o']; }
   
@@ -99,7 +119,8 @@ async function callLLM(
   apiKey: string,
   model: string,
   seedKeyword: string,
-  customPrompt?: string
+  customPrompt?: string,
+  ollamaBase?: string
 ) {
   console.time('LLM_CALL');
   const prompt = customPrompt || SYSTEM_PROMPT.replace('{seed_keyword}', seedKeyword);
@@ -121,19 +142,43 @@ async function callLLM(
     url = 'https://api.deepseek.com/v1/chat/completions';
     headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
     body = { model: model || 'deepseek-chat', messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 4000 };
+  } else if (provider === 'ollama') {
+    const v1 = ollamaOpenAiV1Base(ollamaBase || process.env.OLLAMA_BASE_URL);
+    url = `${v1}/chat/completions`;
+    headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+    {
+      const numCtx = readOllamaNumCtx();
+      body = {
+        model: model || 'llama3.2',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+        max_tokens: 4000,
+        keep_alive: readOllamaKeepAlive(),
+        ...(numCtx > 0 ? { options: { num_ctx: numCtx }, num_ctx: numCtx } : {}),
+      };
+    }
   } else {
     url = 'https://api.groq.com/openai/v1/chat/completions';
     headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
     body = { model: model || 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 4000 };
   }
   
-  // Add timeout for LLM call to avoid hanging
-  const llmTimeout = 60000; // 60 seconds
-  const llmPromise = fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
-  const resp = await (Promise.race([
+  // Add timeout for LLM call to avoid hanging (Ollama local cần lâu hơn API cloud)
+  const llmTimeout =
+    String(provider).toLowerCase() === 'ollama' ? defaultOllamaTimeoutMs() : 60000;
+  const llmPromise =
+    String(provider).toLowerCase() === 'ollama'
+      ? withOllamaInferenceLock(
+          () => fetch(url, { method: 'POST', headers, body: JSON.stringify(body) }),
+          { origin: ollamaBase || process.env.OLLAMA_BASE_URL || undefined },
+        )
+      : fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+  const resp = await Promise.race([
     llmPromise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error('LLM request timeout')), llmTimeout))
-  ]) as any) as Response;
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('LLM request timeout')), llmTimeout),
+    ),
+  ]);
   
   if (!resp.ok) {
     const errorData = await resp.json().catch(() => ({}));
@@ -218,28 +263,45 @@ function parseRelevanceJson(text: string): string[] {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    console.log('[SILO-LOG] Received POST body:', body);
     const { seedKeyword, provider = 'google', apiKeys = {}, task } = body;
+    console.log('[SILO-LOG] POST silo-structure', {
+      seedKeyword: typeof seedKeyword === 'string' ? seedKeyword.slice(0, 120) : undefined,
+      provider,
+      task,
+      apiKeysInBody: apiKeys && typeof apiKeys === 'object' ? Object.keys(apiKeys as object).length : 0,
+    });
     
     if (!seedKeyword) {
       return NextResponse.json({ error: 'Thiếu từ khóa hạt giống' }, { status: 400 });
     }
 
+    const ollamaBase =
+      (typeof apiKeys.ollama_base_url === 'string' && apiKeys.ollama_base_url.trim()) ||
+      process.env.OLLAMA_BASE_URL;
+
     const keyMap: Record<string, string> = {
-      google: 'gemini', gemini: 'gemini', openai: 'openai', claude: 'claude', groq: 'groq', deepseek: 'deepseek'
+      google: 'gemini', gemini: 'gemini', openai: 'openai', claude: 'claude', groq: 'groq', deepseek: 'deepseek',
+      ollama: 'ollama',
     };
     const keyField = keyMap[provider] || provider;
     
-    // Frontend sends: google: settings.gemini_api_key, openai: settings.openai_api_key, etc.
-    // So check both keyField (gemini) and provider (google)
-    const apiKey = apiKeys[keyField] || apiKeys[provider] || process.env[`${keyField.toUpperCase()}_API_KEY`] || process.env[`${provider.toUpperCase()}_API_KEY`];
+    let apiKey =
+      apiKeys[keyField] ||
+      apiKeys[provider] ||
+      process.env[`${keyField.toUpperCase()}_API_KEY`] ||
+      process.env[`${String(provider).toUpperCase()}_API_KEY`];
+
+    if (String(provider).toLowerCase() === 'ollama') {
+      apiKey = apiKey || process.env.OLLAMA_API_KEY || 'ollama';
+    }
+
     console.log('[SILO-LOG] Resolving API key', { provider, keyField, apiKeyExists: !!apiKey, apiKey: apiKey ? '[REDACTED]' : null });
     
     if (!apiKey) {
       return NextResponse.json({ error: `Thiếu API Key cho provider: ${provider} (field: ${keyField})` }, { status: 400 });
     }
 
-    const models = await fetchModels(provider, apiKey);
+    const models = await fetchModels(String(provider).toLowerCase(), apiKey, ollamaBase);
     const model = models[0];
 
     if (task === 'relevance_check') {
@@ -268,14 +330,14 @@ Yêu cầu:
 }
       `.trim();
 
-      const llmResponse = await callLLM(provider, apiKey, model, seedKeyword, relevancePrompt);
+      const llmResponse = await callLLM(String(provider).toLowerCase(), apiKey, model, seedKeyword, relevancePrompt, ollamaBase);
       const accepted = parseRelevanceJson(llmResponse);
       const acceptedSet = new Set(accepted.map(item => item.toLowerCase().trim()));
       const finalAccepted = keywords.filter(item => acceptedSet.has(item.toLowerCase().trim()));
       return NextResponse.json({ accepted_keywords: finalAccepted });
     }
     
-    const llmResponse = await callLLM(provider, apiKey, model, seedKeyword);
+    const llmResponse = await callLLM(String(provider).toLowerCase(), apiKey, model, seedKeyword, undefined, ollamaBase);
     console.log('LLM Response:', llmResponse.substring(0, 500));
     const siloData = parseSILOJson(llmResponse);
     

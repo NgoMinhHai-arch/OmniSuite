@@ -4,9 +4,9 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
-# 📜 QUY TẮC DỰ ÁN & MÔ TẢ CHỨC NĂNG (DÀNH CHO ANTIGRAVITY)
+# 📜 QUY TẮC DỰ ÁN & MÔ TẢ CHỨC NĂNG (DÀNH CHO AI)
 
-> **Lưu ý:** Đây là file quy tắc để Antigravity (AI) đọc mỗi khi bắt đầu làm việc. Những quy định tại đây là ưu tiên cao nhất, giúp tôi hiểu đúng phong cách của bạn và tránh các lỗi không đáng có.
+> **Lưu ý:** Đây là file quy tắc để  (AI) đọc mỗi khi bắt đầu làm việc. Những quy định tại đây là ưu tiên cao nhất, giúp tôi hiểu đúng phong cách của bạn và tránh các lỗi không đáng có.
 
 ## 0. Tổng quan & Cấu trúc Mô-đun (Modular Architecture)
 Dự án tuân thủ kiến trúc **Feature-Sliced Design (FSD)** để đảm bảo tính mở rộng và dễ bảo trì:
@@ -50,3 +50,13 @@ Dự án tuân thủ kiến trúc **Feature-Sliced Design (FSD)** để đảm b
 5. Trước khi nộp bài, phải chạy bộ công cụ kiểm thử: `pytest`, `ruff`, `vulture`.
 6. Trước khi thay đổi lớn về cấu trúc, phải tóm tắt kế hoạch và chờ phê duyệt.
 7. Luôn có file demo để test trước khi áp dụng vào project chính. Đảm bảo "Không bao giờ hỏng".
+
+## 8. Quy trình cập nhật GitHub nhanh & an toàn (BẮT BUỘC)
+1. Không bao giờ commit file `.env` hoặc file chứa secret thật.
+2. Luôn chạy quét bảo mật trước khi đẩy code:
+   - `npm run security:scan`
+   - hoặc dùng lệnh gộp: `npm run ship -- "noi dung commit"`
+3. Mặc định dùng `npm run ship` cho luồng nhanh: scan -> add -> commit -> push.
+4. Nếu push lỗi do quyền/token GitHub, xử lý auth trước rồi mới push lại; không tắt scanner để đẩy cho nhanh.
+5. Chỉ commit các thay đổi đúng phạm vi task, tránh gom file không liên quan (đặc biệt phần submodule/integrations).
+6. Người tạo ra dự án này không biết code, làm gì code gì cũng phải kiểm tra cẩn thận không được để lỗi (hãy check 2 lần)

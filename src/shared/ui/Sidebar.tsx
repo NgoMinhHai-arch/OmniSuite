@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { 
@@ -20,6 +20,7 @@ import {
   LogOut,
   BarChart,
   PanelLeft,
+  Sparkles,
 } from 'lucide-react';
 import { useSession, signIn, signOut } from "next-auth/react";
 import Image from 'next/image';
@@ -40,8 +41,9 @@ const navGroups = [
       { name: 'Bộ công cụ SEO', href: '/dashboard/seo-tools', icon: Search },
       { name: 'Kiểm tra website', href: '/dashboard/seo-tools/scraper', icon: Stethoscope },
       { name: 'SEO nâng cao', href: '/dashboard/seo-tools/advanced', icon: BarChart },
-      { name: 'Hình ảnh AI', href: '/dashboard/images', icon: ImageIcon },
+      { name: 'Tìm hình ảnh', href: '/dashboard/images', icon: ImageIcon },
       { name: 'Hỗ trợ tìm việc', href: '/dashboard/job-support', icon: BriefcaseBusiness },
+      { name: 'Quản gia', href: '/dashboard/ai-support', icon: Sparkles },
     ]
   },
   {
@@ -52,13 +54,21 @@ const navGroups = [
   }
 ];
 
-const DASHBOARD_NAV_HREFS = Array.from(
-  new Set(navGroups.flatMap((g) => g.items.map((i) => i.href).filter((h) => h && !h.startsWith('#')))),
-) as string[];
-
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  /** Tránh prefetch đồng loạt mọi công cụ (làm dev/build nghẽn); chỉ prefetch khi người dùng gần chọn */
+  const prefetchedHrefs = useRef<Set<string>>(new Set());
+
+  const prefetchNavHref = useCallback(
+    (href: string) => {
+      if (!href || href.startsWith('#')) return;
+      if (prefetchedHrefs.current.has(href)) return;
+      prefetchedHrefs.current.add(href);
+      router.prefetch(href);
+    },
+    [router],
+  );
   const [isMonitorOpen, setIsMonitorOpen] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   /** SSR/first paint = expanded; sync from localStorage after mount to avoid empty-shell flash */
@@ -92,11 +102,6 @@ export default function Sidebar() {
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     return () => observer.disconnect();
   }, []);
-
-  /** Warm route bundles so sidebar navigations feel instant */
-  useEffect(() => {
-    DASHBOARD_NAV_HREFS.forEach((href) => router.prefetch(href));
-  }, [router]);
 
   /** Other tabs / windows: keep sidebar width in sync */
   useEffect(() => {
@@ -139,7 +144,7 @@ export default function Sidebar() {
       <div className={`flex items-center transition-[padding,height] duration-200 ease-out ${isCollapsed ? 'p-3 justify-center h-[72px]' : 'p-6 justify-between h-[88px]'}`}>
         <Link 
           href="/" 
-          prefetch
+          prefetch={false}
           className={`overflow-hidden transition-[opacity,width,max-width] duration-150 ease-out ${isCollapsed ? 'pointer-events-none w-0 max-w-0 opacity-0' : 'max-w-[280px] opacity-100'}`}
         >
           <h1 className="text-2xl font-black tracking-tighter whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
@@ -236,7 +241,9 @@ export default function Sidebar() {
                     ) : (
                       <Link
                         href={item.href}
-                        prefetch
+                        prefetch={false}
+                        onPointerEnter={() => prefetchNavHref(item.href)}
+                        onFocus={() => prefetchNavHref(item.href)}
                         className={`${itemClass} w-full active:scale-[0.99]`}
                         style={itemStyle}
                         title={isCollapsed ? item.name : undefined}
@@ -393,7 +400,7 @@ export default function Sidebar() {
                    { name: 'Viết bài AI (Content)', status: 'ĐANG CHẠY', code: 'CT_88', color: 'text-emerald-500' },
                    { name: 'Quét bản đồ (Maps)', status: 'XUNG ĐỘT', code: 'MP_Err_8000', color: 'text-rose-500' },
                    { name: 'Bộ công cụ SEO', status: '50+ TOOLS', code: 'SEO_50', color: 'text-emerald-500' },
-                   { name: 'Hình ảnh AI (Image)', status: 'CHẾ ĐỘ CHỜ', code: 'IM_READY', color: 'var(--text-muted)' },
+                   { name: 'Tìm hình ảnh (Image)', status: 'CHẾ ĐỘ CHỜ', code: 'IM_READY', color: 'var(--text-muted)' },
                  ].map((t) => (
                    <div key={t.name} className="flex justify-between items-center group">
                       <div className="space-y-1">

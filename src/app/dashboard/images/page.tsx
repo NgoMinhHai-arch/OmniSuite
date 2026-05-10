@@ -415,7 +415,7 @@ export default function ImagesDashboard() {
                 <ImageIcon className="text-white" size={24} />
              </div>
              <h1 className="text-2xl font-black tracking-tighter uppercase leading-none" style={{ color: 'var(--text-primary)' }}>
-                KHỞI TẠO HÌNH ẢNH
+                Tìm hình ảnh
              </h1>
           </div>
           <div className="flex flex-col gap-3 px-2">

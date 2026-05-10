@@ -1,0 +1,27 @@
+[submodule "integrations/ai-support/submodules/browser-use"]
+	path = integrations/ai-support/submodules/browser-use
+	url = https://github.com/browser-use/browser-use.git
+[submodule "integrations/applypilot"]
+	path = integrations/applypilot
+	url = https://github.com/Pickle-Pixel/ApplyPilot.git
+[submodule "integrations/job-scraper"]
+	path = integrations/job-scraper
+	url = https://github.com/anandanair/job-scraper.git
+[submodule "integrations/benchmarks/ai-resume-tailor"]
+	path = integrations/benchmarks/ai-resume-tailor
+	url = https://github.com/workopia/ai-resume-tailor.git
+[submodule "integrations/benchmarks/resume-lm"]
+	path = integrations/benchmarks/resume-lm
+	url = https://github.com/olyaiy/resume-lm.git
+[submodule "integrations/benchmarks/job-ops"]
+	path = integrations/benchmarks/job-ops
+	url = https://github.com/DaKheera47/job-ops.git
+[submodule "integrations/benchmarks/mr-jobs"]
+	path = integrations/benchmarks/mr-jobs
+	url = https://github.com/humancto/mr-jobs.git
+[submodule "integrations/career-ops"]
+	path = integrations/career-ops
+	url = https://github.com/santifer/career-ops.git
+[submodule "integrations/ai-support/submodules/open-manus"]
+	path = integrations/ai-support/submodules/open-manus
+	url = https://github.com/FoundationAgents/OpenManus.git

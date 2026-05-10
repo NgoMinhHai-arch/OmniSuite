@@ -14,6 +14,9 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Generated / vendored scratch (not app source)
     ".tmp/**",
+    // Bundled third-party / benchmark trees (not OmniSuite app source)
+    "integrations/**",
+    "uploads/**",
   ]),
 ]);
 

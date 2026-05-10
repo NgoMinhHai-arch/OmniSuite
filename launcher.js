@@ -51,6 +51,132 @@ function checkCommand(cmd) {
   });
 }
 
+/**
+ * Doc 1 bien tu .env (khong dung dotenv vi launcher chua load .env vao process.env).
+ * Tra ve chuoi (co the rong) — khong throw.
+ */
+function readEnvVar(name) {
+  if (process.env[name]) return String(process.env[name]).trim();
+  try {
+    if (!fs.existsSync(ENV_PATH)) return '';
+    const content = fs.readFileSync(ENV_PATH, 'utf8');
+    const re = new RegExp(`^${name}=(.*)$`, 'm');
+    const m = content.match(re);
+    if (!m) return '';
+    let v = (m[1] || '').trim();
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+      v = v.slice(1, -1);
+    }
+    return v;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Kiem tra Ollama daemon (local hoac OLLAMA_BASE_URL trong .env) — KHONG bat buoc.
+ * Chi muc dich thong bao cho user biet co Ollama san sang khong.
+ */
+async function probeOllama() {
+  if (typeof fetch !== 'function' || typeof AbortController !== 'function') {
+    return; // Node < 18: bo qua probe (khong chan luong khoi dong)
+  }
+  const envBase = readEnvVar('OLLAMA_BASE_URL');
+  const envKey = readEnvVar('OLLAMA_API_KEY');
+  const raw = (envBase || 'http://localhost:11434').trim();
+  let origin = raw.replace(/\/+$/, '');
+  origin = origin
+    .replace(/\/v1\/chat\/completions$/i, '')
+    .replace(/\/v1$/i, '')
+    .replace(/\/api\/tags$/i, '');
+  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(origin);
+
+  let timer = null;
+  try {
+    const ac = new AbortController();
+    timer = setTimeout(() => ac.abort(), 1500);
+    const headers = { Accept: 'application/json' };
+    if (envKey) headers.Authorization = `Bearer ${envKey}`;
+    const resp = await fetch(`${origin}/api/tags`, { signal: ac.signal, headers });
+    clearTimeout(timer);
+    timer = null;
+    if (!resp.ok) {
+      log('warn', `Ollama o ${origin} tra HTTP ${resp.status} — bo qua. (Cloud LLM van chay binh thuong)`);
+      return;
+    }
+    const data = await resp.json().catch(() => ({}));
+    const models = Array.isArray(data.models) ? data.models : [];
+    if (models.length === 0) {
+      log('info', `Ollama o ${origin} dang chay nhung CHUA co model. Chay vi du: ollama pull llama3.2`);
+    } else {
+      const names = models.map((m) => m.name || m.model).filter(Boolean).slice(0, 3).join(', ');
+      log('ok', `Ollama OK (${origin}) — ${models.length} model${models.length > 1 ? 's' : ''}: ${names}${models.length > 3 ? ', ...' : ''}`);
+    }
+  } catch {
+    if (timer) clearTimeout(timer);
+    if (isLocal) {
+      log('info', 'Ollama local chua chay (bo qua) — neu muon dung Ollama: tai https://ollama.com va chay "ollama serve" + "ollama pull llama3.2".');
+    } else {
+      log('warn', `Khong ket noi duoc Ollama tai ${origin} (tunnel offline?). Cloud LLM van dung binh thuong.`);
+    }
+  }
+}
+
+/**
+ * Goi Ollama de unload toan bo model dang load (giai phong VRAM/RAM).
+ * Best-effort — khong throw, timeout ngan de khong chan shutdown.
+ */
+async function unloadOllamaModelsBestEffort() {
+  if (typeof fetch !== 'function' || typeof AbortController !== 'function') return;
+  const envBase = readEnvVar('OLLAMA_BASE_URL');
+  const envKey = readEnvVar('OLLAMA_API_KEY');
+  let origin = (envBase || 'http://localhost:11434').trim().replace(/\/+$/, '');
+  origin = origin
+    .replace(/\/v1\/chat\/completions$/i, '')
+    .replace(/\/v1$/i, '')
+    .replace(/\/api\/tags$/i, '');
+
+  const headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
+  if (envKey) headers.Authorization = `Bearer ${envKey}`;
+
+  let models = [];
+  try {
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), 1500);
+    const resp = await fetch(`${origin}/api/ps`, { signal: ac.signal, headers });
+    clearTimeout(t);
+    if (resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      if (Array.isArray(data && data.models)) {
+        models = data.models.map((m) => (m && (m.name || m.model)) || '').filter(Boolean);
+      }
+    }
+  } catch {
+    return;
+  }
+
+  if (models.length === 0) return;
+
+  let unloaded = 0;
+  for (const model of models) {
+    try {
+      const ac = new AbortController();
+      const t = setTimeout(() => ac.abort(), 2500);
+      const resp = await fetch(`${origin}/api/generate`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ model, keep_alive: 0 }),
+        signal: ac.signal,
+      });
+      clearTimeout(t);
+      if (resp.ok) unloaded++;
+    } catch { /* ignore */ }
+  }
+  if (unloaded > 0) {
+    log('ok', `Da yeu cau Ollama unload ${unloaded}/${models.length} model — VRAM duoc giai phong.`);
+  }
+}
+
 function runCommand(cmd, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
@@ -234,10 +360,6 @@ function startService(name, cmd, args, readyCheck = null) {
 }
 
 
-function generateInternalToken() {
-  return `omni_${crypto.randomBytes(24).toString('hex')}`;
-}
-
 function ensureEnvTokens() {
   let envContent = '';
   let modified = false;
@@ -251,22 +373,10 @@ function ensureEnvTokens() {
     log('warn', 'Khong tim thay .env va .env.example, se tao .env moi');
   }
 
-  // Ensure INTERNAL_TOKEN
+  // INTERNAL_TOKEN: không tự sinh — để trống hoặc bỏ dòng = runner (/run) không cần header x-internal-token.
   const tokenRegex = /^INTERNAL_TOKEN=(.*)$/m;
   const tokenMatch = envContent.match(tokenRegex);
-  const existingToken = tokenMatch ? (tokenMatch[1] || '').trim() : '';
-  let token = existingToken;
-
-  if (!token) {
-    token = generateInternalToken();
-    if (tokenMatch) {
-      envContent = envContent.replace(tokenRegex, `INTERNAL_TOKEN=${token}`);
-    } else {
-      if (envContent.length && !envContent.endsWith('\n')) envContent += '\n';
-      envContent += `INTERNAL_TOKEN=${token}\n`;
-    }
-    modified = true;
-  }
+  const token = tokenMatch ? (tokenMatch[1] || '').trim() : '';
 
   // Ensure NEXTAUTH_SECRET
   const secretRegex = /^NEXTAUTH_SECRET=(.*)$/m;
@@ -285,13 +395,30 @@ function ensureEnvTokens() {
     modified = true;
   }
 
+  // Ensure NEXTAUTH_URL for stable NextAuth client/server fetch behavior
+  const nextAuthUrlRegex = /^NEXTAUTH_URL=(.*)$/m;
+  const nextAuthUrlMatch = envContent.match(nextAuthUrlRegex);
+  const existingNextAuthUrl = nextAuthUrlMatch ? (nextAuthUrlMatch[1] || '').trim() : '';
+  const defaultNextAuthUrl = 'http://localhost:3000';
+
+  if (!existingNextAuthUrl) {
+    if (nextAuthUrlMatch) {
+      envContent = envContent.replace(nextAuthUrlRegex, `NEXTAUTH_URL=${defaultNextAuthUrl}`);
+    } else {
+      if (envContent.length && !envContent.endsWith('\n')) envContent += '\n';
+      envContent += `NEXTAUTH_URL=${defaultNextAuthUrl}\n`;
+    }
+    modified = true;
+  }
+
   if (modified || !fs.existsSync(ENV_PATH)) {
     fs.writeFileSync(ENV_PATH, envContent, 'utf8');
-    log('ok', 'Da tao/cap nhat INTERNAL_TOKEN va NEXTAUTH_SECRET trong .env');
+    log('ok', 'Da tao/cap nhat .env (NEXTAUTH_URL / NEXTAUTH_SECRET). INTERNAL_TOKEN: dat trong .env neu muon khoa runner.');
   }
 
   process.env.INTERNAL_TOKEN = token;
   process.env.NEXTAUTH_SECRET = secret;
+  process.env.NEXTAUTH_URL = existingNextAuthUrl || defaultNextAuthUrl;
 }
 async function main() {
   console.clear();
@@ -321,7 +448,10 @@ async function main() {
   }
 
   ensureEnvTokens();
-  
+
+  // 2b. Kiem tra Ollama (tuy chon - khong chan luong khoi dong)
+  await probeOllama();
+
   // 3. Khá»Ÿi Ä‘á»™ng cÃ¡c services
   console.log('\n');
   log('info', 'Dang khoi dong he thong...');
@@ -365,14 +495,22 @@ async function main() {
   console.log(`${colors.reset}`);
   console.log('\nNhan Ctrl+C de dung tat ca services\n');
   
-  // Xá»­ lÃ½ dá»«ng graceful
-  process.on('SIGINT', () => {
-    log('warn', '\nDang dung cac services...');
+  // Xá»­ lÃ½ dá»«ng graceful + giáº£i phÃ³ng VRAM Ollama
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    log('warn', '\nDang dung cac services va giai phong VRAM Ollama...');
+    try {
+      await unloadOllamaModelsBestEffort();
+    } catch (_) { /* ignore */ }
     services.forEach(s => {
       try { s.kill(); } catch(e) {}
     });
     setTimeout(() => process.exit(0), 2000);
-  });
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
   
   // Giá»¯ process sá»‘ng
   await new Promise(() => {});

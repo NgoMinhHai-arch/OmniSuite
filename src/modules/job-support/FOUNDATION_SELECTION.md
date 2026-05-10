@@ -32,3 +32,18 @@ Selected architecture:
 - Error codes và hint tiếng Việt
 - Chính sách an toàn: dry-run default cho checklist; live batch cần approval + rate limit/ngày (áp dụng khi “live” confirmed)
 - Unified UI cho các workspace
+
+## Architecture Decision (Immediate)
+
+- **Decision:** giữ orchestration/API composition ở TypeScript layer (`src/modules/job-support`), nhưng chuyển dần heavy AI processing (CV parsing, CV↔JD scoring, rewrite/tailoring, embedding/ranking) sang Python engine (`:8082`).
+- **Why:** tránh duplicate business logic ở cả TS và Python; tận dụng ecosystem ML/LLM của Python cho phần xử lý nặng.
+- **Execution order:**
+  1. Đã hoàn tất: Tailor CV adapter gọi contract Python thật `POST /api/job/tailor` trên `:8082` (không còn stub `console.log`).
+  2. Tiếp theo: tạo endpoint Python engine cho scoring/tailoring chuẩn hóa để TS chỉ đóng vai trò orchestrator.
+  3. Sau khi chạy ổn định: đo chất lượng match CV↔JD (keyword overlap, score distribution, manual acceptance rate) trước khi tối ưu tiếp.
+
+### Current contract (Python engine)
+
+- Endpoint: `POST /api/job/tailor`
+- Input: `resume_text`, `jd_text` (kèm optional `provider`, `model_name`, `api_key`, `custom_base_url`)
+- Output: `tailored_resume`, `match_score`, `suggestions`

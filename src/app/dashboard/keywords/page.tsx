@@ -32,6 +32,9 @@ import Typography from '@/shared/ui/Typography';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
 import { useTasks } from '@/shared/lib/context/TaskContext';
+import { getLlmCredentialsFromSettings } from '@/shared/lib/client-llm-credentials';
+import { getDashboardLlmProviderFromSettings } from '@/shared/lib/llm-default-provider';
+import { shouldExposeOllamaInUi } from '@/shared/lib/ollama';
 
 // --- TYPES ---
 interface BadgeInfo {
@@ -727,46 +730,75 @@ export default function DemoKeywordsPage() {
       const parsed = JSON.parse(saved);
       setSettings(parsed);
       
-      const firstConnected = [
-        { id: 'google', key: parsed.gemini_api_key },
-        { id: 'openai', key: parsed.openai_api_key },
-        { id: 'groq', key: parsed.groq_api_key },
-        { id: 'claude', key: parsed.claude_api_key },
-        { id: 'deepseek', key: parsed.deepseek_api_key },
-        { id: 'openrouter', key: parsed.openrouter_api_key }
-      ].find(p => p.key);
-      
-      if (firstConnected) setProvider(firstConnected.id);
+      setProvider(getDashboardLlmProviderFromSettings(parsed));
     }
   }, []);
   useEffect(() => { fetchModels(); }, [provider, settings]);
 
   const fetchModels = async () => {
-    const keyField = provider === 'google' ? 'gemini' : provider;
-    const apiKey = settings[`${keyField}_api_key`];
-    if (!apiKey) return;
+    const { apiKey, customBaseUrl } = getLlmCredentialsFromSettings(provider, settings);
+    if (provider !== 'ollama' && !apiKey) return;
     setIsFetchModelsLoading(true);
     try {
-      const apiKeysParam = encodeURIComponent(JSON.stringify({
-        google: settings.gemini_api_key,
-        openai: settings.openai_api_key,
-        groq: settings.groq_api_key,
-        claude: settings.claude_api_key,
-        deepseek: settings.deepseek_api_key,
-        openrouter: settings.openrouter_api_key
-      }));
-      const resp = await fetchWithRetry(`/api/seo/models?provider=${provider}&apiKeys=${apiKeysParam}`);
-      const data = await resp.json();
-      if (data.models && data.models.length > 0) {
-        setAvailableModels(data.models);
-        setSelectedModel(data.models[0]);
+      let models: string[] = [];
+
+      // Primary path: unified model listing endpoint used across app.
+      const listResp = await fetchWithRetry('/api/list-models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider,
+          apiKey: apiKey || 'ollama',
+          ...(customBaseUrl ? { customBaseUrl } : {}),
+        }),
+      });
+      const listData = await listResp.json().catch(() => ({}));
+      if (listResp.ok && Array.isArray(listData.models) && listData.models.length > 0) {
+        models = listData.models;
+      } else {
+        // Backward-compatible fallback for legacy SEO route.
+        const apiKeysParam = encodeURIComponent(JSON.stringify({
+          google: settings.gemini_api_key,
+          openai: settings.openai_api_key,
+          groq: settings.groq_api_key,
+          claude: settings.claude_api_key,
+          deepseek: settings.deepseek_api_key,
+          openrouter: settings.openrouter_api_key,
+          ollama: settings.ollama_api_key || 'ollama',
+          ollama_base_url: settings.ollama_base_url,
+        }));
+        const legacyResp = await fetchWithRetry(`/api/seo/models?provider=${provider}&apiKeys=${apiKeysParam}`);
+        const legacyData = await legacyResp.json().catch(() => ({}));
+        if (legacyResp.ok && Array.isArray(legacyData.models) && legacyData.models.length > 0) {
+          models = legacyData.models;
+        }
+      }
+
+      if (models.length > 0) {
+        setAvailableModels(models);
+        setSelectedModel(models[0]);
       } else {
         setAvailableModels([]);
         setSelectedModel('');
       }
-    } catch { console.error("Failed to load models"); }
+    } catch (err) {
+      console.error("Failed to load models", err);
+      setAvailableModels([]);
+      setSelectedModel('');
+    }
     finally { setIsFetchModelsLoading(false); }
   };
+
+  const buildAiApiKeys = () => ({
+    gemini: settings.gemini_api_key,
+    openai: settings.openai_api_key,
+    groq: settings.groq_api_key,
+    openrouter: settings.openrouter_api_key,
+    claude: settings.claude_api_key,
+    deepseek: settings.deepseek_api_key,
+    ollama: settings.ollama_api_key || 'ollama',
+    ollama_base_url: settings.ollama_base_url,
+  });
 
   const fetchWithRetry = async (url: string, options: any = {}, maxRetries = 10) => {
     let retries = 0;
@@ -816,14 +848,7 @@ export default function DemoKeywordsPage() {
           clusterName: cluster,
           keywords: candidates,
           provider,
-          apiKeys: {
-            gemini: settings.gemini_api_key,
-            openai: settings.openai_api_key,
-            groq: settings.groq_api_key,
-            openrouter: settings.openrouter_api_key,
-            claude: settings.claude_api_key,
-            deepseek: settings.deepseek_api_key
-          }
+          apiKeys: buildAiApiKeys(),
         })
       });
       if (!response.ok) return new Set(candidates);
@@ -921,9 +946,7 @@ export default function DemoKeywordsPage() {
             body: JSON.stringify({ 
               seedKeyword: seed, provider, model: selectedModel, disableAI: !isAIEnabled,
               enable_cpc: isCpcEnabled,
-              apiKeys: {
-                gemini: settings.gemini_api_key, openai: settings.openai_api_key, groq: settings.groq_api_key, claude: settings.claude_api_key, deepseek: settings.deepseek_api_key, openrouter: settings.openrouter_api_key
-              }
+              apiKeys: buildAiApiKeys(),
             }) 
           });
 
@@ -995,14 +1018,7 @@ export default function DemoKeywordsPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
             seedKeyword: seed, provider, 
-            apiKeys: {
-              gemini: settings.gemini_api_key,
-              openai: settings.openai_api_key,
-              groq: settings.groq_api_key,
-              openrouter: settings.openrouter_api_key,
-              claude: settings.claude_api_key,
-              deepseek: settings.deepseek_api_key
-            } 
+            apiKeys: buildAiApiKeys(),
           })
         });
         
@@ -1041,9 +1057,7 @@ export default function DemoKeywordsPage() {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ 
-                seedKeyword: target.name, mode: 'SCRAPE', provider, apiKeys: {
-                  gemini: settings.gemini_api_key, openai: settings.openai_api_key, groq: settings.groq_api_key, claude: settings.claude_api_key, deepseek: settings.deepseek_api_key
-                }
+                seedKeyword: target.name, mode: 'SCRAPE', provider, apiKeys: buildAiApiKeys(),
               })
             });
 
@@ -1119,9 +1133,7 @@ export default function DemoKeywordsPage() {
                 keywordList: chunk, mode: 'ANALYZE', provider, model: selectedModel, 
                 ranks: chunkRanks,
                 enable_cpc: isCpcEnabled,
-                apiKeys: {
-                  gemini: settings.gemini_api_key, openai: settings.openai_api_key, groq: settings.groq_api_key, claude: settings.claude_api_key, deepseek: settings.deepseek_api_key
-                }
+                apiKeys: buildAiApiKeys(),
               })
             });
 
@@ -1361,7 +1373,8 @@ export default function DemoKeywordsPage() {
                              { id: 'groq', name: 'GROQ', key: settings.groq_api_key },
                              { id: 'claude', name: 'CLAUDE', key: settings.claude_api_key },
                              { id: 'deepseek', name: 'DEEPSEEK', key: settings.deepseek_api_key },
-                             { id: 'openrouter', name: 'OPENROUTER', key: settings.openrouter_api_key }
+                             { id: 'openrouter', name: 'OPENROUTER', key: settings.openrouter_api_key },
+                             { id: 'ollama', name: 'OLLAMA', key: shouldExposeOllamaInUi(settings) ? (settings.ollama_base_url?.trim() || settings.ollama_api_key?.trim() || 'local') : '' },
                           ].filter(p => p.key).length > 0 ? (
                             [
                               { id: 'google', name: 'GOOGLE AI', key: settings.gemini_api_key },
@@ -1369,7 +1382,8 @@ export default function DemoKeywordsPage() {
                               { id: 'groq', name: 'GROQ', key: settings.groq_api_key },
                               { id: 'claude', name: 'CLAUDE', key: settings.claude_api_key },
                               { id: 'deepseek', name: 'DEEPSEEK', key: settings.deepseek_api_key },
-                              { id: 'openrouter', name: 'OPENROUTER', key: settings.openrouter_api_key }
+                              { id: 'openrouter', name: 'OPENROUTER', key: settings.openrouter_api_key },
+                              { id: 'ollama', name: 'OLLAMA', key: shouldExposeOllamaInUi(settings) ? (settings.ollama_base_url?.trim() || settings.ollama_api_key?.trim() || 'local') : '' },
                             ].filter(p => p.key).map(p => (
                               <option key={p.id} value={p.id} style={{ backgroundColor: 'var(--card-bg)', color: '#6366f1' }}>{p.name}</option>
                             ))

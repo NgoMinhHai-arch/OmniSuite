@@ -8,7 +8,7 @@ import AiProcessManager from '@/shared/lib/aiProcessManager';
 
 const BASE_URL = 'http://127.0.0.1:8000'; 
 const PIPELINE_URL = `${BASE_URL}/api/v1/semantic-filter`;
-const INTERNAL_TOKEN = process.env.INTERNAL_TOKEN;
+const INTERNAL_TOKEN = (process.env.INTERNAL_TOKEN || '').trim();
 
 export interface ImageResult {
   url: string;
@@ -40,10 +40,6 @@ export async function scrapeImages(
   onProgress?: (msg: string) => void
 ) {
   try {
-    if (!INTERNAL_TOKEN) {
-      throw new Error('Thiếu INTERNAL_TOKEN trong biến môi trường.');
-    }
-
     const query = `${keyword} ${location} ${placeTypeLabel}`.trim();
     if (onProgress) onProgress(`🔍 Khởi động Hybrid Search AI: "${query}"...`);
 
@@ -73,8 +69,8 @@ export async function scrapeImages(
     }, {
       timeout: pipelineTimeoutMs,
       headers: {
-        'X-Internal-Token': INTERNAL_TOKEN
-      }
+        ...(INTERNAL_TOKEN ? { 'X-Internal-Token': INTERNAL_TOKEN } : {}),
+      },
     });
 
     const isTransientNetworkError = (err: any) => {

@@ -1,0 +1,29 @@
+# Seed cho lan dau chay setup-runners-venv / probe — runner /run se ghi de config.toml sau.
+# OpenManus bat buoc [daytona].daytona_api_key (co the placeholder).
+
+[llm]
+model = "llama3.2"
+base_url = "http://localhost:11434/v1"
+api_key = "ollama"
+max_tokens = 4096
+temperature = 0.0
+api_type = "ollama"
+api_version = ""
+
+[llm.vision]
+model = "llama3.2"
+base_url = "http://localhost:11434/v1"
+api_key = "ollama"
+max_tokens = 4096
+temperature = 0.0
+api_type = "ollama"
+api_version = ""
+
+[mcp]
+server_reference = "app.mcp.server"
+
+[runflow]
+use_data_analysis_agent = false
+
+[daytona]
+daytona_api_key = "omnisuite-unused"

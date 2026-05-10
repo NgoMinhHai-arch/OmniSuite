@@ -9,6 +9,7 @@ export async function GET(req: Request) {
     const preferVision = searchParams.get('prefer_vision') === 'true';
 
     let apiKey = '';
+    let customBaseUrl: string | undefined;
     try {
       const keys = JSON.parse(apiKeysParam);
       const keyMap: Record<string, string> = {
@@ -17,13 +18,20 @@ export async function GET(req: Request) {
         claude: 'claude', anthropic: 'claude',
         groq: 'groq',
         deepseek: 'deepseek',
-        openrouter: 'openrouter'
+        openrouter: 'openrouter',
+        ollama: 'ollama',
       };
       const keyField = keyMap[provider] || provider;
       apiKey = keys[keyField] || '';
-    } catch { apiKey = ''; }
+      if (provider === 'ollama') {
+        customBaseUrl = keys.ollama_base_url || undefined;
+        if (!apiKey) apiKey = keys.ollama || 'ollama';
+      }
+    } catch {
+      apiKey = '';
+    }
 
-    let models = await fetchModelsForProvider({ provider, apiKey, includeProviderPrefix: false });
+    const models = await fetchModelsForProvider({ provider, apiKey, customBaseUrl, includeProviderPrefix: false });
 
     // If prefer_vision, return only vision-capable models
     if (preferVision) {
@@ -34,7 +42,7 @@ export async function GET(req: Request) {
     }
 
     return NextResponse.json({ models });
-  } catch (error) {
+  } catch {
     return NextResponse.json({ models: ['gpt-4'] });
   }
 }

@@ -3,6 +3,7 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createGroq } from '@ai-sdk/groq';
 import { getSystemConfig } from './config';
+import { ollamaOpenAiV1Base } from './ollama';
 
 export function getAIModel(provider: string, apiKey: string, modelName: string, customBaseUrl?: string) {
   const system = getSystemConfig();
@@ -17,6 +18,8 @@ export function getAIModel(provider: string, apiKey: string, modelName: string, 
     else if (p === 'groq') finalKey = system.groq_api_key || '';
     else if (p === 'deepseek') finalKey = system.deepseek_api_key || '';
     else if (p === 'openrouter') finalKey = system.openrouter_api_key || '';
+    else if (p === 'ollama')
+      finalKey = (system.ollama_api_key || '').trim() || 'ollama';
   }
 
   if (!finalKey) throw new Error(`API Key for ${provider} is required but missing.`);
@@ -26,7 +29,7 @@ export function getAIModel(provider: string, apiKey: string, modelName: string, 
   // Ví dụ: "openrouter/anthropic/claude-3" -> "anthropic/claude-3"
   //       "groq/llama3-8b" -> "llama3-8b"
   let cleanModelName = modelName;
-  const prefixes = ['openrouter/', 'groq/', 'anthropic/', 'google/', 'gemini/'];
+  const prefixes = ['openrouter/', 'groq/', 'anthropic/', 'google/', 'gemini/', 'ollama/'];
   for (const p of prefixes) {
     if (cleanModelName.startsWith(p)) {
       cleanModelName = cleanModelName.slice(p.length);
@@ -65,6 +68,11 @@ export function getAIModel(provider: string, apiKey: string, modelName: string, 
         }
       });
       return openrouter.chat(cleanModelName);
+    case 'ollama': {
+      const base = ollamaOpenAiV1Base(customBaseUrl?.trim() || system.ollama_base_url);
+      const ollama = createOpenAI({ baseURL: base, apiKey: finalKey });
+      return ollama.chat(cleanModelName);
+    }
     case 'custom':
       if (!customBaseUrl) throw new Error("Custom Base URL is required for Custom provider");
       const custom = createOpenAI({ baseURL: customBaseUrl, apiKey: finalKey });

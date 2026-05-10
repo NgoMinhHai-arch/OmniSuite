@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  experimental: {
+    /** Giảm kích thước bundle icon Lucide khi import nhiều symbol */
+    optimizePackageImports: ["lucide-react"],
+  },
   async redirects() {
     return [
       { source: "/dashboard/seo_tools", destination: "/dashboard/seo-tools", permanent: false },

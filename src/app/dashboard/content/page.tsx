@@ -21,6 +21,7 @@ import {
   Check,
   ChevronDown,
   RefreshCw,
+  Search,
   Cpu,
   Upload,
   X,
@@ -46,8 +47,21 @@ import Input from '@/shared/ui/Input';
 import Typography from '@/shared/ui/Typography';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTasks } from '@/shared/lib/context/TaskContext';
+import type { BulkContentJobStatus, ContentPlatformPreset } from '@/shared/contracts/content-engine';
+import { getLlmCredentialsFromSettings } from '@/shared/lib/client-llm-credentials';
 
 const SETTINGS_KEY = 'omnisuite_settings';
+
+type OpenRouterModelMeta = {
+  id: string;
+  displayName: string;
+  isFree: boolean;
+  inputCostPer1M: number;
+  outputCostPer1M: number;
+  contextWindow: number;
+  modality: string;
+  category: 'balanced' | 'reasoning' | 'coding' | 'fast' | 'general';
+};
 
 export default function ContentEngine() {
   const [topic, setTopic] = useState('');
@@ -75,6 +89,7 @@ export default function ContentEngine() {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorImageInputRef = useRef<HTMLInputElement>(null);
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef(false);
 
   const [showSeoDrawer, setShowSeoDrawer] = useState(false);
@@ -98,9 +113,17 @@ export default function ContentEngine() {
 
   const [selectedProvider, setSelectedProvider] = useState('Gemini');
   const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [modelSearch, setModelSearch] = useState('');
+  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+  const [openrouterCatalog, setOpenrouterCatalog] = useState<OpenRouterModelMeta[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [connectedProviders, setConnectedProviders] = useState<string[]>([]);
-  const [settings, setSettings] = useState<any>({});
+  const [settings, setSettings] = useState<Record<string, string>>({});
+  const [outputMode, setOutputMode] = useState<'single' | 'bulk'>('single');
+  const [platformPreset, setPlatformPreset] = useState<ContentPlatformPreset>('googleSeoLongForm');
+  const [bulkKeywords, setBulkKeywords] = useState('');
+  const [bulkJob, setBulkJob] = useState<BulkContentJobStatus | null>(null);
+  const [researchSources, setResearchSources] = useState<Array<{ title: string; url: string; snippet: string }>>([]);
 
   const { startTask, getTask } = useTasks();
 
@@ -130,7 +153,7 @@ export default function ContentEngine() {
   useEffect(() => {
     const saved = localStorage.getItem(SETTINGS_KEY);
     if (saved) {
-      const parsed = JSON.parse(saved);
+      const parsed = JSON.parse(saved) as Record<string, string>;
       setSettings(parsed);
       
       const connected: string[] = [];
@@ -140,6 +163,10 @@ export default function ContentEngine() {
       if (parsed.groq_api_key) connected.push('Groq');
       if (parsed.openrouter_api_key) connected.push('OpenRouter');
       if (parsed.deepseek_api_key) connected.push('DeepSeek');
+      if (parsed.ollama_base_url?.trim() || parsed.ollama_api_key?.trim() || parsed.default_provider === 'Ollama') {
+        connected.push('Ollama');
+      }
+
       setConnectedProviders(connected);
 
       const defaultProvider = parsed.default_provider || 'Gemini';
@@ -174,7 +201,7 @@ export default function ContentEngine() {
         if (o) setOutline(o);
         if (t) setTavilyContext(t);
         if (a) setFullArticle(a);
-      } catch (e) {}
+      } catch {}
     }
   }, []);
 
@@ -184,23 +211,41 @@ export default function ContentEngine() {
   }, [topic, keyword, secondaryKeywords, urls, rawData, framework, outline, tavilyContext, fullArticle]);
 
   useEffect(() => {
-    if (selectedProvider && settings[`${selectedProvider.toLowerCase()}_api_key`]) {
+    const { apiKey } = getLlmCredentialsFromSettings(selectedProvider, settings);
+    if (selectedProvider && (selectedProvider === 'Ollama' || apiKey)) {
       fetchModels(selectedProvider);
     } else {
       setAvailableModels([]);
     }
+    setIsModelDropdownOpen(false);
+    setModelSearch('');
   }, [selectedProvider, settings]);
 
+  useEffect(() => {
+    const onMouseDown = (event: MouseEvent) => {
+      if (!modelDropdownRef.current) return;
+      if (!modelDropdownRef.current.contains(event.target as Node)) {
+        setIsModelDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, []);
+
   const fetchModels = async (provider: string) => {
-    const apiKey = settings[`${provider.toLowerCase()}_api_key`];
-    if (!apiKey) return;
+    const { apiKey, customBaseUrl } = getLlmCredentialsFromSettings(provider, settings);
+    if (provider !== 'Ollama' && !apiKey) return;
 
     setIsLoadingModels(true);
     try {
       const resp = await fetch('/api/list-models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, apiKey })
+        body: JSON.stringify({
+          provider,
+          apiKey: apiKey || 'ollama',
+          ...(customBaseUrl ? { customBaseUrl } : {}),
+        })
       });
       const data = await resp.json();
       
@@ -210,12 +255,16 @@ export default function ContentEngine() {
 
       if (data.models && data.models.length > 0) {
         setAvailableModels(data.models);
+        setOpenrouterCatalog(Array.isArray(data.openrouterCatalog) ? data.openrouterCatalog : []);
         if (!data.models.includes(modelName)) {
           setModelName(data.models[0]);
         }
+      } else {
+        setOpenrouterCatalog([]);
       }
     } catch (err) {
       console.error('Fetch models error:', err);
+      setOpenrouterCatalog([]);
     } finally {
       setIsLoadingModels(false);
     }
@@ -227,6 +276,44 @@ export default function ContentEngine() {
     setShowToast(true);
     setTimeout(() => setShowToast(false), type === 'error' ? 6000 : 2000);
   };
+
+  /** Browser chỉ báo "Failed to fetch" khi không có TCP/tới được Next/API hoặc Next không proxy được sang Python engine. */
+  const explainFetchFailure = (err: unknown): Error => {
+    if (err instanceof TypeError) {
+      const m = err.message || '';
+      if (
+        m === 'Failed to fetch' ||
+        /failed to fetch|networkerror|load failed/i.test(m)
+      ) {
+        return new Error(
+          'Không kết nối được máy chủ (Failed to fetch). Kiểm tra: (1) Next.js đang chạy, (2) Python Content Engine đã bật trên cổng trong PYTHON_ENGINE_URL (mặc định http://127.0.0.1:8082), (3) tường lửa/proxy không chặn localhost.'
+        );
+      }
+    }
+    if (err instanceof Error) return err;
+    return new Error('Lỗi mạng không xác định.');
+  };
+
+  async function fetchJsonOrThrow(input: RequestInfo | URL, init?: RequestInit) {
+    let resp: Response;
+    try {
+      resp = await fetch(input, init);
+    } catch (e) {
+      throw explainFetchFailure(e);
+    }
+    let data: Record<string, unknown>;
+    try {
+      data = (await resp.json()) as Record<string, unknown>;
+    } catch {
+      const txt = await resp.text().catch(() => '');
+      throw new Error(
+        resp.ok
+          ? `Phản hồi không phải JSON: ${txt.slice(0, 160)}`
+          : `HTTP ${resp.status}: ${txt.slice(0, 240)}`
+      );
+    }
+    return { resp, data };
+  }
 
   const handleCopy = async (text: string, type: 'outline' | 'article') => {
     await navigator.clipboard.writeText(text);
@@ -292,23 +379,97 @@ export default function ContentEngine() {
     return matches;
   };
 
+  const pollBulkJob = (jobId: string) => {
+    const interval = setInterval(async () => {
+      try {
+        let resp: Response;
+        try {
+          resp = await fetch(`/api/content-jobs/${jobId}`);
+        } catch (netErr) {
+          throw explainFetchFailure(netErr);
+        }
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Không thể đọc trạng thái job');
+        setBulkJob(data);
+        if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
+          clearInterval(interval);
+          setIsLoading(false);
+          if (data.status === 'completed') {
+            const first = data.results?.[0];
+            if (first?.outline) setOutline(first.outline);
+            if (first?.article) setFullArticle(first.article);
+            if (first?.research?.sources) setResearchSources(first.research.sources);
+            showNotification(`Bulk hoàn tất: ${data.results?.length || 0} bài`, 'success');
+          } else if (data.status === 'failed') {
+            showNotification(data.error || 'Bulk job thất bại', 'error');
+          } else {
+            showNotification('Đã hủy bulk job', 'error');
+          }
+        }
+      } catch (err: unknown) {
+        clearInterval(interval);
+        setIsLoading(false);
+        const message = err instanceof Error ? err.message : 'Lỗi polling bulk job';
+        showNotification(message, 'error');
+      }
+    }, 2200);
+  };
+
   const handleStart = async (type: 'outline' | 'article') => {
-    if (!keyword.trim()) return;
+    if (outputMode !== 'bulk' && !keyword.trim()) return;
     setIsLoading(true);
     cancelRef.current = false;
     if (type === 'outline') setOutline(''); else { setFullArticle(''); setIsEditingArticle(false); }
     
-    const apiKey = settings[`${selectedProvider.toLowerCase()}_api_key`];
+    const { apiKey: llmKey, customBaseUrl } = getLlmCredentialsFromSettings(selectedProvider, settings);
     
+    if (!llmKey && selectedProvider !== 'Ollama') {
+      showNotification('Chưa cấu hình API key. Mở Cấu hình hệ thống để thêm key hoặc Ollama.', 'error');
+      setIsLoading(false);
+      return;
+    }
+
     try {
       let currentOutline = outline;
       let currentTavilyContext = tavilyContext;
+      if (outputMode === 'bulk' && type === 'article') {
+        const kws = (bulkKeywords || keyword)
+          .split(/\n|,/)
+          .map(v => v.trim())
+          .filter(Boolean);
+        if (kws.length === 0) throw new Error('Hãy nhập tối thiểu 1 từ khóa cho bulk.');
+        const { resp, data } = await fetchJsonOrThrow('/api/content-jobs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode: 'bulk',
+            provider: selectedProvider,
+            modelName,
+            apiKey: llmKey,
+            ...(customBaseUrl ? { customBaseUrl } : {}),
+            tavilyApiKey: settings.tavily_api_key,
+            variants: kws.map((kw) => ({
+              keyword: kw,
+              topic: topic || kw,
+              secondaryKeywords,
+              framework,
+              platformPreset,
+            })),
+          }),
+        });
+        if (!resp.ok || data.error) throw new Error(String(data.error || 'Không thể tạo bulk job'));
+        setBulkJob(data as unknown as BulkContentJobStatus);
+        setWritingProgress({ isWriting: false, currentIndex: 0, totalSections: kws.length, currentSection: 'Bulk queue running' });
+        addHistory('Viết bài AI', 'Tạo bulk job', `Số từ khóa: ${kws.length}`, 'info');
+        pollBulkJob(String(data.id ?? ''));
+        return;
+      }
 
       // TOP-LEVEL FAILSAFE: If generating article but no outline, generate outline first!
       if (type === 'article' && !outline.trim()) {
         showNotification('Đang tự động chuẩn bị dàn ý...');
         addHistory('Viết bài AI', 'Chuẩn bị dàn ý', `Tự động chuẩn bị dàn ý cho: ${keyword}`, 'info');
-        const response = await fetch('/api/generate-outline', {
+        const { resp: prepResp, data: prepData } = await fetchJsonOrThrow('/api/generate-outline', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
@@ -319,27 +480,30 @@ export default function ContentEngine() {
             framework, 
             modelName, 
             provider: selectedProvider, 
-            apiKey,
-            tavilyApiKey: settings.tavily_api_key
+            apiKey: llmKey,
+            ...(customBaseUrl ? { customBaseUrl } : {}),
+            tavilyApiKey: settings.tavily_api_key,
+            platformPreset,
           }),
         });
-        const data = await response.json();
-        if (!response.ok || data.error) {
-          addHistory('Viết bài AI', 'Tạo dàn ý tự động', data.error || "Thất bại", 'failed');
-          throw new Error(data.error || "Lỗi tạo dàn ý tự động");
+        if (!prepResp.ok || prepData.error) {
+          addHistory('Viết bài AI', 'Tạo dàn ý tự động', String(prepData.error || 'Thất bại'), 'failed');
+          throw new Error(String(prepData.error || 'Lỗi tạo dàn ý tự động'));
         }
         
-        currentOutline = data.outline;
-        currentTavilyContext = data.tavilyContext;
-        setOutline(data.outline);
-        if (data.tavilyContext) setTavilyContext(data.tavilyContext);
+        currentOutline = String(prepData.outline ?? '');
+        currentTavilyContext = String(prepData.tavilyContext ?? '');
+        setOutline(currentOutline);
+        const rs = prepData.research as { sources?: Array<{ title: string; url: string; snippet: string }> } | undefined;
+        if (rs?.sources) setResearchSources(rs.sources);
+        if (prepData.tavilyContext) setTavilyContext(currentTavilyContext);
         trackAPICall(selectedProvider);
         addHistory('Viết bài AI', 'Tạo dàn ý thành công', `Đã chuẩn bị dàn ý cho: ${keyword}`);
       }
 
       if (type === 'outline') {
         addHistory('Viết bài AI', 'Yêu cầu tạo dàn ý', `Từ khóa: ${keyword}`, 'info');
-        const response = await fetch('/api/generate-outline', {
+        const { resp: outlineResp, data: outlineData } = await fetchJsonOrThrow('/api/generate-outline', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
@@ -350,20 +514,24 @@ export default function ContentEngine() {
             framework, 
             modelName, 
             provider: selectedProvider, 
-            apiKey,
-            tavilyApiKey: settings.tavily_api_key
+            apiKey: llmKey,
+            ...(customBaseUrl ? { customBaseUrl } : {}),
+            tavilyApiKey: settings.tavily_api_key,
+            platformPreset,
           }),
         });
-        const data = await response.json();
-        if (!response.ok || data.error) {
-          throw new Error(data.error || `Lỗi máy chủ (${response.status})`);
+        if (!outlineResp.ok || outlineData.error) {
+          throw new Error(String(outlineData.error || `Lỗi máy chủ (${outlineResp.status})`));
         }
-        if (!data.outline || data.outline.trim().length < 10) {
+        const outlineText = String(outlineData.outline ?? '');
+        if (!outlineText || outlineText.trim().length < 10) {
           addHistory('Viết bài AI', 'Tạo dàn ý', 'AI trả về nội dung rỗng', 'failed');
           throw new Error('AI không trả về dàn ý hợp lệ. Hãy thử lại hoặc đổi Model.');
         }
-        setOutline(data.outline);
-        if (data.tavilyContext) setTavilyContext(data.tavilyContext);
+        setOutline(outlineText);
+        const outlineResearch = outlineData.research as { sources?: Array<{ title: string; url: string; snippet: string }> } | undefined;
+        if (outlineResearch?.sources) setResearchSources(outlineResearch.sources);
+        if (outlineData.tavilyContext) setTavilyContext(String(outlineData.tavilyContext));
         setIsLoading(false);
         trackToolUsage('content');
         trackAPICall(selectedProvider);
@@ -401,7 +569,9 @@ export default function ContentEngine() {
             setWritingProgress(currentProg);
             update({ metadata: { fullArticle: fullArticleText, writingProgress: currentProg } });
 
-            const response = await fetch('/api/generate-section', {
+            let response: Response;
+            try {
+              response = await fetch('/api/generate-section', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -415,11 +585,16 @@ export default function ContentEngine() {
                 framework, 
                 provider: selectedProvider, 
                 modelName, 
-                apiKey,
+                apiKey: llmKey,
+                ...(customBaseUrl ? { customBaseUrl } : {}),
                 tavilyApiKey: settings.tavily_api_key,
-                tavilyContext: currentTavilyContext
+                tavilyContext: currentTavilyContext,
+                platformPreset,
               }),
             });
+            } catch (netErr) {
+              throw explainFetchFailure(netErr);
+            }
             trackAPICall(selectedProvider);
 
             if (!response.ok) {
@@ -430,7 +605,6 @@ export default function ContentEngine() {
             const reader = response.body?.getReader();
             const decoder = new TextDecoder();
             let sectionContent = '';
-
             if (reader) {
               while (true) {
                 if (cancelRef.current) break;
@@ -442,6 +616,15 @@ export default function ContentEngine() {
               }
             }
             fullArticleText += sectionContent + '\n\n';
+            if (
+              selectedProvider === 'OpenRouter' &&
+              i < sections.length - 1 &&
+              !cancelRef.current
+            ) {
+              const isFreeModel = modelName.toLowerCase().includes(':free');
+              const gapMs = isFreeModel ? 1200 : 500;
+              await new Promise((resolve) => setTimeout(resolve, gapMs));
+            }
           }
 
           setWritingProgress({ ...currentProg, isWriting: false });
@@ -454,9 +637,9 @@ export default function ContentEngine() {
             showNotification('Đã viết xong bài!');
           }
           
-        } catch (taskErr: any) {
+        } catch (taskErr: unknown) {
           console.error("Task Error:", taskErr);
-          const msg = taskErr?.message || 'Lỗi không xác định khi viết bài.';
+          const msg = taskErr instanceof Error ? taskErr.message : 'Lỗi không xác định khi viết bài.';
           addHistory('Viết bài AI', 'Lỗi viết bài', msg, 'failed');
           showNotification(msg, 'error');
           setWritingProgress(prev => ({ ...prev, isWriting: false }));
@@ -467,15 +650,23 @@ export default function ContentEngine() {
         }
         });
       }
-    } catch (err: any) { 
+    } catch (err: unknown) { 
       console.error(err);
-      const msg = err?.message || 'Lỗi không xác định. Kiểm tra API Key và Model.';
-      showNotification(msg, 'error'); 
+      const msg = err instanceof Error ? err.message : 'Lỗi không xác định. Kiểm tra API Key và Model.';
+      showNotification(msg === 'Failed to fetch' ? explainFetchFailure(err).message : msg, 'error'); 
       setWritingProgress(prev => ({ ...prev, isWriting: false }));
       setIsLoading(false);
     }
     // Remove finally because startTask is async and we handle states inside it.
   };
+
+  const selectedOpenRouterMeta =
+    selectedProvider === 'OpenRouter'
+      ? openrouterCatalog.find((item) => item.id === modelName || `openrouter/${item.id}` === modelName)
+      : null;
+  const filteredModels = availableModels.filter((model) =>
+    model.toLowerCase().includes(modelSearch.trim().toLowerCase())
+  );
 
   const handleRunSeoAnalysis = (source: 'main' | 'draft' = 'main') => {
     // Luôn cho phép mở để người dùng xem giao diện
@@ -612,7 +803,7 @@ export default function ContentEngine() {
         </div>
       </header>
 
-      <div className="grid grid-cols-12 gap-10 flex-1 relative overflow-hidden">
+      <div className="grid grid-cols-12 gap-10 flex-1 relative min-h-0">
         <AnimatePresence mode="wait">
           {!showSeoDrawer && (
             <motion.div 
@@ -620,9 +811,9 @@ export default function ContentEngine() {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -100, opacity: 0 }}
               transition={{ type: 'spring', damping: 20 }}
-              className="col-span-12 lg:col-span-4"
+              className="col-span-12 lg:col-span-4 min-w-0"
             >
-          <Card className="p-8 h-full rounded-3xl flex flex-col gap-8" style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
+          <Card className="p-8 h-full rounded-3xl flex flex-col gap-8 !overflow-visible" style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
             <div className="space-y-8">
               <div className="flex items-center gap-3">
                 <div className="w-1 h-4 bg-emerald-500 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
@@ -698,29 +889,112 @@ export default function ContentEngine() {
                         <a href="/dashboard/settings" className="px-3 py-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 rounded-lg text-[10px] font-bold">Cài đặt</a>
                       )}
                     </div>
-                    <div className="relative">
-                      <select 
-                        value={modelName}
-                        onChange={e => setModelName(e.target.value)}
+                    <div className="relative z-[80] min-w-0" ref={modelDropdownRef}>
+                      <button
+                        type="button"
                         disabled={!connectedProviders.includes(selectedProvider) || isLoadingModels}
-                        className="w-full border rounded-lg p-3 text-xs font-bold outline-none cursor-pointer disabled:opacity-50"
+                        onClick={() => setIsModelDropdownOpen((prev) => !prev)}
+                        className="w-full min-w-0 border rounded-lg p-3 text-xs font-bold outline-none disabled:opacity-50 text-left flex items-center justify-between gap-2 shrink-0"
                         style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', color: '#10b981' }}
                       >
-                        {!connectedProviders.includes(selectedProvider) ? (
-                          <option value="">--</option>
-                        ) : isLoadingModels ? (
-                          <option value="">Đang tìm model...</option>
-                        ) : availableModels.length === 0 ? (
-                          <option value="">Không tìm được</option>
-                        ) : (
-                          <>
-                            <option value="">-- Chọn Model --</option>
-                            {availableModels.map(m => <option key={m} value={m}>{m}</option>)}
-                          </>
-                        )}
-                      </select>
-                      {isLoadingModels && <RefreshCw size={12} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin" style={{ color: 'var(--text-secondary)' }} />}
+                        <span className="truncate min-w-0">
+                          {!connectedProviders.includes(selectedProvider)
+                            ? '--'
+                            : isLoadingModels
+                              ? 'Đang tìm model...'
+                              : modelName || '-- Chọn Model --'}
+                        </span>
+                        <ChevronDown size={12} className={`transition-transform shrink-0 ${isModelDropdownOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                      {isLoadingModels && <RefreshCw size={12} className="absolute right-8 top-1/2 -translate-y-1/2 animate-spin" style={{ color: 'var(--text-secondary)' }} />}
+
+                      {isModelDropdownOpen && connectedProviders.includes(selectedProvider) && !isLoadingModels && (
+                        <div
+                          className="absolute left-0 right-0 top-full z-[90] mt-2 min-w-full rounded-xl border shadow-[0_18px_48px_rgba(0,0,0,0.45)] ring-1 ring-emerald-500/15"
+                          style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
+                        >
+                          <div className="p-2.5 border-b" style={{ borderColor: 'var(--border-color)' }}>
+                            <div className="relative">
+                              <input
+                                autoFocus
+                                type="text"
+                                value={modelSearch}
+                                onChange={(e) => setModelSearch(e.target.value)}
+                                placeholder="Tìm model..."
+                                className="w-full min-w-0 border rounded-lg py-2.5 pl-8 pr-3 text-[11px] font-semibold outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                style={{ backgroundColor: 'var(--hover-bg)', borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
+                              />
+                              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+                            </div>
+                          </div>
+                          <div
+                            className="max-h-[min(60vh,22rem)] overflow-y-auto overflow-x-hidden overscroll-contain custom-scrollbar-emerald py-1"
+                            style={{ scrollbarGutter: 'stable' }}
+                          >
+                            {availableModels.length === 0 ? (
+                              <p className="px-3 py-3 text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Không tìm được</p>
+                            ) : filteredModels.length === 0 ? (
+                              <p className="px-3 py-3 text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Không có model khớp từ khóa tìm kiếm</p>
+                            ) : (
+                              filteredModels.map((m) => (
+                                <button
+                                  key={m}
+                                  type="button"
+                                  onClick={() => {
+                                    setModelName(m);
+                                    setIsModelDropdownOpen(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2.5 text-[11px] font-semibold leading-snug transition hover:bg-emerald-500/10"
+                                  style={{
+                                    color: m === modelName ? '#10b981' : 'var(--text-secondary)',
+                                    backgroundColor: m === modelName ? 'rgba(16,185,129,0.12)' : 'transparent',
+                                    wordBreak: 'break-word',
+                                  }}
+                                >
+                                  {m}
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
+                    {selectedProvider === 'OpenRouter' && (
+                      <div className="space-y-2">
+                        <div className="text-[9px] font-black uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>
+                          OpenRouter Model Insight
+                        </div>
+                        {selectedOpenRouterMeta ? (
+                          <div className="rounded-xl p-2.5 flex flex-wrap items-center gap-2" style={{ backgroundColor: 'var(--card-bg)', border: '1px solid rgba(16,185,129,0.2)' }}>
+                            <span
+                              className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full"
+                              style={{
+                                color: selectedOpenRouterMeta.isFree ? '#34d399' : '#f59e0b',
+                                backgroundColor: selectedOpenRouterMeta.isFree ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
+                              }}
+                            >
+                              {selectedOpenRouterMeta.isFree ? 'FREE' : 'PAID'}
+                            </span>
+                            <span className="text-[9px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>
+                              {selectedOpenRouterMeta.category}
+                            </span>
+                            <span className="text-[9px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                              {selectedOpenRouterMeta.contextWindow > 0 ? `${Math.round(selectedOpenRouterMeta.contextWindow / 1000)}k ctx` : 'ctx ?'}
+                            </span>
+                            <span className="text-[9px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                              ${selectedOpenRouterMeta.inputCostPer1M.toFixed(2)}/1M in
+                            </span>
+                            <span className="text-[9px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                              ${selectedOpenRouterMeta.outputCostPer1M.toFixed(2)}/1M out
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="rounded-xl p-2.5 text-[10px] font-bold" style={{ backgroundColor: 'var(--card-bg)', border: '1px solid rgba(16,185,129,0.2)', color: 'var(--text-muted)' }}>
+                            Chọn 1 model để xem Free/Paid + chi phí.
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -750,6 +1024,53 @@ export default function ContentEngine() {
                     <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-500 pointer-events-none" />
                   </div>
                 </div>
+
+                <div className="space-y-2">
+                  <Typography variant="label" style={{ color: 'var(--text-secondary)' }}>OUTPUT MODE</Typography>
+                  <div className="relative">
+                    <select
+                      value={outputMode}
+                      onChange={e => setOutputMode(e.target.value as 'single' | 'bulk')}
+                      className="w-full border rounded-xl p-4 text-xs font-bold outline-none cursor-pointer appearance-none pr-10"
+                      style={{ backgroundColor: 'var(--card-bg)', borderColor: 'rgba(16,185,129,0.2)', color: '#10b981' }}
+                    >
+                      <option value="single">Single Deep Article</option>
+                      <option value="bulk">Bulk Production</option>
+                    </select>
+                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-500 pointer-events-none" />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Typography variant="label" style={{ color: 'var(--text-secondary)' }}>NỀN TẢNG / GIỌNG VĂN</Typography>
+                  <div className="relative">
+                    <select
+                      value={platformPreset}
+                      onChange={e => setPlatformPreset(e.target.value as ContentPlatformPreset)}
+                      className="w-full border rounded-xl p-4 text-xs font-bold outline-none cursor-pointer appearance-none pr-10"
+                      style={{ backgroundColor: 'var(--card-bg)', borderColor: 'rgba(16,185,129,0.2)', color: '#10b981' }}
+                    >
+                      <option value="googleSeoLongForm">Google SEO Long-form</option>
+                      <option value="facebookEngagement">Facebook Engagement</option>
+                      <option value="socialShort">Social Short-form</option>
+                      <option value="adCopy">Ads / Conversion Copy</option>
+                    </select>
+                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-500 pointer-events-none" />
+                  </div>
+                </div>
+
+                {outputMode === 'bulk' && (
+                  <div className="space-y-2">
+                    <Typography variant="label" style={{ color: 'var(--text-secondary)' }}>DANH SÁCH TỪ KHÓA BULK</Typography>
+                    <textarea
+                      value={bulkKeywords}
+                      onChange={e => setBulkKeywords(e.target.value)}
+                      placeholder="Mỗi dòng 1 từ khóa hoặc phân tách bằng dấu phẩy..."
+                      className="w-full h-24 rounded-xl p-4 text-xs outline-none resize-none"
+                      style={{ backgroundColor: 'var(--hover-bg)', border: '1px solid rgba(16,185,129,0.2)', color: 'var(--text-primary)' }}
+                    />
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <Typography variant="label" style={{ color: 'var(--text-secondary)' }}>URL THAM KHẢO</Typography>
@@ -826,23 +1147,27 @@ export default function ContentEngine() {
             <div className="mt-auto grid grid-cols-2 gap-3 pt-6" style={{ borderTop: '1px solid rgba(16,185,129,0.2)' }}>
               <button 
                 onClick={() => handleStart('outline')}
-                disabled={isLoading || !keyword.trim() || !modelName}
+                disabled={isLoading || !keyword.trim() || !modelName || outputMode === 'bulk'}
                 className="px-4 py-3 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ backgroundColor: 'var(--hover-bg)', color: 'var(--text-secondary)', border: '1px solid rgba(16,185,129,0.2)' }}
               >
-                {isLoading && !writingProgress.isWriting ? <Loader2 size={14} className="animate-spin mx-auto" /> : '1. DÀN Ý'}
+                {outputMode === 'bulk'
+                  ? 'BULK KHÔNG CẦN'
+                  : isLoading && !writingProgress.isWriting
+                    ? <Loader2 size={14} className="animate-spin mx-auto" />
+                    : '1. DÀN Ý'}
               </button>
-              {outline ? (
+              {outline || outputMode === 'bulk' ? (
                 <button 
                   onClick={() => handleStart('article')}
-                  disabled={isLoading || !keyword.trim() || !modelName || writingProgress.isWriting}
+                  disabled={isLoading || !(outputMode === 'bulk' ? bulkKeywords.trim() || keyword.trim() : keyword.trim()) || !modelName || writingProgress.isWriting}
                   className="w-full px-4 py-3 rounded-xl text-[10px] font-black tracking-widest uppercase bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20 border border-emerald-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {writingProgress.isWriting ? (
                     <span className="flex items-center justify-center gap-1">
                       <Loader2 size={14} className="animate-spin" /> VIẾT...
                     </span>
-                  ) : '2. VIẾT BÀI'}
+                  ) : outputMode === 'bulk' ? 'CHẠY BULK' : '2. VIẾT BÀI'}
                 </button>
               ) : (
                 <div className="px-4 py-3 rounded-xl text-[10px] font-black tracking-widest uppercase flex items-center justify-center" style={{ backgroundColor: 'var(--hover-bg)', color: 'var(--text-muted)', border: '1px solid rgba(16,185,129,0.2)' }}>
@@ -916,6 +1241,43 @@ export default function ContentEngine() {
               </motion.div>
             )}
           </AnimatePresence>
+
+          {(researchSources.length > 0 || bulkJob) && (
+            <div className="rounded-3xl overflow-hidden p-5" style={{ backgroundColor: 'var(--card-bg)', border: '1px solid rgba(16,185,129,0.2)' }}>
+              {bulkJob && (
+                <div className="mb-4 p-3 rounded-xl" style={{ backgroundColor: 'var(--hover-bg)', border: '1px solid rgba(16,185,129,0.2)' }}>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500">
+                    BULK JOB: {bulkJob.status} ({bulkJob.progress.completed}/{bulkJob.progress.total})
+                  </p>
+                  {bulkJob.progress.currentKeyword && (
+                    <p className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                      Đang xử lý: {bulkJob.progress.currentKeyword}
+                    </p>
+                  )}
+                </div>
+              )}
+              {researchSources.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest mb-2 text-emerald-500">Nguồn research</p>
+                  <div className="space-y-2 max-h-36 overflow-y-auto">
+                    {researchSources.slice(0, 5).map((source, idx) => (
+                      <a
+                        key={`${source.url}-${idx}`}
+                        href={source.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block p-2 rounded-lg hover:opacity-80 transition-all"
+                        style={{ backgroundColor: 'var(--hover-bg)', border: '1px solid rgba(16,185,129,0.15)' }}
+                      >
+                        <p className="text-[11px] font-bold truncate" style={{ color: 'var(--text-primary)' }}>{source.title}</p>
+                        <p className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{source.url}</p>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="rounded-3xl overflow-hidden flex flex-col transition-all duration-500" style={{ backgroundColor: 'var(--card-bg)', border: '1px solid rgba(16,185,129,0.2)', height: showSeoDrawer ? '852px' : '500px' }}>
             <div className="p-5 flex items-center justify-between shrink-0" style={{ backgroundColor: 'var(--hover-bg)', borderBottom: '1px solid rgba(16,185,129,0.2)' }}>
@@ -1051,7 +1413,7 @@ export default function ContentEngine() {
                 >
                   <MagicIcon size={48} className="mb-3 opacity-20 group-hover:opacity-40 transition-all" style={{ color: 'var(--text-muted)' }} />
                   <Typography variant="h1" className="text-4xl font-black uppercase tracking-widest opacity-20 group-hover:opacity-40 transition-all" style={{ color: 'var(--text-muted)' }}>GENESIS</Typography>
-                  <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.2em] transition-all" style={{ color: 'var(--text-muted)' }}>Nhấn vào đây hoặc nút "SỬA" để bắt đầu</p>
+                  <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.2em] transition-all" style={{ color: 'var(--text-muted)' }}>Nhấn vào đây hoặc nút &quot;SỬA&quot; để bắt đầu</p>
                 </div>
               )}
                 </div>
@@ -1201,6 +1563,17 @@ export default function ContentEngine() {
                       </div>
                     </div>
                   ))}
+
+                  <div className="space-y-3 p-4 rounded-2xl border" style={{ backgroundColor: 'var(--hover-bg)', borderColor: 'rgba(16,185,129,0.2)' }}>
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-emerald-500">Checklist sửa nhanh</h3>
+                    {seoResults.quickFixes?.slice(0, 4).map((tip, idx) => (
+                      <p key={`tip-${idx}`} className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>- {tip}</p>
+                    ))}
+                    <h4 className="text-[9px] font-black uppercase tracking-widest text-red-400/80 mt-3">Critical issues</h4>
+                    {seoResults.criticalIssues?.slice(0, 3).map((issue, idx) => (
+                      <p key={`issue-${idx}`} className="text-[10px]" style={{ color: 'var(--text-muted)' }}>- {issue}</p>
+                    ))}
+                  </div>
                 </div>
               </Card>
             </motion.div>

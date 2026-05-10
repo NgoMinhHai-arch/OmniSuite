@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from python_engine.api.routes import keywords, seo
+from python_engine.api.routes import content, job, keywords, seo
 from python_engine.core import database
 from python_engine.core.config import get_settings
 
@@ -26,6 +26,8 @@ app = FastAPI(
 # Đăng ký các Router
 app.include_router(seo.router, prefix="/api/seo", tags=["SEO"])
 app.include_router(keywords.router, prefix="/api/keywords", tags=["Keywords"])
+app.include_router(content.router, prefix="/api/content", tags=["Content"])
+app.include_router(job.router, prefix="/api/job", tags=["Job"])
 
 
 @app.get("/")

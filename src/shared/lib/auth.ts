@@ -40,20 +40,32 @@ async function refreshAccessToken(token: any) {
 }
 
 export const authOptions: AuthOptions = {
-  providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
-      authorization: {
-        params: {
-          prompt: "consent",
-          access_type: "offline",
-          response_type: "code",
-          scope: 'openid email profile https://www.googleapis.com/auth/webmasters.readonly'
-        }
-      }
-    }),
-  ],
+  providers: (() => {
+    const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+
+    if (!clientId || !clientSecret) {
+      console.warn(
+        "[auth] Google OAuth is disabled because GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET are missing."
+      );
+      return [];
+    }
+
+    return [
+      GoogleProvider({
+        clientId,
+        clientSecret,
+        authorization: {
+          params: {
+            prompt: "consent",
+            access_type: "offline",
+            response_type: "code",
+            scope: "openid email profile https://www.googleapis.com/auth/webmasters.readonly",
+          },
+        },
+      }),
+    ];
+  })(),
   callbacks: {
     async jwt({ token, account, user }: any) {
       // Initial sign in

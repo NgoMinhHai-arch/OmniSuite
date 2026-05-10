@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     const toolNames: Record<string, string> = {
       content: 'Viết bài AI',
       keywords: 'Nghiên cứu Từ khóa',
-      images: 'Hình ảnh AI',
+      images: 'Tìm hình ảnh',
       maps: 'Quét bản đồ',
       scraper: 'Máy cào SEO'
     };

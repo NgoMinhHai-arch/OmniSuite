@@ -8,7 +8,7 @@ const SETTINGS_KEY = "omnisuite_settings";
 export interface SystemKeysState {
   /** Local settings JSON (subset of fields we care about). */
   local: Record<string, string | boolean>;
-  /** Fields the server reports as "system default active" (env fallback). */
+  /** Trường đã có hiệu lực: dashboard (localStorage) hoặc .env — từ POST /api/system/status `merged`. */
   server: Record<string, boolean>;
   loaded: boolean;
 }
@@ -35,11 +35,23 @@ export function useSystemKeys(): SystemKeysState & {
     setState((s) => ({ ...s, local }));
 
     let cancelled = false;
-    fetch("/api/system/status")
-      .then((r) => (r.ok ? r.json() : {}))
-      .then((server: Record<string, boolean>) => {
+
+    async function fetchMerged(): Promise<Record<string, boolean>> {
+      const keys = readLocal();
+      const r = await fetch("/api/system/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keys }),
+      });
+      if (!r.ok) return {};
+      const data = (await r.json().catch(() => ({}))) as { merged?: Record<string, boolean> };
+      return data?.merged && typeof data.merged === "object" ? data.merged : {};
+    }
+
+    fetchMerged()
+      .then((merged) => {
         if (cancelled) return;
-        setState({ local: readLocal(), server: server || {}, loaded: true });
+        setState({ local: readLocal(), server: merged, loaded: true });
       })
       .catch(() => {
         if (cancelled) return;
@@ -47,9 +59,12 @@ export function useSystemKeys(): SystemKeysState & {
       });
 
     function onStorage(e: StorageEvent) {
-      if (e.key === SETTINGS_KEY) {
-        setState((s) => ({ ...s, local: readLocal() }));
-      }
+      if (e.key !== SETTINGS_KEY) return;
+      const loc = readLocal();
+      setState((s) => ({ ...s, local: loc }));
+      fetchMerged().then((merged) => {
+        setState({ local: readLocal(), server: merged, loaded: true });
+      });
     }
     window.addEventListener("storage", onStorage);
     return () => {
@@ -88,6 +103,11 @@ export function useSystemKeys(): SystemKeysState & {
       return fieldHasValue("gsc_service_account_key") || fieldHasValue("gsc_use_oauth");
     }
     if (req === "llm") {
+      // Ollama local: chon "Ollama" lam mac dinh la du; URL/key co the de trong (mac dinh localhost:11434).
+      const localVal = state.local["default_provider"];
+      const defaultProvider =
+        typeof localVal === "string" ? localVal.trim() : "";
+      if (defaultProvider === "Ollama") return true;
       return meta.settingsKeys.some((f) => fieldHasValue(f));
     }
     return meta.settingsKeys.some((f) => fieldHasValue(f));

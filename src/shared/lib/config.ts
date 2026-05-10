@@ -4,12 +4,18 @@
  */
 
 export interface SystemConfig {
+  /** Nếu set — client phải gửi header `x-internal-token` khớp (runner /run). Tách khỏi INTERNAL_TOKEN để tránh biến Windows. */
+  ai_support_runner_secret?: string;
   openai_api_key?: string;
   gemini_api_key?: string;
   claude_api_key?: string;
   groq_api_key?: string;
   deepseek_api_key?: string;
   openrouter_api_key?: string;
+  /** Ollama daemon origin, e.g. http://localhost:11434 (no /v1). */
+  ollama_base_url?: string;
+  /** Optional; local Ollama often needs no real key (placeholder sent to SDK). */
+  ollama_api_key?: string;
   serpapi_key?: string;
   tavily_api_key?: string;
   pexels_api_key?: string;
@@ -36,13 +42,23 @@ export interface SystemConfig {
 }
 
 export const getSystemConfig = (): SystemConfig => {
+  /** Chuẩn hóa tên biến môi trường hay gặp (.env.example trước đây chỉ ghi ANTHROPIC / thiếu GEMINI). */
+  const geminiFromEnv =
+    process.env.GEMINI_API_KEY ||
+    process.env.GOOGLE_API_KEY ||
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  const claudeFromEnv = process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY;
+
   return {
+    ai_support_runner_secret: process.env.AI_SUPPORT_RUNNER_SECRET,
     openai_api_key: process.env.OPENAI_API_KEY,
-    gemini_api_key: process.env.GEMINI_API_KEY,
-    claude_api_key: process.env.CLAUDE_API_KEY,
+    gemini_api_key: geminiFromEnv,
+    claude_api_key: claudeFromEnv,
     groq_api_key: process.env.GROQ_API_KEY,
     deepseek_api_key: process.env.DEEPSEEK_API_KEY,
     openrouter_api_key: process.env.OPENROUTER_API_KEY,
+    ollama_base_url: process.env.OLLAMA_BASE_URL,
+    ollama_api_key: process.env.OLLAMA_API_KEY,
     serpapi_key: process.env.SERPAPI_KEY,
     tavily_api_key: process.env.TAVILY_API_KEY,
     pexels_api_key: process.env.PEXELS_API_KEY,
