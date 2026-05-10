@@ -2,94 +2,64 @@
 
 ---
 
-## Project status · Trạng thái dự án
+## Project status
 
-Everything below is **what is true today in this repository** (clone after `git submodule update --init --recursive` where needed).
+This reflects **what is in this repository today**. After cloning, run `git submodule update --init --recursive` where integrations are needed.
 
-### Done · Đã hoàn thành (trên repo)
+### Shipped in-repo
 
-| EN | VI |
-| :--- | :--- |
-| Next.js 16 (App Router) dashboard + SEO tooling surface | Giao diện dashboard + bộ công cụ SEO trên Next.js 16 |
-| Multi-provider AI wiring (Gemini, OpenAI, Claude, Groq, DeepSeek, OpenRouter, **Ollama local/tunnel**) | Tích hợp nhiều nhà cung cấp AI + Ollama (local / tunnel) |
-| Python **FastAPI** engine (`python_engine/`) + keyword / content / job-related routes | Backend Python FastAPI, route keyword & content & job |
-| **Launcher** (`node launcher.js` / `npm run app`) — starts stack, optional browser open to localhost | Launcher khởi động stack, có thể mở trình duyệt localhost |
-| **AI Hỗ trợ** UI (`/dashboard/ai-support`): chat, slash commands, planner | Trang Quản gia: chat, slash, kế hoạch |
-| **Runner bridge** `/api/ai-support/run` — OpenManus `/run`, browser-use `/run-browser`, optional ApplyPilot / job-scraper (**off by default**, secret optional) | API runner (OpenManus, browser-use…) — **mặc định tắt**, có thể khóa secret |
-| Git **submodules** under `integrations/` + `npm run integrations:sync` / `integrations:verify` | Submodule `integrations/` + script đồng bộ / kiểm tra |
-| Security scripts + hooks: `npm run security:scan`, `security:scan:staged`, `security:install-hooks` | Quét secret trước commit/push + hook |
-| `.env.example` + `.gitignore` excluding `.env`, `.venv-runners/`, nested `open-interpreter/` | Mẫu `.env`; không commit secret / venv runner / thư mục clone lồng |
+- Next.js 16 (App Router) dashboard and SEO tooling
+- Multi-provider AI (Gemini, OpenAI, Claude, Groq, DeepSeek, OpenRouter, **Ollama** local/tunnel)
+- Python **FastAPI** engine (`python_engine/`) with keyword, content, and job-related routes
+- **Launcher** (`node launcher.js` / `npm run app`) — starts the stack; optional browser open to localhost
+- **AI support** UI (`/dashboard/ai-support`): chat, slash commands, planner
+- **Runner API** `/api/ai-support/run` — OpenManus `/run`, browser-use `/run-browser`, optional ApplyPilot / job-scraper (**disabled by default**; optional shared secret)
+- Git **submodules** under `integrations/` plus `npm run integrations:sync` / `integrations:verify`
+- Security tooling: `npm run security:scan`, `security:scan:staged`, `security:install-hooks`
+- `.env.example` and `.gitignore` excluding `.env`, `.venv-runners/`, and nested **`open-interpreter/`** (not tracked)
 
-### Partial / optional · Một phần hoặc tuỳ chọn (phụ thuộc máy bạn)
+### Partial / depends on your machine
 
-| EN | VI |
-| :--- | :--- |
-| **Browser agent:** needs Playwright Chromium + Python deps in submodule path; runner env flags | **Browser agent:** cần cài Playwright + deps Python trong submodule; bật biến môi trường runner |
-| **Integrations table** (ApplyPilot, job-scraper, Docker apps): paths exist as submodules; **you** install deps / run services | Các integration có submodule; **bạn** tự cài deps / chạy Docker |
-| API routes assume **trusted/local network** — no global auth middleware on every `/api/*` | API thiết kế kiểu **mạng tin cậy / local** — chưa có middleware đăng nhập cho mọi `/api/*` |
-| `OmniSuite.exe` — **not** in GitHub; build locally with `npm run build:exe` | File `.exe` **không** có trên GitHub; tự build |
+- **Browser agent:** requires Playwright Chromium and Python deps in the submodule path; enable runner env flags in `.env`
+- **Integrations** (ApplyPilot, job-scraper, Docker apps): submodule paths exist; **you** install dependencies and run services
+- API routes assume a **trusted or local network** — no global auth middleware on every `/api/*`
+- **`OmniSuite.exe`** is **not** on GitHub; build locally with `npm run build:exe`
 
-### Not done / out of scope · Chưa làm hoặc không đưa vào repo
+### Not included / out of scope
 
-| EN | VI |
-| :--- | :--- |
-| Hosted SaaS hardening (rate limits, org RBAC, audit logs) — **not** promised here | Hard SaaS (rate limit, RBAC, audit) — **không** cam kết trong repo này |
-| **`open-interpreter`** folder — intentionally **not** tracked (nested clone); add yourself if needed | Thư mục **`open-interpreter`** — **không** đưa lên Git (clone riêng nếu cần) |
-| Unified automated E2E suite across all SEO tools — varies by module | Bộ E2E thống nhất cho mọi SEO tool — chưa có cam kết đầy đủ |
+- Hosted SaaS hardening (rate limits, org RBAC, audit logs) — **not** promised here
+- **`open-interpreter`** — intentionally **not** tracked (nested clone); add locally only if you need it
+- A single unified E2E suite across all SEO modules — coverage **varies by module**
 
 ---
 
-**EN — What OmniSuite is:** A comprehensive ecosystem to automate SEO/marketing workflows: keyword intelligence, scraping, dashboards, and AI-assisted tasks — with optional **local** LLMs via Ollama.
-
-**VI — OmniSuite là gì:** Hệ sinh thái hỗ trợ SEO/marketing: keyword, scrape, dashboard và tác vụ AI — có thể chạy LLM **local** qua Ollama.
+**What OmniSuite is:** An ecosystem for SEO/marketing workflows: keyword intelligence, scraping, dashboards, and AI-assisted automation — including optional **local** LLMs via [Ollama](https://ollama.com).
 
 ---
 
-## Key features · Tính năng chính
+## Key features
 
-### SEO intelligence · Trí tuệ SEO
+### SEO intelligence
 
-**EN**
-- **Page analyzer:** On-page SEO, headings, density.
-- **Bulk metrics:** Volume, CPC, difficulty at scale.
-- **Competitor gap:** Find keyword opportunities vs competitors.
+- **Page analyzer:** On-page SEO, headings, keyword density
+- **Bulk metrics:** Volume, CPC, difficulty at scale
+- **Competitor gap:** Keyword opportunities vs competitors
 
-**VI**
-- **Phân tích trang:** SEO on-page, heading, mật độ từ khóa.
-- **Bulk metrics:** Volume, CPC, độ khó cho danh sách lớn.
-- **Competitor gap:** Cơ hội từ khóa so với đối thủ.
+### AI-driven insights
 
-### AI-driven insights · AI đa nhà cung cấp
+- **Intent engine:** Search-intent classification with multimodal models
+- **Providers:** Gemini, OpenAI, Claude, Groq, DeepSeek, OpenRouter, **Ollama**
+- **Local-first:** Offline-capable with Ollama (no cloud API key required)
 
-**EN**
-- **Intent engine:** Classify search intent with multimodal models.
-- **Providers:** Gemini, OpenAI, Claude, Groq, DeepSeek, OpenRouter, **Ollama**.
-- **Local-first:** Offline-capable with [Ollama](https://ollama.com) (no cloud key).
+### Advanced scraping
 
-**VI**
-- **Intent:** Phân loại intent tìm kiếm.
-- **Nhà cung cấp:** Gemini, OpenAI, Claude, Groq, DeepSeek, OpenRouter, **Ollama**.
-- **Ưu tiên local:** Chạy offline với Ollama (không bắt buộc cloud key).
+- Stealth-oriented flows (Puppeteer Stealth and Playwright)
+- Python core for heavier processing
+- Parse PDF, DOCX, and XLSX
 
-### Advanced scraping · Scraping nâng cao
+### Dashboard
 
-**EN**
-- Stealth-oriented flows (Puppeteer Stealth & Playwright).
-- Python core for heavy processing.
-- Parse PDF, DOCX, XLSX.
-
-**VI**
-- Luồng gần stealth (Puppeteer Stealth & Playwright).
-- Python xử lý nặng.
-- Đọc PDF, DOCX, XLSX.
-
-### Dashboard · Bảng điều khiển
-
-**EN**
-- Interactive UI, charts, keyword hub with caching.
-
-**VI**
-- Giao diện tương tác, biểu đồ, hub từ khóa có cache.
+- Interactive UI, charts, keyword hub with caching
 
 ---
 
@@ -105,30 +75,23 @@ Everything below is **what is true today in this repository** (clone after `git 
 
 ---
 
-## Project structure · Cấu trúc
+## Project structure
 
-**EN**
-- `src/app/api/` — Route handlers (AI, SEO, runners).
-- `src/components/features/` — Feature modules.
-- `python_engine/` — FastAPI services.
-- `integrations/` — Git submodules (AI support stacks, benchmarks).
-- `scripts/` — Sync, security, runner venv helpers.
-
-**VI**
-- `src/app/api/` — API Next.js.
-- `python_engine/` — FastAPI.
-- `integrations/` — Submodule (tích hợp ngoài).
-- `scripts/` — Đồng bộ submodule, security, setup venv runner.
+- `src/app/api/` — Route handlers (AI, SEO, runners)
+- `src/components/features/` — Feature modules
+- `python_engine/` — FastAPI services
+- `integrations/` — Git submodules (AI support stacks, benchmarks)
+- `scripts/` — Submodule sync, security scans, runner venv helpers
 
 ---
 
-## Getting started · Bắt đầu
+## Getting started
 
-### Quick start · Khởi động nhanh
+### Requirements
 
-**Requirements · Yêu cầu:** Node.js 18+, Python 3.10+
+Node.js 18+, Python 3.10+
 
-#### Option 1 — Launcher (recommended · khuyên dùng)
+### Option 1 — Launcher (recommended)
 
 ```bash
 node launcher.js
@@ -136,22 +99,22 @@ node launcher.js
 npm run app
 ```
 
-Build Windows executable · **Tạo file .exe:**
+Build a Windows executable:
 
 ```bash
 npm run build:exe
 ```
 
-Then run · Sau đó chạy `OmniSuite.exe`.
+Then run `OmniSuite.exe`.
 
-#### Option 2 — Manual · Thủ công
+### Option 2 — Manual
 
 ```bash
 npm install
 pip install -r requirements.txt
 ```
 
-Copy `.env.example` → `.env`, then · **Sao chép `.env.example` → `.env`, rồi:**
+Copy `.env.example` to `.env`, configure secrets locally, then:
 
 ```bash
 npm run dev
@@ -159,66 +122,52 @@ npm run dev
 
 ### Integrations (submodules)
 
-**EN:** After `git clone`, pull submodules:
+After `git clone`, sync submodules:
 
 ```bash
 npm run integrations:sync
 ```
 
-Verify · **Kiểm tra:** `npm run integrations:verify`.  
-More · **Chi tiết AI runner:** [`integrations/ai-support/README.md`](integrations/ai-support/README.md).
+Verify: `npm run integrations:verify`.  
+Runner details: [`integrations/ai-support/README.md`](integrations/ai-support/README.md).
 
-### Useful commands · Lệnh hay dùng
+### Useful commands
 
-| Command | EN | VI |
-| :--- | :--- | :--- |
-| `npm run app` | Launcher | Chạy launcher |
-| `npm run build:exe` | Build `.exe` | Build file `.exe` |
-| `npm run dev` | Dev (frontend + backends) | Dev đầy đủ |
-| `npm run integrations:sync` | Fetch submodules | Kéo submodule |
-| `npm run integrations:verify` | Fail if submodules missing | Lỗi nếu thiếu submodule |
-| `npm run integrations:sync:upstream` | Advance submodules to remote HEAD | Cập nhật submodule theo remote |
-| `npm run dev:next` | Next.js only | Chỉ Next.js |
-| `npm run dev:engine` | Python engine only | Chỉ Python engine |
-| `npm run security:scan` | Scan repo for secrets | Quét secret |
-| `npm run security:scan:staged` | Scan staged diff | Quét diff đã stage |
-| `npm run security:install-hooks` | Install git hooks | Cài hook git |
+| Command | Description |
+| :--- | :--- |
+| `npm run app` | Run via launcher |
+| `npm run build:exe` | Build `OmniSuite.exe` |
+| `npm run dev` | Dev mode (frontend + backends) |
+| `npm run integrations:sync` | Fetch/update submodules |
+| `npm run integrations:verify` | Fail if submodules are missing |
+| `npm run integrations:sync:upstream` | Advance submodules toward remote HEAD |
+| `npm run dev:next` | Next.js only |
+| `npm run dev:engine` | Python engine only |
+| `npm run security:scan` | Scan tracked files for obvious secrets |
+| `npm run security:scan:staged` | Scan staged changes |
+| `npm run security:install-hooks` | Install git hooks for security scans |
 
-### System requirements · Yêu cầu hệ thống
+### System requirements
 
-**EN:** Node 18+, Python 3.10+, API keys in `.env` as needed, optional Ollama for local LLM.
-
-**VI:** Node 18+, Python 3.10+, điền key vào `.env` khi cần, Ollama tuỳ chọn cho LLM local.
+Node 18+, Python 3.10+, API keys in `.env` as needed, optional Ollama for local LLM inference.
 
 ---
 
 ## Ollama (local LLM, no cloud key)
 
-**EN**
-1. Install from [ollama.com](https://ollama.com), run `ollama serve`, `ollama pull <model>`.
-2. In OmniSuite **Settings**, set default provider to **Ollama**. Leave URL blank for `http://localhost:11434`.
-3. Remote: paste tunnel **origin** (no `/v1`); optional bearer in **Ollama API Key**.
+1. Install from [ollama.com](https://ollama.com), run `ollama serve`, then `ollama pull <model>`.
+2. In OmniSuite **Settings**, set the default provider to **Ollama**. Leave the URL blank to use `http://localhost:11434`.
+3. For a remote tunnel, paste the **origin** only (no `/v1`). Optional bearer token goes in **Ollama API Key**.
 
-**VI**
-1. Cài Ollama, chạy `ollama serve`, `ollama pull <model>`.
-2. Trong **Cấu hình**, chọn nhà cung cấp **Ollama**. Để trống URL = `http://localhost:11434`.
-3. Remote: dán **origin** tunnel (không có `/v1`); bearer tuỳ chọn.
-
-**Smooth multi-model defaults (VRAM / RAM friendly)**
-
-**EN:** Sequential inference queue, `keep_alive` tuning, idle unload, optional `num_ctx` cap — see `.env.example` (`OLLAMA_*`). Launcher attempts unload on exit.
-
-**VI:** Hàng đợi tuần tự, `keep_alive`, unload khi rảnh, giới hạn `num_ctx` — xem `.env.example`. Launcher cố unload model khi thoát.
+**VRAM / RAM friendly defaults:** sequential inference queue, `keep_alive` tuning, idle unload, optional `num_ctx` cap — see `.env.example` (`OLLAMA_*`). The launcher attempts to unload loaded models on exit.
 
 ---
 
-## AI support → Browser agent (`/run`)
+## AI support → browser agent (`/run`)
 
-**EN:** `browser-use` lives under `integrations/ai-support/submodules/browser-use`. **Disabled by default.** Enable only on trusted machines.
+`browser-use` lives under `integrations/ai-support/submodules/browser-use`. **Disabled by default** — enable only on trusted machines.
 
-**VI:** `browser-use` nằm trong submodule. **Mặc định tắt.** Chỉ bật máy tin cậy.
-
-1. **Install deps (first time)**
+1. **Install dependencies (first time)**
 
 ```bash
 cd integrations/ai-support/submodules/browser-use
@@ -229,31 +178,25 @@ pip install -e .
 python -m playwright install chromium
 ```
 
-2. **`.env` at repo root**
+2. **Repository root `.env`**
 
 ```
 AI_SUPPORT_RUNNER_ENABLED=true
-AI_SUPPORT_RUNNER_SECRET=your_runner_secret_here   # optional; if set, UI sends matching x-internal-token header
+AI_SUPPORT_RUNNER_SECRET=your_runner_secret_here   # optional; if set, the UI sends x-internal-token with the same value
 ```
 
-**VI:** `AI_SUPPORT_RUNNER_SECRET` **tuỳ chọn** — nếu có giá trị thật, UI gửi header `x-internal-token` khớp.
+3. Open **`/dashboard/ai-support`** and run **`/run <task>`** or **`/run-browser …`**.
 
-3. Open **`/dashboard/ai-support`**, run **`/run <task>`** or **`/run-browser …`**.
+Streaming NDJSON logs: `ready` → `step` → `done`. Preflight: `GET /api/ai-support/capabilities`.
 
-**EN:** Stream NDJSON logs (`ready` → `step` → `done`). Preflight: `GET /api/ai-support/capabilities`.
+### Integrations summary
 
-**VI:** Log NDJSON realtime. Kiểm tra nhanh: `GET /api/ai-support/capabilities`.
-
-### Integrations summary · Bảng tích hợp
-
-**EN:** Type `/integrations` in AI support for the live registry.
-
-**VI:** Gõ `/integrations` trong Quản gia để xem bảng đầy đủ.
+Use **`/integrations`** in the AI support UI for the live registry.
 
 | Feature | Slash | Type | Setup hint |
 | :--- | :--- | :--- | :--- |
 | browser-use | `/run`, `/run-browser` | runner | `pip install -e …/browser-use && playwright install chromium` |
-| ApplyPilot | `/apply …` | runner | Python deps per integration README |
+| ApplyPilot | `/apply …` | runner | Python deps per integration docs |
 | job-scraper | `/score` | runner | See `integrations/job-scraper` |
 | ai-resume-tailor | — | external Next | `npm install && npm run dev` in submodule |
 | resume-lm | — | external Next | `pnpm install && pnpm dev` |
@@ -264,20 +207,14 @@ AI_SUPPORT_RUNNER_SECRET=your_runner_secret_here   # optional; if set, UI sends 
 
 ---
 
-## Security before GitHub push · Bảo mật khi đẩy Git
+## Security before pushing to GitHub
 
-**EN**
-1. Never commit `.env`.
+1. Never commit `.env` (already gitignored).
 2. Run `npm run security:install-hooks` once per clone.
-3. Run `npm run security:scan` before push.
-
-**VI**
-1. Không commit `.env`.
-2. Cài hook security một lần mỗi clone.
-3. Chạy `npm run security:scan` trước khi push.
+3. Run `npm run security:scan` before each push.
 
 ---
 
 *Developed and maintained by NgoMinhHai.*
 
-**Note · Lưu ý:** `OmniSuite.exe` is **not** on GitHub — build with · **không có trên GitHub** — tự build bằng `npm run build:exe`.
+**Note:** `OmniSuite.exe` is not included in the repository; run `npm run build:exe` after cloning.
