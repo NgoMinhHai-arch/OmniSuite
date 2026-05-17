@@ -28,6 +28,7 @@ import {
 import { MagicIcon } from '@/shared/ui/Icons';
 import { motion, AnimatePresence } from 'framer-motion';
 import { trackToolUsage } from '@/shared/utils/metrics';
+import { gatedDownload } from '@/shared/utils/download-riddle-bridge';
 import { PLACE_TYPES } from '@/shared/types/place';
 
 // Shared UI Components
@@ -373,33 +374,37 @@ export default function ImagesDashboard() {
   const deselectAll = () => setResults(results.map(r => ({ ...r, selected: false })));
   const handleClearAll = () => { setResults([]); sessionStorage.removeItem(IMAGES_CACHE_KEY); };
 
-  const handleDownloadSingle = async (item: ImageData) => {
-    try {
-      const res = await fetch(item.url);
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = `Omni_${Date.now()}.jpg`;
-      document.body.appendChild(a); a.click(); a.remove();
-    } catch (e) { window.open(item.url, '_blank'); }
+  const handleDownloadSingle = (item: ImageData) => {
+    gatedDownload(async () => {
+      try {
+        const res = await fetch(item.url);
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `Omni_${Date.now()}.jpg`;
+        document.body.appendChild(a); a.click(); a.remove();
+      } catch (e) { window.open(item.url, '_blank'); }
+    });
   };
 
-  const handleDownloadBulk = async () => {
+  const handleDownloadBulk = () => {
     const selectedItems = results.filter(r => r.selected);
     if (selectedItems.length === 0) return;
-    setIsDownloading(true);
-    try {
-      const res = await fetch('/api/images/download-zip', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: selectedItems, convertToWebp, seoName: seoName || keyword || 'image' })
-      });
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = `OmniMedia_${Date.now()}.zip`;
-      document.body.appendChild(a); a.click(); a.remove();
-    } catch (err) { setError('Lỗi tải ZIP.'); } finally { setIsDownloading(false); }
+    gatedDownload(async () => {
+      setIsDownloading(true);
+      try {
+        const res = await fetch('/api/images/download-zip', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: selectedItems, convertToWebp, seoName: seoName || keyword || 'image' })
+        });
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `OmniMedia_${Date.now()}.zip`;
+        document.body.appendChild(a); a.click(); a.remove();
+      } catch (err) { setError('Lỗi tải ZIP.'); } finally { setIsDownloading(false); }
+    });
   };
 
   const selectedCount = results.filter(r => r.selected).length;

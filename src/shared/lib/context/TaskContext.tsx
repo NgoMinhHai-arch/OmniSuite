@@ -17,7 +17,6 @@ interface TaskContextType {
 }
 
 const TaskContext = createContext<TaskContextType | undefined>(undefined);
-const INTERPRETER_BASE_URL = process.env.NEXT_PUBLIC_INTERPRETER_URL || 'http://localhost:8081';
 
 export function TaskProvider({ children }: { children: React.ReactNode }) {
   const [tasks, setTasks] = useState<Record<string, Task>>({});
@@ -39,8 +38,8 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
 
   // === HEARTBEAT & CLEANUP LOGIC ===
   useEffect(() => {
-    const postTaskSignal = (path: '/api/task/heartbeat' | '/api/task/cancel', taskId: string) => {
-      const url = `${INTERPRETER_BASE_URL}${path}`;
+    const postTaskSignal = (path: '/api/interpreter/heartbeat' | '/api/interpreter/cancel', taskId: string) => {
+      const url = path;
       const payload = JSON.stringify({ task_id: taskId });
 
       // sendBeacon is best-effort on tab close; use JSON blob so Flask request.get_json() works.
@@ -62,14 +61,14 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
     // Heartbeat every 15 seconds
     const interval = setInterval(() => {
       activeTaskIdsRef.current.forEach(taskId => {
-        postTaskSignal('/api/task/heartbeat', taskId);
+        postTaskSignal('/api/interpreter/heartbeat', taskId);
       });
     }, 15000);
 
     // Cleanup as soon as tab/page is being closed or backgrounded.
     const cancelAllActiveTasks = () => {
       activeTaskIdsRef.current.forEach(taskId => {
-        postTaskSignal('/api/task/cancel', taskId);
+        postTaskSignal('/api/interpreter/cancel', taskId);
       });
     };
 

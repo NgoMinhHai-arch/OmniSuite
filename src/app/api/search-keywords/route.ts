@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-
-const PYTHON_BACKEND = 'http://127.0.0.1:8081';
+import { getInterpreterUrl } from '@/shared/lib/interpreter-url';
 
 // Domains to block (domain-level check)
 const FORBIDDEN = [
@@ -33,7 +32,7 @@ export async function POST(req: Request) {
     // --- Gọi Python Backend (duckduckgo_search + AI Filter) ---
     try {
       console.log(`[Search API] Calling Python DDGS for: ${selectedKeywords.join(', ')} with mode: ${mode}`);
-      const pyRes = await fetch(`${PYTHON_BACKEND}/api/search/keywords`, {
+      const pyRes = await fetch(`${getInterpreterUrl()}/api/search/keywords`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keywords: selectedKeywords, keys, mode }),

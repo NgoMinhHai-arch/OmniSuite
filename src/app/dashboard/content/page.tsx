@@ -41,6 +41,7 @@ import {
 import { MagicIcon, GaugeIcon, TargetIcon } from '@/shared/ui/Icons';
 import { analyzeContentSeo, SeoAnalysisResult } from '@/shared/utils/seo-analyzer';
 import { trackToolUsage, addHistory, trackAPICall, trackExport } from '@/shared/utils/metrics';
+import { gatedDownload } from '@/shared/utils/download-riddle-bridge';
 import Card from '@/shared/ui/Card';
 import Button from '@/shared/ui/Button';
 import Input from '@/shared/ui/Input';
@@ -49,19 +50,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTasks } from '@/shared/lib/context/TaskContext';
 import type { BulkContentJobStatus, ContentPlatformPreset } from '@/shared/contracts/content-engine';
 import { getLlmCredentialsFromSettings } from '@/shared/lib/client-llm-credentials';
-
-const SETTINGS_KEY = 'omnisuite_settings';
-
-type OpenRouterModelMeta = {
-  id: string;
-  displayName: string;
-  isFree: boolean;
-  inputCostPer1M: number;
-  outputCostPer1M: number;
-  contextWindow: number;
-  modality: string;
-  category: 'balanced' | 'reasoning' | 'coding' | 'fast' | 'general';
-};
+import { useContentModels } from '@/modules/content/hooks/useContentModels';
+import { useContentJobs } from '@/modules/content/hooks/useContentJobs';
 
 export default function ContentEngine() {
   const [topic, setTopic] = useState('');
@@ -79,7 +69,6 @@ export default function ContentEngine() {
   const [hoveredRows, setHoveredRows] = useState(0);
   const [hoveredCols, setHoveredCols] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
-  const [modelName, setModelName] = useState('');
   const [copiedOutline, setCopiedOutline] = useState(false);
   const [copiedArticle, setCopiedArticle] = useState(false);
   const [showToast, setShowToast] = useState(false);
@@ -89,7 +78,6 @@ export default function ContentEngine() {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorImageInputRef = useRef<HTMLInputElement>(null);
-  const modelDropdownRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef(false);
 
   const [showSeoDrawer, setShowSeoDrawer] = useState(false);
@@ -111,19 +99,44 @@ export default function ContentEngine() {
     currentSection: ''
   });
 
-  const [selectedProvider, setSelectedProvider] = useState('Gemini');
-  const [availableModels, setAvailableModels] = useState<string[]>([]);
-  const [modelSearch, setModelSearch] = useState('');
-  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
-  const [openrouterCatalog, setOpenrouterCatalog] = useState<OpenRouterModelMeta[]>([]);
-  const [isLoadingModels, setIsLoadingModels] = useState(false);
-  const [connectedProviders, setConnectedProviders] = useState<string[]>([]);
-  const [settings, setSettings] = useState<Record<string, string>>({});
   const [outputMode, setOutputMode] = useState<'single' | 'bulk'>('single');
   const [platformPreset, setPlatformPreset] = useState<ContentPlatformPreset>('googleSeoLongForm');
   const [bulkKeywords, setBulkKeywords] = useState('');
-  const [bulkJob, setBulkJob] = useState<BulkContentJobStatus | null>(null);
   const [researchSources, setResearchSources] = useState<Array<{ title: string; url: string; snippet: string }>>([]);
+
+  const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
+    setToastMessage(message);
+    setToastType(type);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), type === 'error' ? 6000 : 2000);
+  };
+
+  const {
+    settings,
+    selectedProvider,
+    setSelectedProvider,
+    availableModels,
+    modelName,
+    setModelName,
+    modelSearch,
+    setModelSearch,
+    isModelDropdownOpen,
+    setIsModelDropdownOpen,
+    openrouterCatalog,
+    isLoadingModels,
+    connectedProviders,
+    modelDropdownRef,
+  } = useContentModels();
+
+  const { bulkJob, setBulkJob, pollBulkJob, fetchJsonOrThrow, explainFetchFailure } = useContentJobs(
+    showNotification,
+    (data) => {
+      const first = data.results?.[0];
+      if (first?.outline) setOutline(first.outline);
+      if (first?.article) setFullArticle(first.article);
+      if (first?.research?.sources) setResearchSources(first.research.sources);
+    },
+  );
 
   const { startTask, getTask } = useTasks();
 
@@ -150,41 +163,6 @@ export default function ContentEngine() {
     }
   }, [getTask]);
 
-  useEffect(() => {
-    const saved = localStorage.getItem(SETTINGS_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved) as Record<string, string>;
-      setSettings(parsed);
-      
-      const connected: string[] = [];
-      if (parsed.gemini_api_key) connected.push('Gemini');
-      if (parsed.openai_api_key) connected.push('OpenAI');
-      if (parsed.claude_api_key) connected.push('Claude');
-      if (parsed.groq_api_key) connected.push('Groq');
-      if (parsed.openrouter_api_key) connected.push('OpenRouter');
-      if (parsed.deepseek_api_key) connected.push('DeepSeek');
-      if (parsed.ollama_base_url?.trim() || parsed.ollama_api_key?.trim() || parsed.default_provider === 'Ollama') {
-        connected.push('Ollama');
-      }
-
-      setConnectedProviders(connected);
-
-      const defaultProvider = parsed.default_provider || 'Gemini';
-      // Ensure provider shown in UI is actually connected; otherwise fallback.
-      const resolvedProvider = connected.includes(defaultProvider)
-        ? defaultProvider
-        : (connected[0] || defaultProvider);
-      setSelectedProvider(resolvedProvider);
-
-      // Keep default model only for its matching provider to avoid stale disabled state.
-      if (parsed.default_model && resolvedProvider === defaultProvider) {
-        setModelName(parsed.default_model);
-      } else {
-        setModelName('');
-      }
-    }
-  }, []);
-
   const PERSIST_KEY = 'omnisuite_content_persist';
 
   useEffect(() => {
@@ -210,111 +188,6 @@ export default function ContentEngine() {
     sessionStorage.setItem(PERSIST_KEY, JSON.stringify(state));
   }, [topic, keyword, secondaryKeywords, urls, rawData, framework, outline, tavilyContext, fullArticle]);
 
-  useEffect(() => {
-    const { apiKey } = getLlmCredentialsFromSettings(selectedProvider, settings);
-    if (selectedProvider && (selectedProvider === 'Ollama' || apiKey)) {
-      fetchModels(selectedProvider);
-    } else {
-      setAvailableModels([]);
-    }
-    setIsModelDropdownOpen(false);
-    setModelSearch('');
-  }, [selectedProvider, settings]);
-
-  useEffect(() => {
-    const onMouseDown = (event: MouseEvent) => {
-      if (!modelDropdownRef.current) return;
-      if (!modelDropdownRef.current.contains(event.target as Node)) {
-        setIsModelDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', onMouseDown);
-    return () => document.removeEventListener('mousedown', onMouseDown);
-  }, []);
-
-  const fetchModels = async (provider: string) => {
-    const { apiKey, customBaseUrl } = getLlmCredentialsFromSettings(provider, settings);
-    if (provider !== 'Ollama' && !apiKey) return;
-
-    setIsLoadingModels(true);
-    try {
-      const resp = await fetch('/api/list-models', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider,
-          apiKey: apiKey || 'ollama',
-          ...(customBaseUrl ? { customBaseUrl } : {}),
-        })
-      });
-      const data = await resp.json();
-      
-      if (!resp.ok) {
-        throw new Error(data.error || "Không thể tải danh sách model");
-      }
-
-      if (data.models && data.models.length > 0) {
-        setAvailableModels(data.models);
-        setOpenrouterCatalog(Array.isArray(data.openrouterCatalog) ? data.openrouterCatalog : []);
-        if (!data.models.includes(modelName)) {
-          setModelName(data.models[0]);
-        }
-      } else {
-        setOpenrouterCatalog([]);
-      }
-    } catch (err) {
-      console.error('Fetch models error:', err);
-      setOpenrouterCatalog([]);
-    } finally {
-      setIsLoadingModels(false);
-    }
-  };
-
-  const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
-    setToastMessage(message);
-    setToastType(type);
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), type === 'error' ? 6000 : 2000);
-  };
-
-  /** Browser chỉ báo "Failed to fetch" khi không có TCP/tới được Next/API hoặc Next không proxy được sang Python engine. */
-  const explainFetchFailure = (err: unknown): Error => {
-    if (err instanceof TypeError) {
-      const m = err.message || '';
-      if (
-        m === 'Failed to fetch' ||
-        /failed to fetch|networkerror|load failed/i.test(m)
-      ) {
-        return new Error(
-          'Không kết nối được máy chủ (Failed to fetch). Kiểm tra: (1) Next.js đang chạy, (2) Python Content Engine đã bật trên cổng trong PYTHON_ENGINE_URL (mặc định http://127.0.0.1:8082), (3) tường lửa/proxy không chặn localhost.'
-        );
-      }
-    }
-    if (err instanceof Error) return err;
-    return new Error('Lỗi mạng không xác định.');
-  };
-
-  async function fetchJsonOrThrow(input: RequestInfo | URL, init?: RequestInit) {
-    let resp: Response;
-    try {
-      resp = await fetch(input, init);
-    } catch (e) {
-      throw explainFetchFailure(e);
-    }
-    let data: Record<string, unknown>;
-    try {
-      data = (await resp.json()) as Record<string, unknown>;
-    } catch {
-      const txt = await resp.text().catch(() => '');
-      throw new Error(
-        resp.ok
-          ? `Phản hồi không phải JSON: ${txt.slice(0, 160)}`
-          : `HTTP ${resp.status}: ${txt.slice(0, 240)}`
-      );
-    }
-    return { resp, data };
-  }
-
   const handleCopy = async (text: string, type: 'outline' | 'article') => {
     await navigator.clipboard.writeText(text);
     if (type === 'outline') {
@@ -332,16 +205,18 @@ export default function ContentEngine() {
   };
 
   const handleDownload = (content: string, filename: string) => {
-    const blob = new Blob([content], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-    trackExport();
-    addHistory('Viết bài AI', 'Tải xuống bài viết', `Đã tải về file: ${filename}`);
-    showNotification('Đã tải xuống!');
+    gatedDownload(() => {
+      const blob = new Blob([content], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      trackExport();
+      addHistory('Viết bài AI', 'Tải xuống bài viết', `Đã tải về file: ${filename}`);
+      showNotification('Đã tải xuống!');
+    });
   };
 
   const handleFileUpload = (files: FileList | null) => {
@@ -377,42 +252,6 @@ export default function ContentEngine() {
       }
     }
     return matches;
-  };
-
-  const pollBulkJob = (jobId: string) => {
-    const interval = setInterval(async () => {
-      try {
-        let resp: Response;
-        try {
-          resp = await fetch(`/api/content-jobs/${jobId}`);
-        } catch (netErr) {
-          throw explainFetchFailure(netErr);
-        }
-        const data = await resp.json();
-        if (!resp.ok) throw new Error(data.error || 'Không thể đọc trạng thái job');
-        setBulkJob(data);
-        if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
-          clearInterval(interval);
-          setIsLoading(false);
-          if (data.status === 'completed') {
-            const first = data.results?.[0];
-            if (first?.outline) setOutline(first.outline);
-            if (first?.article) setFullArticle(first.article);
-            if (first?.research?.sources) setResearchSources(first.research.sources);
-            showNotification(`Bulk hoàn tất: ${data.results?.length || 0} bài`, 'success');
-          } else if (data.status === 'failed') {
-            showNotification(data.error || 'Bulk job thất bại', 'error');
-          } else {
-            showNotification('Đã hủy bulk job', 'error');
-          }
-        }
-      } catch (err: unknown) {
-        clearInterval(interval);
-        setIsLoading(false);
-        const message = err instanceof Error ? err.message : 'Lỗi polling bulk job';
-        showNotification(message, 'error');
-      }
-    }, 2200);
   };
 
   const handleStart = async (type: 'outline' | 'article') => {
@@ -461,7 +300,7 @@ export default function ContentEngine() {
         setBulkJob(data as unknown as BulkContentJobStatus);
         setWritingProgress({ isWriting: false, currentIndex: 0, totalSections: kws.length, currentSection: 'Bulk queue running' });
         addHistory('Viết bài AI', 'Tạo bulk job', `Số từ khóa: ${kws.length}`, 'info');
-        pollBulkJob(String(data.id ?? ''));
+        pollBulkJob(String(data.id ?? ''), setIsLoading);
         return;
       }
 

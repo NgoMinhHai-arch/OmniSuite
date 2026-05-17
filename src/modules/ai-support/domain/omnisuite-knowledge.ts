@@ -98,17 +98,6 @@ export const OMNISUITE_PAGES: OmniSuitePage[] = [
     aliases: ['tim hinh', 'anh minh hoa', 'images'],
   },
   {
-    href: '/dashboard/job-support',
-    name: 'Hỗ trợ tìm việc',
-    what: 'Hub: tìm việc, auto-apply, tailor CV theo JD.',
-    steps: [
-      'Find Jobs: nhập từ khóa & site → quét',
-      'Tailor CV: dán JD → AI viết lại CV bám sát JD',
-      'Auto Apply: chạy quy trình ứng tuyển bán tự động',
-    ],
-    aliases: ['tim viec', 'job support', 'cv', 'ung tuyen'],
-  },
-  {
     href: '/dashboard/ai-support',
     name: 'Quản gia',
     what: 'Quản gia OmniSuite (tiếng Việt): giao việc tự nhiên hoặc slash — tìm web khi có Tavily/SerpAPI (/web hoặc tự đoán); nút mở trang / DuckDuckGo; /plan; /run (OpenManus); /run-browser (browser-use).',
@@ -299,7 +288,7 @@ export function omniSuiteKnowledgePromptBlock(): string {
   const providerLines = SUPPORTED_LLM_PROVIDERS.map((p) => `- ${p.id} → ${p.label}: ${p.notes}`).join('\n');
   return [
     '# OMNISUITE — bối cảnh sản phẩm bạn đang hỗ trợ',
-    'OmniSuite là bộ công cụ Next.js + Python engine cho SEO / content / job-support, có Quản gia (chat tiếng Việt, có nút việc làm).',
+    'OmniSuite là bộ công cụ Next.js + Python engine cho SEO / content, có Quản gia (chat tiếng Việt, có nút việc làm).',
     'Ngôn ngữ trả lời mặc định: tiếng Việt, ngắn gọn, có hành động cụ thể (đường dẫn /dashboard/... khi cần).',
     '',
     '## Trang chính (sidebar)',
@@ -341,7 +330,7 @@ export function buildTourAnswer(): string {
     '',
     'OmniSuite có 3 nhóm:',
     '1) TỔNG QUAN — /dashboard',
-    '2) CÔNG CỤ — keywords / content / maps / seo-tools / images / job-support / ai-support',
+    '2) CÔNG CỤ — keywords / content / maps / seo-tools / images / ai-support',
     '3) HỆ THỐNG — settings (API key, Ollama)',
     '',
     'Dòng chảy điển hình:',

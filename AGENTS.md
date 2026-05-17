@@ -11,3 +11,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 3. **KHÔNG THÊM TÍNH NĂNG THỪA**: Trân trọng sự đơn giản và trực tiếp. Không tự ý over-engineer hoặc thêm các thư viện, logic bổ trợ "phòng xa".
 4. **PHẢI HỎI TRƯỚC KHI ĐỀ XUẤT**: Nếu thấy có điểm có thể tối ưu hoặc làm đẹp hơn, PHẢI hỏi ý kiến người dùng trước khi thực hiện.
 5. **GIỮ NGUYÊN PHONG CÁCH CODE**: Tuân thủ triệt để các quy ước đặt tên và cấu trúc code hiện có của dự án.
+
+## Bảo trì (đọc trước khi sửa)
+
+- Kiến trúc & checklist: **`MAINTENANCE.md`**
+- Tool SEO: chỉ sửa **`src/lib/seo/tool-registry.ts`** — hub tự sinh từ registry (`hub-catalog.ts`)
+- API Python: dùng **`getPythonEngineUrl()`** (`PYTHON_ENGINE_URL`, cổng 8082) — không thêm cổng legacy

@@ -8,7 +8,6 @@ import {
   FileText, 
   MapPin, 
   Image as ImageIcon, 
-  BriefcaseBusiness,
   Settings,
   Key,
   Search,
@@ -42,7 +41,6 @@ const navGroups = [
       { name: 'Kiểm tra website', href: '/dashboard/seo-tools/scraper', icon: Stethoscope },
       { name: 'SEO nâng cao', href: '/dashboard/seo-tools/advanced', icon: BarChart },
       { name: 'Tìm hình ảnh', href: '/dashboard/images', icon: ImageIcon },
-      { name: 'Hỗ trợ tìm việc', href: '/dashboard/job-support', icon: BriefcaseBusiness },
       { name: 'Quản gia', href: '/dashboard/ai-support', icon: Sparkles },
     ]
   },

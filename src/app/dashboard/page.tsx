@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import {
   Activity,
   ArrowRight,
-  BriefcaseBusiness,
   ChevronRight,
   Download,
   FileText,
@@ -85,13 +84,6 @@ const QUICK_TOOLS = [
     hint: 'Gợi ý visual phục vụ nội dung',
     icon: ImageIcon,
     accent: 'from-fuchsia-500/90 to-pink-600/80',
-  },
-  {
-    href: '/dashboard/job-support',
-    title: 'Hỗ trợ tìm việc',
-    hint: 'CV, JD và đơn ứng tuyển',
-    icon: BriefcaseBusiness,
-    accent: 'from-cyan-500/90 to-indigo-600/80',
   },
   {
     href: '/dashboard/settings',

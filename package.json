@@ -5,7 +5,8 @@
   "scripts": {
     "app": "node launcher.js",
     "build:exe": "npx pkg@latest launcher.js --targets node18-win-x64 -o OmniSuite.exe",
-    "dev": "concurrently \"node scripts/start-backend.js\" \"npm run dev:engine\" \"npm run dev:next-ipv4\"",
+    "dev": "concurrently \"npm run dev:engine\" \"npm run dev:next-ipv4\"",
+    "dev:legacy": "concurrently \"node scripts/start-backend.js\" \"npm run dev:engine\" \"npm run dev:next-ipv4\"",
     "dev:next-ipv4": "node --dns-result-order=ipv4first node_modules/next/dist/bin/next dev --webpack",
     "dev:all": "npm run dev",
     "dev:next": "next dev",
@@ -14,6 +15,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "test": "pytest python_engine/tests -q",
     "security:scan": "node scripts/security-scan.js",
     "security:scan:staged": "node scripts/security-scan.js --staged",
     "security:install-hooks": "node scripts/install-git-hooks.js",

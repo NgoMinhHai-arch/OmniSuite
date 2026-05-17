@@ -4,6 +4,7 @@ import "./globals.css";
 import Sidebar from "@/shared/ui/Sidebar";
 import GlowBackground from "@/shared/ui/GlowBackground";
 import { ThemeProvider } from "@/shared/ui/ThemeProvider";
+import { DownloadRiddleProvider } from "@/shared/ui/DownloadRiddleProvider";
 import { TaskProvider } from "@/shared/lib/context/TaskContext";
 import AuthProvider from "./AuthProvider";
 
@@ -37,15 +38,17 @@ export default function RootLayout({
         <AuthProvider>
           <TaskProvider>
             <ThemeProvider>
-              <GlowBackground />
-              <div className="flex min-h-screen">
-                <Sidebar />
-                <main className="flex-1 min-h-screen relative min-w-0" style={{ paddingLeft: 'var(--sidebar-width, 300px)' }}>
-                  <div className="w-full h-full p-8 lg:p-12">
-                    {children}
-                  </div>
-                </main>
-              </div>
+              <DownloadRiddleProvider>
+                <GlowBackground />
+                <div className="flex min-h-screen">
+                  <Sidebar />
+                  <main className="flex-1 min-h-screen relative min-w-0" style={{ paddingLeft: 'var(--sidebar-width, 300px)' }}>
+                    <div className="w-full h-full p-8 lg:p-12">
+                      {children}
+                    </div>
+                  </main>
+                </div>
+              </DownloadRiddleProvider>
             </ThemeProvider>
           </TaskProvider>
         </AuthProvider>

@@ -32,9 +32,8 @@ import Typography from '@/shared/ui/Typography';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
 import { useTasks } from '@/shared/lib/context/TaskContext';
-import { getLlmCredentialsFromSettings } from '@/shared/lib/client-llm-credentials';
-import { getDashboardLlmProviderFromSettings } from '@/shared/lib/llm-default-provider';
 import { shouldExposeOllamaInUi } from '@/shared/lib/ollama';
+import { useKeywordModels } from '@/modules/keywords/hooks/useKeywordModels';
 
 // --- TYPES ---
 interface BadgeInfo {
@@ -648,12 +647,19 @@ export default function DemoKeywordsPage() {
   const [showMasterTable, setShowMasterTable] = useState(false);
   // Deep analysis (SILO) soft feature flag for demo, to avoid blocking core flow
   const [isDeepAnalyzing, setIsDeepAnalyzing] = useState(false);
-  const [provider, setProvider] = useState<string>('google');
-  const [selectedModel, setSelectedModel] = useState<string>('');
-  const [availableModels, setAvailableModels] = useState<string[]>([]);
-  const [isFetchModelsLoading, setIsFetchModelsLoading] = useState(false);
-  const [settings, setSettings] = useState<any>({});
   const [deepProgress, setDeepProgress] = useState('');
+
+  const {
+    settings,
+    provider,
+    setProvider,
+    availableModels,
+    selectedModel,
+    setSelectedModel,
+    isFetchModelsLoading,
+    buildAiApiKeys,
+    fetchWithRetry,
+  } = useKeywordModels((msg) => setCurrentProcessing(msg));
   const [siloData, setSiloData] = useState<{
     seeds?: SiloSeedTree[];
     seed_keyword?: string;
@@ -724,112 +730,6 @@ export default function DemoKeywordsPage() {
   }, [isFullScreen, showMindmap]);
 
   useEffect(() => { setCurrentPage(1); }, [activeFilter]);
-  useEffect(() => {
-    const saved = localStorage.getItem('omnisuite_settings');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      setSettings(parsed);
-      
-      setProvider(getDashboardLlmProviderFromSettings(parsed));
-    }
-  }, []);
-  useEffect(() => { fetchModels(); }, [provider, settings]);
-
-  const fetchModels = async () => {
-    const { apiKey, customBaseUrl } = getLlmCredentialsFromSettings(provider, settings);
-    if (provider !== 'ollama' && !apiKey) return;
-    setIsFetchModelsLoading(true);
-    try {
-      let models: string[] = [];
-
-      // Primary path: unified model listing endpoint used across app.
-      const listResp = await fetchWithRetry('/api/list-models', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider,
-          apiKey: apiKey || 'ollama',
-          ...(customBaseUrl ? { customBaseUrl } : {}),
-        }),
-      });
-      const listData = await listResp.json().catch(() => ({}));
-      if (listResp.ok && Array.isArray(listData.models) && listData.models.length > 0) {
-        models = listData.models;
-      } else {
-        // Backward-compatible fallback for legacy SEO route.
-        const apiKeysParam = encodeURIComponent(JSON.stringify({
-          google: settings.gemini_api_key,
-          openai: settings.openai_api_key,
-          groq: settings.groq_api_key,
-          claude: settings.claude_api_key,
-          deepseek: settings.deepseek_api_key,
-          openrouter: settings.openrouter_api_key,
-          ollama: settings.ollama_api_key || 'ollama',
-          ollama_base_url: settings.ollama_base_url,
-        }));
-        const legacyResp = await fetchWithRetry(`/api/seo/models?provider=${provider}&apiKeys=${apiKeysParam}`);
-        const legacyData = await legacyResp.json().catch(() => ({}));
-        if (legacyResp.ok && Array.isArray(legacyData.models) && legacyData.models.length > 0) {
-          models = legacyData.models;
-        }
-      }
-
-      if (models.length > 0) {
-        setAvailableModels(models);
-        setSelectedModel(models[0]);
-      } else {
-        setAvailableModels([]);
-        setSelectedModel('');
-      }
-    } catch (err) {
-      console.error("Failed to load models", err);
-      setAvailableModels([]);
-      setSelectedModel('');
-    }
-    finally { setIsFetchModelsLoading(false); }
-  };
-
-  const buildAiApiKeys = () => ({
-    gemini: settings.gemini_api_key,
-    openai: settings.openai_api_key,
-    groq: settings.groq_api_key,
-    openrouter: settings.openrouter_api_key,
-    claude: settings.claude_api_key,
-    deepseek: settings.deepseek_api_key,
-    ollama: settings.ollama_api_key || 'ollama',
-    ollama_base_url: settings.ollama_base_url,
-  });
-
-  const fetchWithRetry = async (url: string, options: any = {}, maxRetries = 10) => {
-    let retries = 0;
-    while (retries < maxRetries) {
-      const response = await fetch(url, options);
-      if (response.status === 429) {
-        const rawText = await response.clone().text().catch(() => "");
-        let errorData: any = {};
-        try { errorData = JSON.parse(rawText); } catch {}
-
-        let delay = 5000; // Default 5s
-        
-        // Extract message regardless of case
-        const msg = errorData.error?.message || errorData.ERROR?.MESSAGE || rawText || "";
-        
-        // Try to parse delay (RETRY IN XS)
-        const match = msg.match(/RETRY IN ([\d.]+)S/i);
-        if (match) {
-          delay = (parseFloat(match[1]) + 2) * 1000; 
-        }
-
-        setCurrentProcessing(`Hệ thống đang bận (429 Quota). Đang thử lại trong ${Math.round(delay/1000)}s...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        retries++;
-        continue;
-      }
-      return response;
-    }
-    return fetch(url, options); // Final attempt
-  };
-
   const aiValidateKeywordBatch = async (
     seed: string,
     pillar: string,
@@ -1363,7 +1263,7 @@ export default function DemoKeywordsPage() {
                      <div className="relative group">
                         <select 
                           value={provider}
-                          onChange={(e) => { setProvider(e.target.value); setAvailableModels([]); setSelectedModel(''); }}
+                          onChange={(e) => { setProvider(e.target.value); setSelectedModel(''); }}
                           className="w-full relative z-10 border p-4 pl-6 pr-10 rounded-2xl text-[10px] font-black uppercase tracking-[0.1em] outline-none appearance-none cursor-pointer transition-all shadow-xl backdrop-blur-md"
                           style={{ backgroundColor: 'var(--hover-bg)', borderColor: 'rgba(99,102,241,0.2)', color: '#6366f1' }}
                         >

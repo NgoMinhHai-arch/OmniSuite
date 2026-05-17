@@ -1,7 +1,8 @@
 /* Tiny CSV helpers used by client-side SEO tools. */
 
-export function downloadAsCsv(filename: string, headers: string[], rows: (string | number | null | undefined)[][]) {
-  if (typeof window === "undefined") return;
+import { gatedDownload } from "@/shared/utils/download-riddle-bridge";
+
+function downloadAsCsvImpl(filename: string, headers: string[], rows: (string | number | null | undefined)[][]) {
   const escape = (cell: unknown) => {
     const s = cell == null ? "" : String(cell);
     if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
@@ -15,6 +16,11 @@ export function downloadAsCsv(filename: string, headers: string[], rows: (string
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+export function downloadAsCsv(filename: string, headers: string[], rows: (string | number | null | undefined)[][]) {
+  if (typeof window === "undefined") return;
+  gatedDownload(() => downloadAsCsvImpl(filename, headers, rows));
 }
 
 export function downloadAsText(filename: string, content: string, mime = "text/plain") {

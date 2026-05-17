@@ -77,6 +77,15 @@ function buildId() {
   return `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function parseChatMeta(raw: unknown): { provider: string; model: string } | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const m = raw as Record<string, unknown>;
+  if (typeof m.provider === 'string' && typeof m.model === 'string') {
+    return { provider: m.provider, model: m.model };
+  }
+  return undefined;
+}
+
 /** Xuất hiện lần lượt (ước ~0.5–14s tùy độ dài) — tránh chữ trút một lần. */
 function GradualRevealParagraph({
   text,
@@ -837,7 +846,7 @@ export default function AiSupportPage() {
             animateReveal: true,
             content: 'Đã tạo kế hoạch 3 tầng.',
             plan: data.plan as AiSupportPlanJson,
-            meta: data.meta || undefined,
+            meta: parseChatMeta(data.meta),
           },
         ]);
       } else {
@@ -850,7 +859,7 @@ export default function AiSupportPage() {
             kind: 'chat',
             animateReveal: true,
             content: typeof data.message === 'string' ? data.message : 'Không có phản hồi.',
-            meta: data.meta || undefined,
+            meta: parseChatMeta(data.meta),
             actions: actions.length ? actions : undefined,
           },
         ]);
