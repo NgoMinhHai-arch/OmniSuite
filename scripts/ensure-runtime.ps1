@@ -1,20 +1,18 @@
 #Requires -Version 5.1
 <#
-  OmniSuite - Automatic runtime setup:
-  - Node.js, Python (required for the application)
-  - Git for Windows (optional, required to sync with source control)
-
-  If Node.js is missing, winget is used to install it.
-  Python is downloaded and set up locally in the `.omnisuite/python` directory to ensure full isolation.
+  OmniSuite - Automatic runtime setup (Node, Python embed, Git, optional full Python via winget).
 #>
 
 param(
-    [switch]$Quiet
+    [switch]$Quiet,
+    [switch]$InstallFullPython
 )
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$LocalPythonDir = Join-Path $RepoRoot ".omnisuite\python"
-$LocalPythonExe = Join-Path $LocalPythonDir "python.exe"
+$LocalPythonDir = Join-Path $RepoRoot '.omnisuite\python'
+$LocalPythonExe = Join-Path $LocalPythonDir 'python.exe'
+$RuntimeJsonPath = Join-Path $RepoRoot '.omnisuite\runtime.json'
+$NeedsFullFlag = Join-Path $RepoRoot '.omnisuite\needs-full-python'
 
 function Write-Step([string]$msg) {
     if (-not $Quiet) { Write-Host "[*] $msg" -ForegroundColor Cyan }
@@ -29,18 +27,37 @@ function Write-Err([string]$msg) {
     Write-Host "[ERROR] $msg" -ForegroundColor Red
 }
 
+function Write-RuntimeJson {
+    param(
+        [string]$Bundled = $LocalPythonExe,
+        [string]$Full,
+        [string]$Prefer = 'bundled'
+    )
+    $dir = Split-Path $RuntimeJsonPath -Parent
+    if (-not (Test-Path $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    }
+    $bundledVal = $null
+    if (Test-Path $Bundled) { $bundledVal = $Bundled }
+    $obj = @{
+        bundledPython = $bundledVal
+        fullPython    = $Full
+        prefer        = $Prefer
+        updatedAt     = (Get-Date).ToString('o')
+    }
+    $obj | ConvertTo-Json | Set-Content -Path $RuntimeJsonPath -Encoding UTF8
+}
+
 function Refresh-PathEnv {
     $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     $user = [Environment]::GetEnvironmentVariable('Path', 'User')
     if ([string]::IsNullOrEmpty($machine)) { $machine = '' }
     if ([string]::IsNullOrEmpty($user)) { $user = '' }
-    
-    # Prepend local Python path if it exists to ensure process isolation
-    $localPythonPath = ""
+    $localPythonPath = ''
     if (Test-Path $LocalPythonExe) {
-        $localPythonPath = "$LocalPythonDir;$(Join-Path $LocalPythonDir 'Scripts');"
+        $scriptsDir = Join-Path $LocalPythonDir 'Scripts'
+        $localPythonPath = "$LocalPythonDir;$scriptsDir;"
     }
-    
     $env:Path = "$localPythonPath$machine;$user".Trim(';')
 }
 
@@ -63,7 +80,66 @@ function Invoke-WingetInstall([string]$Id, [string]$Label) {
     )
     $p = Start-Process -FilePath 'winget' -ArgumentList $wingetArgs -Wait -PassThru -NoNewWindow
     if ($null -ne $p.ExitCode -and $p.ExitCode -ne 0) {
-        Write-Warn "winget exited with code $($p.ExitCode) for $Id (it might be already installed or requires admin rights)."
+        Write-Warn "winget exited with code $($p.ExitCode) for $Id (may already be installed or need admin)."
+    }
+}
+
+function Find-FullPythonExe {
+    $candidates = @(
+        "$env:LocalAppData\Programs\Python\Python312\python.exe",
+        "$env:LocalAppData\Programs\Python\Python311\python.exe",
+        "$env:LocalAppData\Programs\Python\Python310\python.exe",
+        "$env:ProgramFiles\Python312\python.exe",
+        "$env:ProgramFiles\Python311\python.exe"
+    )
+    foreach ($c in $candidates) {
+        if (Test-Path $c) { return $c }
+    }
+    $pyCmd = Get-Command python -ErrorAction SilentlyContinue
+    if ($null -ne $pyCmd -and $pyCmd.Source -notmatch 'WindowsApps') {
+        return $pyCmd.Source
+    }
+    return $null
+}
+
+function Ensure-FullPythonFallback {
+    if (-not (Test-Winget)) {
+        Write-Warn 'winget khong co - khong the cai Python day du tu dong.'
+        return $null
+    }
+    Write-Step 'Cai Python 3.12 day du (winget) - phuong an du phong cho torch/CLIP...'
+    Invoke-WingetInstall -Id 'Python.Python.3.12' -Label 'Python 3.12'
+    Refresh-PathEnv
+    $full = Find-FullPythonExe
+    if ($null -ne $full -and $full -ne '') {
+        Write-Ok "Python day du: $full"
+        Write-RuntimeJson -Full $full -Prefer 'full'
+        if (Test-Path $NeedsFullFlag) {
+            Remove-Item $NeedsFullFlag -Force -ErrorAction SilentlyContinue
+        }
+        return $full
+    }
+    Write-Warn 'Da goi winget nhung chua tim thay python.exe - thu khoi dong lai CMD.'
+    return $null
+}
+
+function Test-PythonSmoke {
+    param([string]$Exe)
+    if (-not (Test-Path $Exe)) { return $false }
+    try {
+        $out = & $Exe -c 'import sys; print(sys.executable)' 2>&1
+        return ($LASTEXITCODE -eq 0 -and $out)
+    }
+    catch {
+        return $false
+    }
+}
+
+function Warn-StorePythonStub {
+    $pyCmd = Get-Command python -ErrorAction SilentlyContinue
+    if ($null -ne $pyCmd -and $pyCmd.Source -match 'WindowsApps') {
+        Write-Warn 'PATH van tro vao Windows Store python stub.'
+        Write-Warn 'Neu loi: Settings -> Apps -> Advanced -> App execution aliases -> tat python.exe / python3.exe'
     }
 }
 
@@ -73,15 +149,18 @@ $missingNode = -not (Test-Cmd 'node')
 $missingGit = -not (Test-Cmd 'git')
 $installedSomething = $false
 
-# 1. Node.js Check and Install
+if ($InstallFullPython -or (Test-Path $NeedsFullFlag)) {
+    Ensure-FullPythonFallback | Out-Null
+    Refresh-PathEnv
+}
+
 if ($missingNode) {
     if (-not (Test-Winget)) {
         Write-Err "Node.js is missing and 'winget' is not found."
-        Write-Host "      Option A: Open Microsoft Store -> search for 'App Installer' -> Update it."
-        Write-Host "      Option B: Install Node.js manually from https://nodejs.org/"
+        Write-Host '      Install Node.js from https://nodejs.org/'
         exit 1
     }
-    Write-Step "Node.js is missing - installing via winget..."
+    Write-Step 'Node.js is missing - installing via winget...'
     foreach ($id in @('OpenJS.NodeJS.LTS', 'OpenJS.NodeJS')) {
         Invoke-WingetInstall -Id $id -Label 'Node.js'
         Refresh-PathEnv
@@ -93,95 +172,98 @@ if ($missingNode) {
 Refresh-PathEnv
 
 if (-not (Test-Cmd 'node')) {
-    Write-Err "Could not verify 'node' installation. Please restart the terminal or install Node.js manually."
+    Write-Err "Could not verify 'node'. Restart CMD or install Node.js manually."
     exit 1
 }
 Write-Ok "Node.js: OK ($(node -v 2>$null))"
 
-# 2. Local Self-Contained Python Setup
 if (-not (Test-Path $LocalPythonExe)) {
-    Write-Step "Setting up local self-contained Python in '.omnisuite/python' for isolation..."
-    
-    # Create directory
+    Write-Step "Setting up local Python in '.omnisuite/python'..."
     New-Item -ItemType Directory -Path $LocalPythonDir -Force | Out-Null
-    
-    $ZipPath = Join-Path $LocalPythonDir "python-embed.zip"
-    $Url = "https://www.python.org/ftp/python/3.10.11/python-3.10.11-embed-amd64.zip"
-    
-    Write-Step "Downloading Python 3.10.11 embeddable package..."
+
+    $ZipPath = Join-Path $LocalPythonDir 'python-embed.zip'
+    $Url = 'https://www.python.org/ftp/python/3.10.11/python-3.10.11-embed-amd64.zip'
+
+    Write-Step 'Downloading Python 3.10.11 embeddable package...'
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         Invoke-WebRequest -Uri $Url -OutFile $ZipPath -UseBasicParsing
-    } catch {
+    }
+    catch {
         Write-Err "Failed to download Python. Error: $_"
         exit 1
     }
-    
-    Write-Step "Extracting Python package..."
+
+    Write-Step 'Extracting Python package...'
     try {
         Expand-Archive -Path $ZipPath -DestinationPath $LocalPythonDir -Force
         Remove-Item $ZipPath -Force
-    } catch {
+    }
+    catch {
         Write-Err "Failed to extract Python. Error: $_"
         exit 1
     }
-    
-    # Configure path by editing python310._pth to enable import site (needed for pip packages)
-    $PthFile = Join-Path $LocalPythonDir "python310._pth"
+
+    $PthFile = Join-Path $LocalPythonDir 'python310._pth'
     if (Test-Path $PthFile) {
-        Write-Step "Enabling site-packages in local Python configuration..."
+        Write-Step 'Enabling site-packages...'
         $content = Get-Content $PthFile
         $content = $content -replace '#import site', 'import site'
         $content | Set-Content $PthFile
     }
-    
-    # Download and run get-pip.py to install pip locally
-    Write-Step "Downloading and installing pip locally..."
-    $PipScript = Join-Path $LocalPythonDir "get-pip.py"
-    $PipUrl = "https://bootstrap.pypa.io/get-pip.py"
+
+    Write-Step 'Installing pip locally...'
+    $PipScript = Join-Path $LocalPythonDir 'get-pip.py'
     try {
-        Invoke-WebRequest -Uri $PipUrl -OutFile $PipScript -UseBasicParsing
-        # Run with local python
+        Invoke-WebRequest -Uri 'https://bootstrap.pypa.io/get-pip.py' -OutFile $PipScript -UseBasicParsing
         & $LocalPythonExe $PipScript --no-warn-script-location
         Remove-Item $PipScript -Force
-    } catch {
-        Write-Warn "Could not install pip. Python will run but installing packages might fail. Error: $_"
     }
-    
+    catch {
+        Write-Warn "Could not install pip: $_"
+    }
+
     $installedSomething = $true
 }
 
 Refresh-PathEnv
 
-if (-not (Test-Cmd 'python')) {
-    Write-Err "Could not verify local 'python' execution. Please check folder permissions."
+if (-not (Test-PythonSmoke -Exe $LocalPythonExe)) {
+    Write-Err "Local Python smoke test failed at $LocalPythonExe"
     exit 1
 }
-Write-Ok "Python (Local): OK ($(python --version 2>$null))"
+$pyVer = & $LocalPythonExe --version 2>&1
+Write-Ok "Python (Local): OK ($pyVer)"
 
-# 3. Git Check and Install
+Warn-StorePythonStub
+
+$fullPy = Find-FullPythonExe
+$preferMode = 'bundled'
+if ($InstallFullPython -and $null -ne $fullPy) { $preferMode = 'full' }
+Write-RuntimeJson -Full $fullPy -Prefer $preferMode
+
 if ($missingGit -and (Test-Winget)) {
-    Write-Step "Git is missing - installing Git for Windows to sync updates..."
+    Write-Step 'Git is missing - installing Git for Windows...'
     Invoke-WingetInstall -Id 'Git.Git' -Label 'Git-for-Windows'
     $installedSomething = $true
     Refresh-PathEnv
 }
 
 if (Test-Cmd 'git') {
-    Write-Ok "Git: OK"
-} elseif ($missingGit) {
-    Write-Warn "Git is missing - the app will still run fine, but automatic updates from GitHub will be skipped."
+    Write-Ok 'Git: OK'
+}
+elseif ($missingGit) {
+    Write-Warn 'Git missing - app still runs; GitHub sync skipped.'
 }
 
 if ($installedSomething -and -not $Quiet) {
-    Write-Host ""
-    Write-Host "========================================" -ForegroundColor Green
-    Write-Host "  Environment configured successfully!   " -ForegroundColor Green
-    Write-Host "========================================" -ForegroundColor Green
-    Write-Host ""
+    Write-Host ''
+    Write-Host '========================================' -ForegroundColor Green
+    Write-Host '  Environment configured successfully!   ' -ForegroundColor Green
+    Write-Host '========================================' -ForegroundColor Green
+    Write-Host ''
 }
 
-# Signal to batch script that PATH needs refreshing
 if ($installedSomething) {
     $flag = Join-Path ([Environment]::GetEnvironmentVariable('TEMP')) 'omnisuite_refresh_path.flag'
     Set-Content -Path $flag -Value '1' -Encoding ascii

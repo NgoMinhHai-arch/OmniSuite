@@ -49,5 +49,12 @@ if __name__ == "__main__":
 
     import uvicorn
 
+    def _bind_host() -> str:
+        v = (os.environ.get("OMNISUITE_LOCALHOST_ONLY") or "1").strip().lower()
+        if v in ("0", "false", "no"):
+            return "0.0.0.0"
+        return "127.0.0.1"
+
     port = int(os.environ.get("PORT", settings.PORT))
-    uvicorn.run("python_engine.main:app", host="0.0.0.0", port=port, reload=True)
+    host = _bind_host()
+    uvicorn.run("python_engine.main:app", host=host, port=port, reload=True)

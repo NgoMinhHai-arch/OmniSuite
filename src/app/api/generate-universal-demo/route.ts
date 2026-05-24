@@ -19,7 +19,7 @@ export async function POST(req: Request) {
     // Sử dụng chuỗi lệnh trực tiếp để tránh lỗi phân tách đối số của shell trên Windows
     const fullCommand = `python "${scriptPath}" "${mode}" "${input}"`;
     
-    console.log("Executing:", fullCommand);
+    console.log('Executing universal_scraper_demo (mode/input redacted from log)');
 
     const result = spawnSync(fullCommand, {
       encoding: 'utf-8',

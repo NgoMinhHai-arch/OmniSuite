@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchModelsForProvider, fetchOpenRouterModelCatalog } from '@/shared/lib/model-catalog';
+import { safeErrorMessage } from '@/shared/lib/server/secret-redact';
 
 export async function POST(req: Request) {
   try {
@@ -18,8 +19,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ models, openrouterCatalog });
 
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error("List Models Critical Error:", message);
+    const message = safeErrorMessage(error);
+    console.error('List Models Critical Error:', message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

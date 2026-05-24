@@ -11,6 +11,22 @@
 :: ============================================================
 
 cd /d "%~dp0"
+set "OMNISUITE_ROOT=%~dp0"
+if "%OMNISUITE_ROOT:~-1%"=="\" set "OMNISUITE_ROOT=%OMNISUITE_ROOT:~0,-1%"
+
+echo.
+echo ========================================
+echo   OMNISUITE AI - KHOI DONG TU DONG
+echo ========================================
+echo   Lan dau co the mat 10-30 phut:
+echo   - npm packages
+echo   - torch/CLIP (~2GB) cho Tim hinh anh
+echo   - Chromium Playwright cho Quet ban do
+echo   May KHONG bi treo neu thay dong [*] Van dang chay...
+echo ========================================
+echo   BAO MAT: Khong chia se file .env (API keys / INTERNAL_TOKEN).
+echo ========================================
+echo.
 
 :: Prepend local Python to PATH if it exists
 if exist "%~dp0.omnisuite\python\python.exe" (
@@ -67,11 +83,11 @@ if errorlevel 1 (
 )
 
 :: Launcher auto-installs: npm, pip, playwright, git hooks - no manual npm install needed
-echo [*] Step 2/3: Preparing automatic installation (Node + Python + Playwright)...
+echo [*] Step 2/3: Tu dong cai dat va sua loi (Node + Python + Playwright + CLIP)...
 echo.
 
-:: Run launcher: Git sync + full setup + start server
-echo [*] Step 3/3: Launching OmniSuite AI...
+:: Run launcher: Git sync + full setup + verify/repair + start server
+echo [*] Step 3/3: Khoi dong OmniSuite AI...
 echo [*] Executing: node launcher.js
 echo.
 node launcher.js

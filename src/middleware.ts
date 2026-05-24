@@ -6,8 +6,11 @@ import { getInternalToken } from "@/shared/lib/server/internal-token";
 import {
   isAuthRequired,
   isLocalhostRequest,
+  isTrustedDevOrigin,
   localhostOnlyDeniedResponse,
+  untrustedOriginDeniedResponse,
 } from "@/shared/lib/server/request-security";
+import { applySecurityHeaders } from "@/shared/lib/server/security-headers";
 
 // Define paths to protect
 const PROTECTED_PAGES = ["/dashboard"];
@@ -34,6 +37,10 @@ const AI_ROUTES = [
   "/api/images/scrape"
 ];
 
+function secure(res: NextResponse) {
+  return applySecurityHeaders(res);
+}
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -41,13 +48,19 @@ export async function middleware(req: NextRequest) {
     return localhostOnlyDeniedResponse();
   }
 
-  // 1. Determine if the route requires authentication
-  const isProtectedPage = PROTECTED_PAGES.some((page) => pathname.startsWith(page));
-  const isProtectedApi = pathname.startsWith(PROTECTED_API_PREFIX) && 
+  const isProtectedApi =
+    pathname.startsWith(PROTECTED_API_PREFIX) &&
     !PUBLIC_API_PATHS.some((pubPath) => pathname.startsWith(pubPath));
 
+  if (isProtectedApi && !isTrustedDevOrigin(req)) {
+    return untrustedOriginDeniedResponse();
+  }
+
+  // 1. Determine if the route requires authentication
+  const isProtectedPage = PROTECTED_PAGES.some((page) => pathname.startsWith(page));
+
   if (!isProtectedPage && !isProtectedApi) {
-    return NextResponse.next();
+    return secure(NextResponse.next());
   }
 
   // Local ZIP / may dev: khong bat buoc dang nhap (OMNISUITE_REQUIRE_AUTH=1 de bat lai)
@@ -59,13 +72,15 @@ export async function middleware(req: NextRequest) {
       const clientIp = req.headers.get("x-forwarded-for") || (req as any).ip || "127.0.0.1";
       const limitKey = `${pathname}:local:${clientIp}`;
       if (isRateLimited(limitKey, limitMax, windowMs)) {
-        return new NextResponse(
-          JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
-          { status: 429, headers: { "Content-Type": "application/json" } },
+        return secure(
+          new NextResponse(
+            JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
+            { status: 429, headers: { "Content-Type": "application/json" } },
+          ),
         );
       }
     }
-    return NextResponse.next();
+    return secure(NextResponse.next());
   }
 
   // 2. Perform authentication check
@@ -112,17 +127,19 @@ export async function middleware(req: NextRequest) {
   // 3. Handle Unauthorized access
   if (!isAuthenticated) {
     if (isProtectedApi) {
-      return new NextResponse(
-        JSON.stringify({ error: "Unauthorized. Access Denied." }),
-        {
-          status: 401,
-          headers: { "Content-Type": "application/json" },
-        }
+      return secure(
+        new NextResponse(
+          JSON.stringify({ error: "Unauthorized. Access Denied." }),
+          {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
       );
     } else {
       const loginUrl = new URL("/login", req.url);
       loginUrl.searchParams.set("callbackUrl", req.url);
-      return NextResponse.redirect(loginUrl);
+      return secure(NextResponse.redirect(loginUrl));
     }
   }
 
@@ -138,17 +155,19 @@ export async function middleware(req: NextRequest) {
     const limitKey = `${pathname}:${userIdentifier}:${clientIp}`;
 
     if (isRateLimited(limitKey, limitMax, windowMs)) {
-      return new NextResponse(
-        JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
-        {
-          status: 429,
-          headers: { "Content-Type": "application/json" },
-        }
+      return secure(
+        new NextResponse(
+          JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
+          {
+            status: 429,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
       );
     }
   }
 
-  return NextResponse.next();
+  return secure(NextResponse.next());
 }
 
 // Configure middleware match patterns

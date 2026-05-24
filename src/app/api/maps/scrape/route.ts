@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { scrapeGoogleMapsPlaywright, scrapeGoogleMapsSerpApi, MapsRow } from '@/modules/maps/services/mapsService';
 import { launchChromium } from '@/shared/lib/playwright/launch';
+import { safeErrorMessage } from '@/shared/lib/server/secret-redact';
 
 export const dynamic = 'force-dynamic';
 
@@ -95,7 +96,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (error: any) {
-    console.error('Maps Scrape Route Error:', error.message);
+    console.error('Maps Scrape Route Error:', safeErrorMessage(error));
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

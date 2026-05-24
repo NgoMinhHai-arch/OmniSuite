@@ -1,5 +1,13 @@
 export const METRICS_KEY = 'omnisuite_metrics';
 
+/** Strip accidental API keys from history details (client-side only). */
+function sanitizeHistoryDetails(details: string): string {
+  if (!details) return details;
+  return details
+    .replace(/\b(sk-[A-Za-z0-9]{12,}|gsk_[A-Za-z0-9]{12,}|AIza[0-9A-Za-z\-_]{12,})\b/g, '[REDACTED]')
+    .replace(/api_key=[^\s&]+/gi, 'api_key=[REDACTED]');
+}
+
 export interface AppMetrics {
   api_calls: {
     OpenAI: number;
@@ -94,7 +102,7 @@ export const addHistory = (tool: string, action: string, details: string, status
     id: Math.random().toString(36).substr(2, 9),
     tool,
     action,
-    details,
+    details: sanitizeHistoryDetails(details),
     status,
     timestamp: new Date().toISOString()
   };

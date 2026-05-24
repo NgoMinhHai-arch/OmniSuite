@@ -1,6 +1,7 @@
 import { streamText } from 'ai';
 import { NextResponse } from 'next/server';
 import { getAIModel } from '@/shared/lib/ai-provider';
+import { safeErrorMessage } from '@/shared/lib/server/secret-redact';
 
 export const maxDuration = 120;
 
@@ -75,8 +76,8 @@ BẮT ĐẦU VIẾT BÀI:`;
 
     return result.toTextStreamResponse();
   } catch (error: any) {
-    console.error("Article Gen Error:", error.message || error);
-    let msg = error.message || "Lỗi tạo bài viết";
+    console.error('Article Gen Error:', safeErrorMessage(error));
+    let msg = safeErrorMessage(error) || 'Lỗi tạo bài viết';
     if (msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("exceeded")) {
       msg = "API Key đã đạt giới hạn. Vui lòng dùng Key khác hoặc đổi Model nhẹ hơn.";
     }

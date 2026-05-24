@@ -48,6 +48,9 @@ function shouldSkipContentScan(filePath) {
 
 function isBlockedTrackedPath(filePath) {
   const normalized = filePath.replace(/\\/g, '/');
+  if (/(^|\/)\.env\.example$/i.test(normalized) || /(^|\/)\.env\.sample$/i.test(normalized)) {
+    return false;
+  }
   return BLOCKED_TRACKED_PATHS.some((re) => re.test(normalized));
 }
 

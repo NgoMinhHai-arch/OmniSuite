@@ -7,6 +7,7 @@ import {
   readOllamaNumCtx,
   withOllamaInferenceLock,
 } from '@/shared/lib/ollama';
+import { safeErrorMessage } from '@/shared/lib/server/secret-redact';
 
 const SYSTEM_PROMPT = `Please ignore all previous instructions. Respond only in Vietnamese. You are a Keyword Research Expert. Create a detailed SILO structure for: "{seed_keyword}".
 Rule 1: Generate exactly 5 UNIQUE pillar pages (trang trụ cột). Each pillar must represent a distinct major topic angle of the seed keyword. Ensure no overlapping meanings between pillars.
@@ -371,8 +372,9 @@ Yêu cầu:
       model_used: model
     });
 
-  } catch (error: any) {
-    console.error('SILO API Error:', error.message);
-    return NextResponse.json({ error: 'Lỗi: ' + error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const msg = safeErrorMessage(error);
+    console.error('SILO API Error:', msg);
+    return NextResponse.json({ error: `Lỗi: ${msg}` }, { status: 500 });
   }
 }

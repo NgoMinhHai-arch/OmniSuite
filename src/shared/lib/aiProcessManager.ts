@@ -3,6 +3,7 @@ import path from 'path';
 import axios from 'axios';
 import fs from 'fs';
 import { resolvePythonExecutable } from '@/shared/lib/python/resolve-python';
+import { redactSecrets } from '@/shared/lib/server/secret-redact';
 
 const HEALTH_URL = 'http://127.0.0.1:8000/api/v1/health';
 
@@ -38,7 +39,7 @@ class AiProcessManager {
   }
 
   public getLastStartError(): string | null {
-    return this.lastStartError;
+    return this.lastStartError ? redactSecrets(this.lastStartError) : null;
   }
 
   /**
@@ -110,7 +111,7 @@ class AiProcessManager {
 
       this.childProcess.on('exit', (code) => {
         if (!this.isReady && code !== 0 && code !== null) {
-          const tail = tailLogFile(logFile);
+          const tail = redactSecrets(tailLogFile(logFile));
           this.lastStartError =
             tail ||
             `Lõi AI thoát với mã ${code}. Chạy: npm run setup:all (cài torch/fastapi cho services/clip_service).`;
@@ -129,7 +130,7 @@ class AiProcessManager {
         if (await this.ping()) return true;
       }
 
-      const tail = tailLogFile(logFile);
+      const tail = redactSecrets(tailLogFile(logFile));
       this.lastStartError =
         this.lastStartError ||
         tail ||
@@ -137,7 +138,7 @@ class AiProcessManager {
       return false;
     } catch (error: any) {
       console.error('[AiProcessManager] Start Error:', error);
-      this.lastStartError = error?.message || String(error);
+      this.lastStartError = redactSecrets(error?.message || String(error));
       return false;
     }
   }

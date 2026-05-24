@@ -11,6 +11,7 @@ const path = require('path');
 const readline = require('readline');
 const crypto = require('crypto');
 const net = require('net');
+const { resolvePythonExecutable, pythonEnvPatch, writeRuntimeJson } = require('./scripts/resolve-python');
 
 const PROJECT_DIR = __dirname;
 const LOGS_DIR = path.join(PROJECT_DIR, 'logs');
@@ -218,25 +219,35 @@ function runCommand(cmd, args, options = {}) {
 
 async function ensureDependencies() {
   log('step', 'Kiem tra moi truong...');
-  
-  // Kiá»ƒm tra Node.js
+
   const hasNode = await checkCommand('node');
   if (!hasNode) {
     log('err', 'KHONG TIM THAY NODE.JS!');
-    log('info', 'Chay lai file 01_BAT_DAU_OMNISUITE.bat (tu dong cai bang winget), hoac tai: https://nodejs.org/');
+    log('info', 'Chay lai 01_START_OMNISUITE.bat (tu dong cai bang winget), hoac tai: https://nodejs.org/');
     return false;
   }
   log('ok', 'Node.js OK');
-  
-  // Kiá»ƒm tra Python
-  const hasPython = await checkCommand('python');
+
+  const pyExe = resolvePythonExecutable();
+  const hasPython = await new Promise((resolve) => {
+    const quoted = pyExe.includes(' ') ? `"${pyExe}"` : pyExe;
+    exec(`${quoted} --version`, { windowsHide: true, env: pythonEnvPatch() }, (err, stdout) => {
+      if (err) resolve(false);
+      else resolve(!!stdout);
+    });
+  });
   if (!hasPython) {
-    log('err', 'KHONG TIM THAY PYTHON!');
-    log('info', 'Chay lai file 01_BAT_DAU_OMNISUITE.bat (tu dong cai bang winget), hoac tai: https://www.python.org/downloads/');
+    log('err', 'KHONG TIM THAY PYTHON HOAT DONG!');
+    log('info', 'Chay lai 01_START_OMNISUITE.bat — script se tai Python vao .omnisuite/python');
     return false;
   }
-  log('ok', 'Python OK');
-  
+  log('ok', `Python OK (${pyExe})`);
+  try {
+    writeRuntimeJson();
+  } catch {
+    /* ignore */
+  }
+
   return true;
 }
 
@@ -329,7 +340,7 @@ async function installDependencies() {
   return runFullSetup((type, msg) => log(type, msg));
 }
 
-function startService(name, cmd, args, port = null) {
+function startService(name, cmd, args, port = null, spawnEnv = null) {
   return new Promise((resolve) => {
     log('step', `Khoi dong ${name}...`);
 
@@ -337,7 +348,7 @@ function startService(name, cmd, args, port = null) {
       cwd: PROJECT_DIR,
       shell: true,
       stdio: 'inherit',
-      env: { ...process.env, FORCE_COLOR: '1' },
+      env: { ...pythonEnvPatch(), ...process.env, FORCE_COLOR: '1', ...(spawnEnv || {}) },
     });
 
     child.on('error', (err) => {
@@ -437,9 +448,25 @@ function ensureEnvTokens() {
     modified = true;
   }
 
+  const pyBin = resolvePythonExecutable();
+  const pythonBinRegex = /^PYTHON_BIN=(.*)$/m;
+  const pythonBinMatch = envContent.match(pythonBinRegex);
+  const existingPyBin = pythonBinMatch ? (pythonBinMatch[1] || '').trim() : '';
+  if (pyBin.includes(path.sep) && existingPyBin !== pyBin) {
+    if (pythonBinMatch) {
+      envContent = envContent.replace(pythonBinRegex, `PYTHON_BIN=${pyBin}`);
+    } else {
+      if (envContent.length && !envContent.endsWith('\n')) envContent += '\n';
+      envContent += `PYTHON_BIN=${pyBin}\n`;
+    }
+    modified = true;
+    process.env.PYTHON_BIN = pyBin;
+  }
+
   if (modified || !fs.existsSync(ENV_PATH)) {
     fs.writeFileSync(ENV_PATH, envContent, 'utf8');
     log('ok', 'Da tao/cap nhat .env (NEXTAUTH / INTERNAL_TOKEN / bao mat localhost).');
+    log('warn', 'Khong chia se file .env — chua API keys va token noi bo.');
   }
 
   process.env.INTERNAL_TOKEN = token;
@@ -482,6 +509,14 @@ async function main() {
     process.exit(1);
   }
 
+  let toolStatus = { imagesReady: false, mapsReady: false };
+  try {
+    const { verifyAndRepair } = require('./scripts/verify-and-repair');
+    toolStatus = await verifyAndRepair({ repair: true, log: (type, msg) => log(type, msg) });
+  } catch (e) {
+    log('warn', `Kiem tra cuoi cung: ${e.message}`);
+  }
+
   ensureEnvTokens();
 
   const { assertInstallGuard } = require('./scripts/install-guard');
@@ -504,27 +539,51 @@ async function main() {
     null
   ));
 
+  const pyForEngine = resolvePythonExecutable();
   services.push(await startService(
     'Python Engine (8082)',
-    'python',
+    pyForEngine,
     ['-m', 'uvicorn', 'python_engine.main:app', '--host', '127.0.0.1', '--port', '8082', '--reload'],
     8082
   ));
 
+  const localhostOnly =
+    (process.env.OMNISUITE_LOCALHOST_ONLY || readEnvVar('OMNISUITE_LOCALHOST_ONLY') || '1').trim() !== '0';
+  const nextArgs = ['scripts/run-next-dev.js'];
+  if (!localhostOnly) {
+    log('warn', 'OMNISUITE_LOCALHOST_ONLY=0 — Next.js co the lang nghe tren LAN (rui ro).');
+  }
+
   services.push(await startService(
     'Next.js Frontend (3000)',
     'node',
-    ['--dns-result-order=ipv4first', 'node_modules/next/dist/bin/next', 'dev'],
+    nextArgs,
     3000
   ));
   
-  // Má»Ÿ trÃ¬nh duyá»‡t sau 10 giÃ¢y
+  setTimeout(async () => {
+    try {
+      const { verifyAndRepair } = require('./scripts/verify-and-repair');
+      const st = await verifyAndRepair({ repair: false, quiet: true });
+      toolStatus = st;
+    } catch {
+      /* ignore */
+    }
+    log(
+      'info',
+      `Tim hinh anh: ${toolStatus.imagesReady ? 'San sang' : 'Dang nap CLIP / chua san sang — thu lai sau 1-2 phut'}`,
+    );
+    log(
+      'info',
+      `Quet ban do: ${toolStatus.mapsReady ? 'San sang (Playwright)' : 'Thieu Chromium — chay lai 01_START hoac npm run setup:repair'}`,
+    );
+  }, 12000);
+
   setTimeout(() => {
     log('info', 'Mo trinh duyet...');
     exec('start http://localhost:3000');
   }, 10000);
-  
-  // Hiá»ƒn thá»‹ thÃ´ng tin
+
   console.log('\n');
   console.log(`${colors.green}${colors.bold}`);
   console.log('========================================');
