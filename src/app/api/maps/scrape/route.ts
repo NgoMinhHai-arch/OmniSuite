@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { scrapeGoogleMapsPlaywright, scrapeGoogleMapsSerpApi, MapsRow } from '@/modules/maps/services/mapsService';
-import { PLAYWRIGHT_HEADLESS } from '@/shared/lib/playwright/config';
+import { launchChromium } from '@/shared/lib/playwright/launch';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,8 +41,7 @@ export async function POST(req: Request) {
               if (rows.length > 0) {
                 if (deepScan) {
                   onLog(`📋 Lấy được ${rows.length} kết quả từ API. Bắt đầu Deep Scan...`);
-                  const { chromium } = await import('playwright');
-                  const browser = await chromium.launch({ headless: PLAYWRIGHT_HEADLESS });
+                  const browser = await launchChromium();
                   try {
                     const { discoverWebPresence, findEmailFromWebsite } = await import('@/modules/maps/services/mapsService');
                     for (const row of rows) {
@@ -79,8 +78,9 @@ export async function POST(req: Request) {
 
           send({ type: 'done', message: 'Hoàn thành!' });
         } catch (err: any) {
-          onLog(`💥 Lỗi hệ thống: ${err.message}`);
-          send({ type: 'error', message: err.message });
+          const message = err?.message || String(err);
+          onLog(`💥 Lỗi hệ thống: ${message}`);
+          send({ type: 'error', message });
         } finally {
           controller.close();
         }

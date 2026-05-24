@@ -258,7 +258,11 @@ export default function MapsPage() {
                       setStatus('Hoàn thành!');
                    } else if (rawData.type === 'error') {
                       scanFailed = true;
-                      const message = rawData.message || 'Quét thất bại.';
+                      let message = rawData.message || 'Quét thất bại.';
+                      if (/Executable doesn't exist/i.test(message)) {
+                        message +=
+                          ' — Chạy lại 01_START_OMNISUITE.bat (tự cài Chromium) hoặc: npx playwright install chromium chromium-headless-shell';
+                      }
                       setError(message);
                       setStatus('');
                       addHistory('Quét bản đồ', 'Lỗi quét', message, 'failed');
@@ -283,7 +287,7 @@ export default function MapsPage() {
           } else if (!scanFailed) {
             const hint =
               mode === 'playwright'
-                ? 'Không có kết quả. Kiểm tra Playwright/Chromium đã cài (launcher hoặc npx playwright install chromium).'
+                ? 'Không có kết quả. Kiểm tra Playwright: npx playwright install chromium chromium-headless-shell (hoặc chạy lại launcher / npm run setup:all).'
                 : 'Không có kết quả. Kiểm tra SerpAPI key trong Cấu hình hệ thống.';
             setError(hint);
             addHistory('Quét bản đồ', 'Không có kết quả', hint, 'info');

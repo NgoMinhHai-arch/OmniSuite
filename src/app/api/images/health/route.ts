@@ -8,7 +8,16 @@ import AiProcessManager from '@/shared/lib/aiProcessManager';
 export async function GET() {
   const manager = AiProcessManager.getInstance();
   const status = await manager.getStatus();
-  return NextResponse.json({ status });
+  const lastStartError =
+    status === 'error' || status === 'stopped' ? manager.getLastStartError() : null;
+  return NextResponse.json({
+    status,
+    ...(lastStartError ? { detail: lastStartError, lastStartError } : {}),
+    hint:
+      status === 'stopped' || status === 'error'
+        ? 'Chạy lại 01_START_OMNISUITE.bat hoặc npm run setup:repair để cài Lõi AI (Python + CLIP port 8000).'
+        : undefined,
+  });
 }
 
 /**

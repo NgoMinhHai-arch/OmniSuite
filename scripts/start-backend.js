@@ -1,8 +1,14 @@
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const net = require('net');
+const fs = require('fs');
 
 const PROJECT_DIR = path.join(__dirname, '..');
+const { resolvePythonExecutable, pythonEnvPatch } = require('./resolve-python');
+
+function resolvePythonCmd() {
+  return resolvePythonExecutable();
+}
 const PYTHON_SCRIPT = path.join(__dirname, 'interpreter_service.py');
 const PORT = 8081;
 
@@ -30,19 +36,46 @@ function checkPort(port) {
   });
 }
 
-function preflightImport(moduleName, label) {
+async function runRepairOnce(scope) {
   try {
-    execSync(`python -c "import ${moduleName}"`, {
-      cwd: PROJECT_DIR,
-      stdio: 'pipe',
-      windowsHide: true,
-    });
+    const { verifyAndRepair } = require('./verify-and-repair');
+    await verifyAndRepair({ repair: true, only: scope, quiet: true });
     return true;
   } catch {
-    console.error(`[LOI] Thieu Python module "${moduleName}" cho ${label}.`);
-    console.error('      Chay: scripts\\setup_deps.bat hoac pip install -r python_engine/requirements.txt');
     return false;
   }
+}
+
+async function preflightImport(moduleName, label, repairScope) {
+  const py = resolvePythonCmd();
+  const tryImport = () => {
+    try {
+      execSync(`"${py}" -c "import ${moduleName}"`, {
+        cwd: PROJECT_DIR,
+        stdio: 'pipe',
+        windowsHide: true,
+        env: pythonEnvPatch(),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  if (tryImport()) return true;
+
+  if (repairScope) {
+    console.log(`[INFO] Tu dong sua loi Python (${label})...`);
+    await runRepairOnce(repairScope);
+    if (tryImport()) {
+      console.log(`[OK] Da sua: import ${moduleName} cho ${label}`);
+      return true;
+    }
+  }
+
+  console.error(`[LOI] Thieu Python module "${moduleName}" cho ${label}.`);
+  console.error('      Chay lai: 01_START_OMNISUITE.bat hoac npm run setup:repair');
+  return false;
 }
 
 function scheduleRestart(state, startFn, serviceLabel, code) {
@@ -67,11 +100,12 @@ function scheduleRestart(state, startFn, serviceLabel, code) {
   setTimeout(() => startFn(), delay);
 }
 
-function spawnPython(scriptPath, label, state, startFn) {
-  const python = spawn('python', [scriptPath], {
-    cwd: PROJECT_DIR,
+function spawnPython(scriptPath, label, state, startFn, cwd = PROJECT_DIR) {
+  const python = spawn(resolvePythonCmd(), [scriptPath], {
+    cwd,
     stdio: 'inherit',
     shell: false,
+    env: pythonEnvPatch(),
   });
 
   python.on('error', (err) => {
@@ -99,7 +133,7 @@ async function startPythonBackend() {
     return;
   }
 
-  if (!preflightImport('flask', 'Python backend (8081)')) {
+  if (!(await preflightImport('flask', 'Python backend (8081)', 'flask'))) {
     backendState.stopped = true;
     return;
   }
@@ -118,13 +152,14 @@ async function startImagePipeline() {
     return;
   }
 
-  if (!preflightImport('uvicorn', 'Image Pipeline (8000)')) {
+  if (!(await preflightImport('uvicorn', 'Image Pipeline (8000)', 'clip'))) {
     pipelineState.stopped = true;
     return;
   }
 
   console.log(`🚀 Starting Image Pipeline (CLIP) (Port ${PIPELINE_PORT})...`);
-  spawnPython(PIPELINE_SCRIPT, 'Image Pipeline', pipelineState, startImagePipeline);
+  const clipDir = path.join(PROJECT_DIR, 'services', 'clip_service');
+  spawnPython(PIPELINE_SCRIPT, 'Image Pipeline', pipelineState, startImagePipeline, clipDir);
 }
 
 console.log('==========================================');

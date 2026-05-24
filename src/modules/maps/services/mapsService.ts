@@ -1,6 +1,5 @@
-import { chromium } from 'playwright';
 import axios from 'axios';
-import { PLAYWRIGHT_HEADLESS, PLAYWRIGHT_LAUNCH_ARGS } from '@/shared/lib/playwright/config';
+import { launchChromium } from '@/shared/lib/playwright/launch';
 
 export interface MapsRow {
   keyword: string;
@@ -280,10 +279,7 @@ export async function scrapeGoogleMapsPlaywright({
   onRow: (row: MapsRow) => void, 
   onLog: (msg: string) => void 
 }) {
-  const browser = await chromium.launch({ 
-    headless: PLAYWRIGHT_HEADLESS,
-    args: PLAYWRIGHT_LAUNCH_ARGS, 
-  });
+  const browser = await launchChromium();
   const context = await browser.newContext({
     viewport: { width: 1280, height: 800 },
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'

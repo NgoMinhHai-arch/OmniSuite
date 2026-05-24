@@ -48,7 +48,12 @@ export async function scrapeImages(
     const isReady = await manager.ensureStarted(onProgress);
 
     if (!isReady) {
-      throw new Error("Không thể khởi động Lõi AI. Vui lòng kiểm tra môi trường Python.");
+      const detail = manager.getLastStartError();
+      throw new Error(
+        detail
+          ? `Không thể khởi động Lõi AI (port 8000): ${detail}`
+          : 'Không thể khởi động Lõi AI (port 8000). Chạy launcher (01_START) hoặc npm run setup:all, rồi thử lại.',
+      );
     }
 
     const fs: ImageFilterStrength =
