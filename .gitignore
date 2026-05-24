@@ -100,3 +100,10 @@ OmniSuite.exe
 
 # Git temp files
 *.tmp
+
+# Project local rules
+PROJECT_RULES.md
+Lu?t l? khi th?c hi?n d? án.md
+
+# Internal docs
+/Lu?t l? khi th?c hi?n d? án.md
