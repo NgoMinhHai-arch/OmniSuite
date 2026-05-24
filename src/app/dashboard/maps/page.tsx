@@ -25,6 +25,7 @@ import Button from '@/shared/ui/Button';
 import Input from '@/shared/ui/Input';
 import Typography from '@/shared/ui/Typography';
 import { motion, AnimatePresence } from 'framer-motion';
+import { trackToolUsage, addHistory, trackAPICall } from '@/shared/utils/metrics';
 
 export default function MapsPage() {
   const categoryMap: { [key: string]: string } = {
@@ -113,6 +114,7 @@ export default function MapsPage() {
   const [mode, setMode] = useState<'playwright' | 'api'>('playwright');
   const [deepScan, setDeepScan] = useState(false);
   const [status, setStatus] = useState('');
+  const [error, setError] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [provider, setProvider] = useState<'serpapi'>('serpapi');
 
@@ -160,7 +162,7 @@ export default function MapsPage() {
 
   // --- PERSISTENCE: LOAD ---
   useEffect(() => {
-    const saved = sessionStorage.getItem(PERSIST_KEY);
+    const saved = localStorage.getItem(PERSIST_KEY);
     if (saved) {
       try {
         const { results: r, keyword: k, location: l } = JSON.parse(saved);
@@ -183,15 +185,19 @@ export default function MapsPage() {
      if (!keyword.trim()) return;
      setIsLoading(true);
      setResults([]);
+     setError('');
+     setStatus('Đang khởi động quét...');
      
      startTask('maps_scraping', async (update) => {
        let allResults: any[] = [];
+       let scanFailed = false;
        try {
+          trackToolUsage('maps');
           const response = await fetch('/api/maps/scrape', {
              method: 'POST',
              headers: { 'Content-Type': 'application/json' },
              body: JSON.stringify({ 
-               keyword: `${keyword} ${location}`, 
+               keyword: `${keyword} ${location}`.trim(), 
                maxResults, 
                mode, 
                deepScan, 
@@ -199,8 +205,29 @@ export default function MapsPage() {
                provider 
              }),
           });
+
+          if (!response.ok) {
+            let message = `Lỗi máy chủ (${response.status})`;
+            try {
+              const errJson = await response.json();
+              if (errJson?.error) message = errJson.error;
+            } catch {
+              try {
+                const text = await response.text();
+                if (text) message = text.slice(0, 200);
+              } catch { /* ignore */ }
+            }
+            setError(message);
+            setStatus('');
+            addHistory('Quét bản đồ', 'Quét thất bại', message, 'failed');
+            throw new Error(message);
+          }
           
-          if (!response.body) return;
+          if (!response.body) {
+            const message = 'Máy chủ không trả về luồng dữ liệu.';
+            setError(message);
+            throw new Error(message);
+          }
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
           let buffer = '';
@@ -229,11 +256,37 @@ export default function MapsPage() {
                    } else if (rawData.type === 'done') {
                       update({ progress: 'Hoàn thành!' });
                       setStatus('Hoàn thành!');
+                   } else if (rawData.type === 'error') {
+                      scanFailed = true;
+                      const message = rawData.message || 'Quét thất bại.';
+                      setError(message);
+                      setStatus('');
+                      addHistory('Quét bản đồ', 'Lỗi quét', message, 'failed');
                    }
                 } catch (e) {
                    console.error("Lỗi parse dữ liệu Maps:", e);
                 }
              }
+          }
+
+          if (mode === 'api' && apiKey.trim()) {
+            trackAPICall('SerpAPI');
+          }
+
+          if (allResults.length > 0) {
+            addHistory(
+              'Quét bản đồ',
+              'Quét thành công',
+              `${allResults.length} địa điểm · "${keyword}"${location ? ` · ${location}` : ''}`,
+              'success',
+            );
+          } else if (!scanFailed) {
+            const hint =
+              mode === 'playwright'
+                ? 'Không có kết quả. Kiểm tra Playwright/Chromium đã cài (launcher hoặc npx playwright install chromium).'
+                : 'Không có kết quả. Kiểm tra SerpAPI key trong Cấu hình hệ thống.';
+            setError(hint);
+            addHistory('Quét bản đồ', 'Không có kết quả', hint, 'info');
           }
        } catch (err) {
           console.error(err);
@@ -562,11 +615,25 @@ export default function MapsPage() {
                      
                      <div className="relative text-center space-y-8 max-w-md">
                         <div className="p-6 bg-violet-500/5 rounded-[3rem] w-fit mx-auto border border-dashed border-violet-500/20">
-                           <Map size={80} className="text-violet-400/20 animate-pulse" />
+                           <Map size={80} className={`text-violet-400/20 ${isLoading ? 'animate-pulse' : ''}`} />
                         </div>
                         <div className="space-y-4">
-                           <Typography variant="h3" className="font-black uppercase text-2xl tracking-widest mb-0" style={{ color: 'var(--text-primary)' }}>Sẵn sàng quét</Typography>
-                           <p className="text-xs font-black uppercase tracking-[0.4em] leading-loose" style={{ color: 'var(--text-muted)' }}>Vui lòng nhập từ khóa và địa điểm để bắt đầu quét bản đồ.</p>
+                           <Typography variant="h3" className="font-black uppercase text-2xl tracking-widest mb-0" style={{ color: 'var(--text-primary)' }}>
+                              {isLoading ? 'Đang quét...' : error ? 'Quét không thành công' : 'Sẵn sàng quét'}
+                           </Typography>
+                           {isLoading && status && (
+                              <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest animate-pulse">{status}</p>
+                           )}
+                           {error && (
+                              <p className="text-xs font-semibold leading-relaxed px-4 py-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 text-rose-300">
+                                 {error}
+                              </p>
+                           )}
+                           {!isLoading && !error && (
+                              <p className="text-xs font-black uppercase tracking-[0.4em] leading-loose" style={{ color: 'var(--text-muted)' }}>
+                                 Vui lòng nhập từ khóa và địa điểm để bắt đầu quét bản đồ.
+                              </p>
+                           )}
                         </div>
                      </div>
                   </div>

@@ -65,6 +65,108 @@ function runCommand(cmd, args, options = {}) {
   });
 }
 
+const MS_PLAYWRIGHT_DIR = () =>
+  process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'ms-playwright') : '';
+
+/** Uoc luong dung luong ms-playwright (tai + giai nen). */
+function msPlaywrightBytes() {
+  const base = MS_PLAYWRIGHT_DIR();
+  if (!base || !fs.existsSync(base)) return 0;
+
+  function walk(dir) {
+    let total = 0;
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, ent.name);
+      try {
+        if (ent.isDirectory()) total += walk(full);
+        else total += fs.statSync(full).size;
+      } catch {
+        /* locked / partial write */
+      }
+    }
+    return total;
+  }
+
+  try {
+    return walk(base);
+  } catch {
+    return 0;
+  }
+}
+
+/** Playwright co the tai nhieu goi (chromium, headless shell...) — % co the reset. */
+function createPlaywrightProgressTracker() {
+  let downloadPct = 0;
+  let packageIndex = 1;
+  let prevDownloadPct = 0;
+
+  return {
+    noteOutput(text) {
+      for (const m of text.matchAll(/(\d{1,3})%/g)) {
+        const pct = Number(m[1]);
+        if (Number.isNaN(pct) || pct < 0 || pct > 100) continue;
+        if (pct < prevDownloadPct - 15 && prevDownloadPct >= 80) packageIndex += 1;
+        prevDownloadPct = pct;
+        downloadPct = pct;
+      }
+    },
+    snapshot() {
+      if (chromiumBrowserReady()) {
+        return { overallPct: 100, label: 'Hoan tat' };
+      }
+
+      const bytes = msPlaywrightBytes();
+      const extractTarget = 260 * 1024 * 1024;
+      const extractPct = bytes > 0 ? Math.min(99, Math.round((bytes / extractTarget) * 100)) : 0;
+
+      if (downloadPct > 0 && downloadPct < 100) {
+        const overallPct = Math.max(1, Math.round(downloadPct * 0.55));
+        return {
+          overallPct,
+          label: `Dang tai goi ${packageIndex} (${downloadPct}%)`,
+        };
+      }
+
+      if (downloadPct >= 100 || bytes > 2 * 1024 * 1024) {
+        const overallPct = Math.min(99, 55 + Math.round(extractPct * 0.44));
+        return {
+          overallPct,
+          label: downloadPct >= 100 ? 'Giai nen / cai driver' : 'Dang chuan bi giai nen',
+        };
+      }
+
+      return { overallPct: Math.max(1, Math.round(extractPct * 0.4)), label: 'Bat dau tai Chromium' };
+    },
+  };
+}
+
+/** Chay lenh, doc % tu stdout/stderr Playwright va van hien log goc. */
+function runCommandWithPlaywrightProgress(cmd, args, tracker, options = {}) {
+  const isShellRequired = process.platform === 'win32' && (cmd === 'npm' || cmd === 'npx');
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, {
+      cwd: PROJECT_DIR,
+      shell: isShellRequired,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' },
+    });
+
+    const relay = (chunk, stream) => {
+      tracker.noteOutput(chunk.toString());
+      stream.write(chunk);
+    };
+
+    child.stdout.on('data', (chunk) => relay(chunk, process.stdout));
+    child.stderr.on('data', (chunk) => relay(chunk, process.stderr));
+
+    child.on('close', (code) => {
+      if (code === 0 || options.ignoreError) resolve(code);
+      else reject(new Error(`${cmd} exited ${code}`));
+    });
+    child.on('error', reject);
+  });
+}
+
 /** Nhac nguoi dung moi ~6s khi lenh lau ma it log (tranh tuong may treo). */
 async function runWithWaitIndicator(promise, logFn, hints) {
   const lines = Array.isArray(hints) ? hints : [hints];
@@ -82,6 +184,27 @@ async function runWithWaitIndicator(promise, logFn, hints) {
     return await promise;
   } finally {
     clearInterval(timer);
+  }
+}
+
+/** Playwright: hien % tong (tai + giai nen) moi ~3s. */
+async function runPlaywrightInstall(cmd, args, logFn) {
+  const tracker = createPlaywrightProgressTracker();
+  let sec = 0;
+  const spinner = ['|', '/', '-', '\\'];
+  const timer = setInterval(() => {
+    sec += 3;
+    const { overallPct, label } = tracker.snapshot();
+    const spin = spinner[Math.floor(sec / 3) % spinner.length];
+    logFn('info', `  ${spin} ${overallPct}% — ${label} (${sec}s)`);
+  }, 3000);
+
+  try {
+    await runCommandWithPlaywrightProgress(cmd, args, tracker, { ignoreError: true });
+  } finally {
+    clearInterval(timer);
+    const { overallPct } = tracker.snapshot();
+    if (overallPct >= 100) logFn('info', '  100% — Playwright Chromium san sang');
   }
 }
 
@@ -226,17 +349,9 @@ async function runFullSetup(log = () => {}) {
     playwrightOk = true;
   } else if (installBrowsers) {
     logFn('step', 'Buoc 4/5: Playwright Chromium — tai trinh duyet automation');
-    logFn('info', '  Sau khi hien 100%%, co the im lang 2-8 phut — dang giai nen / cai them thanh phan.');
+    logFn('info', '  % cap nhat moi 3s — sau 100% tai co the im lang vai phut khi giai nen.');
     try {
-      await runWithWaitIndicator(
-        runCommand('npx', ['playwright', 'install', 'chromium'], { ignoreError: true }),
-        logFn,
-        [
-          'Playwright: dang giai nen Chromium sau khi tai xong',
-          'Khong tat cua so CMD — may van dang xu ly',
-          'Co the tai them headless shell / driver',
-        ],
-      );
+      await runPlaywrightInstall('npx', ['playwright', 'install', 'chromium'], logFn);
       playwrightOk = chromiumBrowserReady();
       if (playwrightOk) logFn('ok', '  Playwright (Node) chromium — xong');
       else logFn('warn', '  Chromium chua thay trong ms-playwright — thu buoc Python...');
@@ -247,11 +362,7 @@ async function runFullSetup(log = () => {}) {
     if (!playwrightOk) {
       logFn('step', '  pip/playwright: cai Chromium cho Python...');
       try {
-        await runWithWaitIndicator(
-          runCommand(py, ['-m', 'playwright', 'install', 'chromium'], { ignoreError: true }),
-          logFn,
-          ['Playwright Python: dang tai hoac giai nen trinh duyet', 'Cho them vai phut neu man hinh im'],
-        );
+        await runPlaywrightInstall(py, ['-m', 'playwright', 'install', 'chromium'], logFn);
         playwrightOk = chromiumBrowserReady();
         if (playwrightOk) logFn('ok', '  Playwright (Python) chromium — xong');
       } catch {
