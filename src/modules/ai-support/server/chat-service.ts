@@ -19,6 +19,7 @@ import {
   buildIntegrationsAnswer,
   integrationsRegistryPromptBlock,
 } from '@/modules/ai-support/domain/integrations-registry';
+import { buildTaiDownloadAnswer } from '@/modules/ai-support/domain/integration-download-guide';
 import { buildKeys, type AiSupportLlmParams } from './types';
 import {
   classifyButlerWebSearchQuery,
@@ -28,7 +29,14 @@ import {
   shouldAttemptAutoWebSearch,
 } from './web-search-for-butler';
 
-export type ChatIntent = 'chat' | 'plan' | 'static' | 'system_check' | 'runner' | 'web_search';
+export type ChatIntent =
+  | 'chat'
+  | 'plan'
+  | 'static'
+  | 'system_check'
+  | 'integration_status'
+  | 'runner'
+  | 'web_search';
 
 export function resolveChatIntent(message: string): {
   intent: ChatIntent;
@@ -41,6 +49,9 @@ export function resolveChatIntent(message: string): {
   if (cmd?.handlerKind === 'web_search') return { intent: 'web_search', command: cmd.command, args: parsed.args };
   if (cmd?.handlerKind === 'static') return { intent: 'static', command: cmd.command, args: parsed.args };
   if (cmd?.handlerKind === 'system_check') return { intent: 'system_check', command: cmd.command, args: parsed.args };
+  if (cmd?.handlerKind === 'integration_status') {
+    return { intent: 'integration_status', command: cmd.command, args: parsed.args };
+  }
   if (cmd?.handlerKind === 'runner') return { intent: 'runner', command: cmd.command, args: parsed.args };
   if (cmd?.handlerKind === 'chat') return { intent: 'chat', command: cmd.command, args: parsed.args };
 
@@ -64,7 +75,7 @@ export function buildHelpMessage(): string {
     '',
     'Chat thường: cứ nhắn tiếng Việt; có Tavily/SerpAPI trong Cấu hình thì em có thể tự lên web khi cần.',
     'Bắt buộc tìm web: `/web <truy vấn>`.',
-    'Runner (/run, /run-browser, /apply, /score): cần bật AI_SUPPORT_RUNNER_ENABLED và PYTHON_BIN (.venv-runners) — xem /integrations.',
+    'Runner (/run, /run-browser): lần đầu tự tải gói — /tai · Bảng đã/chưa tải: /tai-bang. Cần AI_SUPPORT_RUNNER_ENABLED + PYTHON_BIN.',
     'Luôn mở Quản gia trên đúng URL máy chủ Next (npm run dev / next start), cùng origin với /api — preview/embed khác host thì slash và runner sẽ lỗi.',
     'Mới vào OmniSuite? `/tour`.',
   ].join('\n');
@@ -101,6 +112,8 @@ export function tryHandleStaticSlash(message: string): string | null {
       return buildTroubleshootAnswer(args);
     case '/integrations':
       return buildIntegrationsAnswer();
+    case '/tai':
+      return buildTaiDownloadAnswer(args);
     default:
       return null;
   }

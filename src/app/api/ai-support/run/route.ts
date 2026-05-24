@@ -15,11 +15,26 @@
 import { NextResponse } from 'next/server';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import {
   RUNNERS,
   RUNNER_MAX_TASK_LEN,
   type RunnerId,
 } from '@/modules/ai-support/domain/runner-registry.generated';
+import {
+  buildAfterDownloadLog,
+  buildPreDownloadLog,
+  buildSetupRequiredInstructions,
+  runnerNeedsDownload,
+} from '@/modules/ai-support/domain/integration-download-guide';
+
+const requireCjs = createRequire(path.join(process.cwd(), 'package.json'));
+const { ensureIntegrationForRunnerAsync } = requireCjs('./scripts/lib/ensure-integration.js') as {
+  ensureIntegrationForRunnerAsync: (
+    runnerId: string,
+    opts?: { onLog?: (line: string) => void },
+  ) => Promise<{ ok: boolean; message?: string; fetched?: boolean }>;
+};
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -162,39 +177,90 @@ export async function POST(req: Request) {
     return buildRejection(`Thiếu/sai input cho runner=${runner}.`, 400);
   }
 
-  const runnerPath = path.resolve(process.cwd(), RUNNERS[runner]);
-  const child: ChildProcessWithoutNullStreams = spawn(PYTHON_BIN, [runnerPath], {
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      PYTHONIOENCODING: 'utf-8',
-      PYTHONUNBUFFERED: '1',
-    },
-    windowsHide: true,
-  });
-
-  let aborted = false;
-  req.signal.addEventListener('abort', () => {
-    aborted = true;
-    try { child.kill('SIGTERM'); } catch { /* noop */ }
-    setTimeout(() => {
-      try { if (!child.killed) child.kill('SIGKILL'); } catch { /* noop */ }
-    }, 1500);
-  });
-
-  try {
-    child.stdin.write(JSON.stringify(payload) + '\n');
-    child.stdin.end();
-  } catch (err) {
-    try { child.kill('SIGTERM'); } catch { /* noop */ }
-    return buildRejection(`Không gửi được input cho runner: ${err instanceof Error ? err.message : String(err)}`, 500);
-  }
-
   const encoder = new TextEncoder();
-  let stderrBuf = '';
+  const enqueueJson = (controller: ReadableStreamDefaultController<Uint8Array>, obj: object) => {
+    controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
+  };
+
+  let childRef: ChildProcessWithoutNullStreams | null = null;
 
   const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
+    async start(controller) {
+      if (runnerNeedsDownload(runner)) {
+        enqueueJson(controller, { type: 'log', level: 'info', message: buildPreDownloadLog(runner) });
+      }
+
+      const integrationCheck = await ensureIntegrationForRunnerAsync(runner, {
+        onLog: (line) => enqueueJson(controller, { type: 'log', level: 'info', message: line }),
+      });
+
+      if (!integrationCheck.ok) {
+        enqueueJson(controller, {
+          type: 'setup_required',
+          runner,
+          missing: ['integration_repo'],
+          instructions: buildSetupRequiredInstructions(
+            runner,
+            ['integration_repo'],
+            integrationCheck.message,
+          ),
+        });
+        controller.close();
+        return;
+      }
+
+      if (integrationCheck.fetched) {
+        enqueueJson(controller, { type: 'log', level: 'info', message: buildAfterDownloadLog(runner) });
+      }
+
+      const runnerPath = path.resolve(process.cwd(), RUNNERS[runner]);
+      const child: ChildProcessWithoutNullStreams = spawn(PYTHON_BIN, [runnerPath], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PYTHONIOENCODING: 'utf-8',
+          PYTHONUNBUFFERED: '1',
+        },
+        windowsHide: true,
+      });
+      childRef = child;
+
+      let aborted = false;
+      req.signal.addEventListener('abort', () => {
+        aborted = true;
+        try {
+          child.kill('SIGTERM');
+        } catch {
+          /* noop */
+        }
+        setTimeout(() => {
+          try {
+            if (!child.killed) child.kill('SIGKILL');
+          } catch {
+            /* noop */
+          }
+        }, 1500);
+      });
+
+      try {
+        child.stdin.write(`${JSON.stringify(payload)}\n`);
+        child.stdin.end();
+      } catch (err) {
+        try {
+          child.kill('SIGTERM');
+        } catch {
+          /* noop */
+        }
+        enqueueJson(controller, {
+          type: 'error',
+          error: `Không gửi được input cho runner: ${err instanceof Error ? err.message : String(err)}`,
+        });
+        controller.close();
+        return;
+      }
+
+      let stderrBuf = '';
+
       const onStdout = (chunk: Buffer) => {
         controller.enqueue(chunk);
       };
@@ -203,39 +269,33 @@ export async function POST(req: Request) {
         if (stderrBuf.length > 16_384) stderrBuf = stderrBuf.slice(-16_384);
       };
       const onError = (err: Error) => {
-        controller.enqueue(
-          encoder.encode(JSON.stringify({ type: 'error', error: `Spawn error: ${err.message}` }) + '\n'),
-        );
+        enqueueJson(controller, { type: 'error', error: `Spawn error: ${err.message}` });
       };
       const onClose = (code: number | null, signal: NodeJS.Signals | null) => {
         if (aborted) {
-          controller.enqueue(encoder.encode(JSON.stringify({ type: 'aborted' }) + '\n'));
+          enqueueJson(controller, { type: 'aborted' });
         } else if (code === 2) {
-          // Setup required: runner đã in event setup_required → chỉ cần kết thúc.
+          // Runner đã in setup_required trên stdout.
         } else if (code !== 0) {
           const tail = stderrBuf.split('\n').filter(Boolean).slice(-4).join(' | ');
-          controller.enqueue(
-            encoder.encode(
-              JSON.stringify({
-                type: 'exit',
-                code,
-                signal,
-                stderr_tail: tail,
-              }) + '\n',
-            ),
-          );
+          enqueueJson(controller, { type: 'exit', code, signal, stderr_tail: tail });
         } else {
-          controller.enqueue(encoder.encode(JSON.stringify({ type: 'exit', code: 0 }) + '\n'));
+          enqueueJson(controller, { type: 'exit', code: 0 });
         }
         controller.close();
       };
+
       child.stdout.on('data', onStdout);
       child.stderr.on('data', onStderr);
       child.on('error', onError);
       child.on('close', onClose);
     },
     cancel() {
-      try { child.kill('SIGTERM'); } catch { /* noop */ }
+      try {
+        childRef?.kill('SIGTERM');
+      } catch {
+        /* noop */
+      }
     },
   });
 

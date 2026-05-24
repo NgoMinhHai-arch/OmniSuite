@@ -32,6 +32,9 @@ function generateIntegrationsRegistry(manifest) {
       `    setupHint: ${esc(it.setupHint)},`,
     ];
     if (it.slashCommand) lines.push(`    slashCommand: ${esc(it.slashCommand)},`);
+    if (it.repository) lines.push(`    repository: ${esc(it.repository)},`);
+    if (it.cloneHint) lines.push(`    cloneHint: ${esc(it.cloneHint)},`);
+    if (it.category) lines.push(`    category: ${esc(it.category)},`);
     if (it.probe) {
       lines.push(
         `    probe: { bin: ${esc(it.probe.bin)}, args: ${JSON.stringify(it.probe.args)} },`,

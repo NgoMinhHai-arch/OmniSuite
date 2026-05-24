@@ -25,6 +25,7 @@ import {
   responseContentTypeLooksHtml,
   tryParseNdjsonErrorLine,
 } from '@/shared/lib/api-response-help';
+import { buildDownloadGuideForRunner } from '@/modules/ai-support/domain/integration-download-guide';
 
 const SETTINGS_KEY = 'omnisuite_settings';
 const CHAT_STORAGE_KEY = 'omnisuite_ai_support_chat_v3';
@@ -312,7 +313,9 @@ export default function AiSupportPage() {
               '  /tools             — danh sách trang sidebar',
               '  /check             — key/provider/Tavily đã có chưa',
               '  /settings          — nhắc chỗ nhập key & Ollama',
-              '  /integrations      — integration đã clone + runner (/run …)',
+              '  /integrations      — danh sách integration + runner',
+              '  /tai               — hướng dẫn tải gói (OpenManus, Crawl4AI…)',
+              '  /tai-bang          — bảng đã tải / chưa tải trên máy',
               '',
               'Tra cứu & LLM',
               '  /howto <chủ đề>    — ví dụ: /howto viết bài SEO',
@@ -324,9 +327,9 @@ export default function AiSupportPage() {
               '  /plan <mục tiêu>   — kế hoạch 3 tầng (não · agent · công cụ)',
               '  /browser <mục tiêu> — như /plan nhưng ưu tiên browser agent',
               '',
-              'Runner trên máy bạn (cần AI_SUPPORT_RUNNER_ENABLED + PYTHON_BIN trong .venv-runners)',
+              'Runner trên máy bạn (bật AI_SUPPORT_RUNNER_ENABLED; lần đầu /run tự tải OpenManus)',
               '  /run <nhiệm vụ>    — ví dụ: /run liệt kê file .pdf trong Downloads',
-              '  /run-browser …     — ví dụ: /run-browser mở duckduckgo.com tìm "USD VND"',
+              '  /run-browser …     — lần đầu tự tải browser-use — ví dụ: tìm "USD VND" trên web',
               '  /apply doctor      — ApplyPilot kiểm tra môi trường',
               '  /score <JD>        — ví dụ: /score Senior Backend Python remote AWS …',
               '',
@@ -492,6 +495,9 @@ export default function AiSupportPage() {
 
         if (ndErr) {
           appendLog(ndErr);
+          if (resp.status === 503) {
+            buildDownloadGuideForRunner(args.runner).split('\n').forEach((line) => appendLog(line));
+          }
           finalize(`${args.title}: lỗi (HTTP ${resp.status})`);
           return;
         }
@@ -585,10 +591,14 @@ export default function AiSupportPage() {
             setHeader(`${args.title}: hoàn thành`);
             break;
           case 'setup_required':
-            appendLog('Runner chưa được cài đầy đủ:');
+            appendLog('Cần tải hoặc cài thêm trước khi chạy:');
             if (event.missing?.length) appendLog(`Thiếu: ${event.missing.join(', ')}`);
-            if (event.instructions) appendLog(event.instructions);
-            setHeader(`${args.title}: cần cài thêm`);
+            if (event.instructions) {
+              event.instructions.split('\n').forEach((line) => appendLog(line));
+            } else {
+              buildDownloadGuideForRunner(args.runner).split('\n').forEach((line) => appendLog(line));
+            }
+            setHeader(`${args.title}: cần tải/cài thêm — xem log bên dưới`);
             fatal = true;
             break;
           case 'error':
@@ -666,8 +676,16 @@ export default function AiSupportPage() {
             role: 'assistant',
             kind: 'chat',
             animateReveal: true,
-            content:
-              'Cú pháp: /run <nhiệm vụ tiếng Việt hoặc English>.\n\nVí dụ:\n  /run đếm số file trong thư mục Documents và in ra 5 file mới nhất\n  /run tạo file notes.txt trên Desktop với dòng chữ "OmniSuite demo"\n\nCần AI_SUPPORT_RUNNER_ENABLED=true và PYTHON_BIN trỏ .venv-runners (xem /integrations).',
+            content: [
+              'Cú pháp: /run <nhiệm vụ tiếng Việt hoặc English>.',
+              '',
+              'Ví dụ:',
+              '  /run đếm số file trong thư mục Documents và in ra 5 file mới nhất',
+              '  /run tạo file notes.txt trên Desktop với dòng chữ "OmniSuite demo"',
+              '',
+              'Lần đầu dùng: OmniSuite tự tải OpenManus (~200–400 MB) — chỉ cần clone repo và chờ trong log runner.',
+              'Cần AI_SUPPORT_RUNNER_ENABLED=true. Pip/venv: xem /tai hoặc /integrations.',
+            ].join('\n'),
           },
         ]);
         setSending(false);
@@ -694,8 +712,15 @@ export default function AiSupportPage() {
             role: 'assistant',
             kind: 'chat',
             animateReveal: true,
-            content:
-              'Cú pháp: /run-browser <nhiệm vụ mô tả từng bước trên web>.\n\nVí dụ:\n  /run-browser mở https://news.ycombinator.com và lấy tiêu đề 3 bài đầu trang\n  /run-browser vào google.com tìm "Next.js 15" và tóm tắt kết quả đầu tiên\n\nCần runner bật + browser-use + Playwright Chromium trong venv (scripts/setup-runners-venv.ps1).',
+            content: [
+              'Cú pháp: /run-browser <nhiệm vụ mô tả từng bước trên web>.',
+              '',
+              'Ví dụ:',
+              '  /run-browser mở https://news.ycombinator.com và lấy tiêu đề 3 bài đầu trang',
+              '  /run-browser vào google.com tìm "Next.js 15" và tóm tắt kết quả đầu tiên',
+              '',
+              'Lần đầu dùng: tự tải browser-use (~100–150 MB). Sau đó có thể cần Playwright trong venv — /tai.',
+            ].join('\n'),
           },
         ]);
         setSending(false);

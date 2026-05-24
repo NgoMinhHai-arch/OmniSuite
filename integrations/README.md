@@ -22,12 +22,20 @@ integrations/manifest.json     ← nguồn sự thật (SSOT)
 | **runners** | Cầu nối OmniSuite → subprocess Python (NDJSON) |
 | **external-app** | Chạy độc lập; registry chỉ hướng dẫn setup |
 
-## Lệnh thường dùng
+## Cách dùng (người dùng cuối)
+
+1. `git clone https://github.com/NgoMinhHai-arch/OmniSuite.git`
+2. `npm install` + chạy `01_START_OMNISUITE.bat`
+3. Trong **Quản gia AI**, lần đầu gõ `/run` hoặc `/run-browser` → app **tự tải** đúng gói đó (không tải hết lúc setup).
+
+## Lệnh tùy chọn (dev / tải tay)
 
 ```bash
-npm run integrations:sync      # git submodule update
-npm run integrations:verify    # kiểm tra submodule + manifest
-npm run integrations:codegen   # tái sinh registry từ manifest
+npm run integrations:fetch -- open_manus    # chỉ OpenManus
+npm run integrations:fetch -- browser_use     # chỉ browser-use
+npm run integrations:sync:all                 # tải hết (không bắt buộc)
+npm run integrations:validate
+npm run integrations:codegen
 ```
 
 ## Thêm integration mới

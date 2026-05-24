@@ -5,6 +5,7 @@ import {
   resolveChatIntent,
   tryHandleStaticSlash,
 } from '@/modules/ai-support/server/chat-service';
+import { buildIntegrationsStatusTable } from '@/modules/ai-support/server/integration-status';
 import { generateAiSupportPlan } from '@/modules/ai-support/server/plan-service';
 import type { ClientKeys } from '@/modules/ai-support/server/types';
 import {
@@ -60,6 +61,13 @@ export async function POST(req: Request) {
       return NextResponse.json({
         kind: 'chat',
         message: buildSystemCheckAnswer(merged),
+      });
+    }
+
+    if (intent.intent === 'integration_status' || intent.command === '/tai-bang') {
+      return NextResponse.json({
+        kind: 'chat',
+        message: buildIntegrationsStatusTable(process.cwd()),
       });
     }
 

@@ -1,26 +1,30 @@
 #!/usr/bin/env node
 /**
- * Đồng bộ integrations (git submodule) + optional shallow clone OpenManus nếu chưa có submodule (mirror).
+ * Đồng bộ integrations (git submodule) — TÙY CHỌN, không chạy lúc 01_START.
+ *
+ * Người dùng thường chỉ cần: git clone repo OmniSuite.
+ * Lần đầu dùng /run, /run-browser… Quản gia tự gọi fetch-integration (tải đúng gói đó).
  *
  * Usage:
- *   node scripts/sync-integrations.js           # submodule sync/update + shallow clone open-manus nếu thiếu
- *   node scripts/sync-integrations.js --verify  # chỉ kiểm tra (CI / sau clone): thoát !=0 nếu submodule chưa init
- *   node scripts/sync-integrations.js --no-open-manus
- *   node scripts/sync-integrations.js --remote # CẬN THẬN: kéo nhánh remote (lệch commit pin của OmniSuite)
+ *   node scripts/fetch-integration.js open_manus   # khuyến nghị: tải từng gói khi cần
+ *   node scripts/sync-integrations.js --all        # tải hết submodule (dev/CI)
+ *   node scripts/sync-integrations.js --verify
+ *   node scripts/sync-integrations.js --only=browser_use
  */
 
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
-const path = require('node:path');
+const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const OPEN_MANUS_URL = 'https://github.com/FoundationAgents/OpenManus.git';
-const OPEN_MANUS_REL = path.join('integrations', 'ai-support', 'submodules', 'open-manus');
+const { loadManifest, submoduleIntegrations } = require('./lib/integrations-manifest');
 
 const args = process.argv.slice(2);
 const VERIFY_ONLY = args.includes('--verify');
-const NO_OPEN_MANUS = args.includes('--no-open-manus');
+const SYNC_ALL = args.includes('--all') || args.includes('--full');
 const USE_REMOTE = args.includes('--remote');
+const onlyArg = args.find((a) => a.startsWith('--only='));
+const ONLY_ID = onlyArg ? onlyArg.split('=')[1] : args.find((a) => !a.startsWith('-') && a !== 'verify');
 
 function log(msg) {
   console.log(`[integrations] ${msg}`);
@@ -76,39 +80,42 @@ function verifySubmodules() {
   process.exit(0);
 }
 
-function ensureOpenManusMirror() {
-  const target = path.join(ROOT, OPEN_MANUS_REL);
-  const gitMarker = path.join(target, '.git');
-  if (fs.existsSync(gitMarker)) {
-    log('integrations/ai-support/submodules/open-manus/ đã có — bỏ qua.');
-    return;
-  }
-  if (fs.existsSync(target)) {
-    log('Thư mục open-manus tồn tại nhưng không phải git repo — không ghi đè.');
-    return;
-  }
-  log(`Shallow clone OpenManus → ${OPEN_MANUS_REL} (slash /run dùng PYTHONPATH + submodule).`);
-  const shell = process.platform === 'win32';
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  const r = spawnSync('git', ['clone', '--depth', '1', OPEN_MANUS_URL, target], {
+function fetchViaScript(id) {
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'fetch-integration.js'), id], {
     cwd: ROOT,
     stdio: 'inherit',
-    shell,
   });
-  if ((r.status ?? 1) !== 0) {
-    process.exit(r.status ?? 1);
-  }
+  if ((r.status ?? 1) !== 0) process.exit(r.status ?? 1);
 }
 
 function main() {
-  if (!fs.existsSync(path.join(ROOT, '.gitmodules'))) {
-    console.warn('[integrations] Không có .gitmodules — bỏ qua submodule.');
-    if (!VERIFY_ONLY && !NO_OPEN_MANUS) ensureOpenManusMirror();
+  if (VERIFY_ONLY) {
+    if (!fs.existsSync(path.join(ROOT, '.gitmodules'))) {
+      log('Không có .gitmodules — Quản gia dùng fetch on-demand khi chạy /run.');
+      process.exit(0);
+    }
+    verifySubmodules();
     return;
   }
 
-  if (VERIFY_ONLY) {
-    verifySubmodules();
+  if (ONLY_ID) {
+    fetchViaScript(ONLY_ID);
+    return;
+  }
+
+  if (!SYNC_ALL) {
+    log('Mặc định không tải hết integration lúc setup.');
+    log('  • Clone: git clone https://github.com/NgoMinhHai-arch/OmniSuite.git');
+    log('  • Lần đầu /run hoặc /run-browser: tự tải gói tương ứng');
+    log('  • Tải tay một gói: node scripts/fetch-integration.js open_manus');
+    log('  • Tải hết (dev): npm run integrations:sync -- --all');
+    return;
+  }
+
+  if (!fs.existsSync(path.join(ROOT, '.gitmodules'))) {
+    console.warn('[integrations] Không có .gitmodules — tải từng gói qua fetch-integration.js');
+    const subs = submoduleIntegrations(loadManifest());
+    for (const it of subs) fetchViaScript(it.id);
     return;
   }
 
@@ -117,17 +124,16 @@ function main() {
 
   log('Đang git submodule update --init --recursive …');
   if (USE_REMOTE) {
-    console.warn(
-      '[integrations] --remote: cập nhật submodule theo HEAD trên remote (có thể khác commit pin của OmniSuite).',
-    );
+    console.warn('[integrations] --remote: có thể lệch commit pin của OmniSuite.');
     runGit(['submodule', 'update', '--init', '--remote', '--recursive']);
   } else {
-    runGit(['submodule', 'update', '--init', '--recursive']);
+    runGit(['submodule', 'update', '--init', '--recursive', '--depth', '1']);
   }
 
-  if (!NO_OPEN_MANUS) ensureOpenManusMirror();
+  const subs = submoduleIntegrations(loadManifest());
+  for (const it of subs) fetchViaScript(it.id);
 
-  log('Xong. Bước tiếp: setup venv runners (scripts/setup-runners-venv.ps1 hoặc .sh).');
+  log('Xong (--all). Pip runner: scripts/setup-runners-venv.ps1 (chỉ khi cần Quản gia).');
 }
 
 main();

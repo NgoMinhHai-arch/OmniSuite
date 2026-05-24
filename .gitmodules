@@ -5,3 +5,11 @@
 [submodule "integrations/ai-support/submodules/browser-use"]
 	path = integrations/ai-support/submodules/browser-use
 	url = https://github.com/browser-use/browser-use.git
+
+[submodule "integrations/web-stack/crawl4ai"]
+	path = integrations/web-stack/crawl4ai
+	url = https://github.com/unclecode/crawl4ai.git
+
+[submodule "integrations/web-stack/activepieces"]
+	path = integrations/web-stack/activepieces
+	url = https://github.com/activepieces/activepieces.git

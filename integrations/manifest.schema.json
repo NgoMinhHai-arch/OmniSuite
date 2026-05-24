@@ -35,6 +35,12 @@
           "minItems": 1
         },
         "setupHint": { "type": "string", "minLength": 1 },
+        "repository": { "type": "string", "format": "uri" },
+        "cloneHint": { "type": "string", "minLength": 1 },
+        "category": {
+          "type": "string",
+          "enum": ["runner", "career-app", "agent-framework", "resume", "web-stack", "reference"]
+        },
         "slashCommand": { "type": "string", "pattern": "^/" },
         "probe": {
           "type": "object",

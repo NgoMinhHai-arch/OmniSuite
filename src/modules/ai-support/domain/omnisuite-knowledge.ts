@@ -302,12 +302,16 @@ export const TROUBLESHOOT_KNOWLEDGE: Array<{ problem: string; fix: string }> = [
     fix: 'Đặt AI_SUPPORT_RUNNER_ENABLED=true trong .env (cảnh báo: cho phép thực thi code/local trên máy). Restart app.',
   },
   {
-    problem: '/run báo "setup_required" (OpenManus / submodule / deps)',
-    fix: 'Cài OpenManus + deps: npm run integrations:sync và scripts/setup-runners-venv.ps1 (.venv-runners, PYTHON_BIN).',
+    problem: '/run báo "setup_required" hoặc không tải được OpenManus',
+    fix: 'Gõ lại /run <nhiệm vụ> — lần đầu app tự tải. Hoặc: npm run integrations:fetch -- open_manus. Xem /tai. Sau khi có repo: scripts/setup-runners-venv.ps1 nếu thiếu pip.',
   },
   {
-    problem: '/run-browser báo "setup_required: browser_use/playwright"',
-    fix: 'cd integrations/ai-support/submodules/browser-use → pip install -e . → python -m playwright install chromium.',
+    problem: '/run-browser báo "setup_required" (browser_use / playwright)',
+    fix: 'Gõ lại /run-browser … để tự tải browser-use, hoặc npm run integrations:fetch -- browser_use. Playwright: scripts/setup-runners-venv.ps1 hoặc python -m playwright install chromium trong venv.',
+  },
+  {
+    problem: 'Muốn tải gói Quản gia mà không chạy runner',
+    fix: 'Gõ /tai hoặc /tai open_manus | /tai browser. Chỉ clone OmniSuite là đủ — không cần npm run integrations:sync lúc mới cài.',
   },
   {
     problem: '9Router: không kết nối / không lấy được model',
@@ -437,9 +441,11 @@ export function omniSuiteKnowledgePromptBlock(): string {
     '- /web <truy vấn>: bắt buộc tìm web (Tavily hoặc SerpAPI). Nhắn bình thường: quản gia có thể tự tìm web nếu có key.',
     '- /plan: lập kế hoạch 3 tầng (não/agent/tool)',
     '- /browser: ưu tiên Browser Agent khi /plan',
-    '- /run <task>: OpenManus trên máy (agent + Python/tool calls). Yêu cầu AI_SUPPORT_RUNNER_ENABLED=true và venv runners (scripts/setup-runners-venv.ps1).',
-    '- /run-browser <task>: Browser Agent (browser-use + Playwright). Cùng cờ runner; cần pip install browser-use + playwright chromium.',
-    '- /integrations: liệt kê các tính năng đã clone trong integrations/ + trạng thái cài đặt.',
+    '- /run <task>: OpenManus — lần đầu tự tải repo con (không cần integrations:sync trước). Cần AI_SUPPORT_RUNNER_ENABLED=true.',
+    '- /run-browser <task>: browser-use — lần đầu tự tải gói. Cùng cờ runner; pip/playwright tùy chọn (setup-runners-venv.ps1).',
+    '- /tai [open_manus|browser|crawl4ai]: hướng dẫn tải gói (integrations:fetch).',
+    '- /tai-bang: bảng integration đã tải / chưa tải trên máy.',
+    '- /integrations: danh sách integration trong manifest (tải theo nhu cầu, không tải hết lúc cài app).',
     '- /apply <doctor|init|run|apply>: chạy ApplyPilot CLI (auto-apply jobs).',
     '- /score <jd>: score JD vs resume qua job-scraper LLM client.',
   ].join('\n');

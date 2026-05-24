@@ -3,6 +3,7 @@ export type SlashHandlerKind =
   | 'plan'
   | 'static'
   | 'system_check'
+  | 'integration_status'
   | 'runner'
   | 'web_search'
   | 'noop_future';
@@ -81,6 +82,20 @@ export const AI_SUPPORT_SLASH_COMMANDS: SlashCommandDef[] = [
     example: '/integrations',
   },
   {
+    command: '/tai',
+    label: 'Hướng dẫn tải gói',
+    description: '/tai [open_manus|browser] — chỉ tải khi dùng /run hoặc /run-browser; không tải sẵn lúc cài app.',
+    handlerKind: 'static',
+    example: '/tai open_manus',
+  },
+  {
+    command: '/tai-bang',
+    label: 'Bảng đã tải / chưa tải',
+    description: 'Bảng trạng thái từng integration trên máy (đã clone chưa, sẵn sàng chưa).',
+    handlerKind: 'integration_status',
+    example: '/tai-bang',
+  },
+  {
     command: '/web',
     label: 'Tìm web (bắt buộc)',
     description: '/web <truy vấn> — chỉ định lên mạng (cần Tavily hoặc SerpAPI trong Cấu hình).',
@@ -104,14 +119,14 @@ export const AI_SUPPORT_SLASH_COMMANDS: SlashCommandDef[] = [
   {
     command: '/run',
     label: 'OpenManus (/run)',
-    description: '/run <nhiệm vụ> — chạy code/shell trên máy bạn (cần AI_SUPPORT_RUNNER_ENABLED + venv runners).',
+    description: '/run <nhiệm vụ> — OpenManus; lần đầu tự tải repo con (cần AI_SUPPORT_RUNNER_ENABLED).',
     handlerKind: 'runner',
     example: '/run liệt kê 10 file mới nhất trong thư mục Downloads và in tên + kích thước',
   },
   {
     command: '/run-browser',
     label: 'Browser Agent',
-    description: '/run-browser <nhiệm vụ> — Playwright + browser-use (cùng điều kiện runner như /run).',
+    description: '/run-browser <nhiệm vụ> — Playwright + browser-use; lần đầu tự tải gói (cùng điều kiện /run).',
     handlerKind: 'runner',
     example: '/run-browser mở https://duckduckgo.com và tìm "tỷ giá USD VND hôm nay", in kết quả đầu tiên',
   },
@@ -139,6 +154,8 @@ export const QUAN_GIA_QUICK_CHIPS: readonly string[] = [
   '/tools',
   '/check',
   '/integrations',
+  '/tai',
+  '/tai-bang',
   '/web khác nhau Tavily và SerpAPI là gì',
   '/plan săn job remote và chỉnh CV theo JD',
   '/browser lập kế hoạch dùng trình duyệt tìm việc',

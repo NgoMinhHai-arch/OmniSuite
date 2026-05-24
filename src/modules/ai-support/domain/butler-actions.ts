@@ -28,6 +28,7 @@ const SLASH_ALLOW = new Set(
     '/run',
     '/run-browser',
     '/integrations',
+    '/tai-bang',
     '/apply',
     '/score',
     '/plan',

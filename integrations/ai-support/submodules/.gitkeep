@@ -1,0 +1,5 @@
+# Submodule upstream (OpenManus, browser-use) được tải khi bạn dùng Quản gia:
+#   /run          → tự tải open-manus
+#   /run-browser  → tự tải browser-use
+#
+# Không tải lúc cài OmniSuite. Tải tay: npm run integrations:fetch -- open_manus

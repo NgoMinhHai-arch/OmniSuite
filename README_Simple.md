@@ -2,11 +2,14 @@
 
 ## 🚀 How to Run (NO CODING KNOWLEDGE REQUIRED)
 
-### 1. Download
+### 1. Download (chỉ OmniSuite — không tải hết OpenManus/browser-use)
 Open Command Prompt/PowerShell and run:
 ```
 git clone https://github.com/NgoMinhHai-arch/OmniSuite.git
+cd OmniSuite
+npm install
 ```
+Quản gia AI (`/run`, `/run-browser`…): **lần đầu bạn dùng lệnh nào thì mới tải gói đó** (~vài trăm MB), không cài sẵn lúc mở app.
 
 ### 2. Run
 Go to the downloaded folder → **Double-click** `01_START_OMNISUITE.bat`

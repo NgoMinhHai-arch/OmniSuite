@@ -88,9 +88,8 @@ export async function GET() {
       playwright: false,
       setupHint:
         'Bật runner: đặt AI_SUPPORT_RUNNER_ENABLED=true trong .env.\n' +
-        'Sau đó:\n' +
-        '  /run → npm run integrations:sync + scripts/setup-runners-venv.ps1 (OpenManus submodule + deps)\n' +
-        '  /run-browser → cd integrations/ai-support/submodules/browser-use && pip install -e . && python -m playwright install chromium',
+        'Lần đầu dùng /run hoặc /run-browser → app tự tải gói tương ứng (không cần integrations:sync).\n' +
+        'Pip runner (tùy chọn): scripts/setup-runners-venv.ps1',
     });
   }
 
@@ -114,14 +113,14 @@ export async function GET() {
     hints.push('Không tìm thấy Python hoặc lỗi khởi chạy. Cài Python 3.10+ và đặt PYTHON_BIN nếu cần.');
   }
   if (!openManusSubmoduleOk && pythonOk) {
-    hints.push('Thiếu submodule OpenManus: npm run integrations:sync');
+    hints.push('Chưa tải OpenManus — gõ /run trong Quản gia (tự tải) hoặc: npm run integrations:fetch -- open_manus');
   }
   if (openManusSubmoduleOk && !omDepsProbe.ok && pythonOk) {
     hints.push('/run (OpenManus deps): chạy scripts/setup-runners-venv.ps1 hoặc .sh');
   }
   if ((!browserUseOk || !playwrightOk) && pythonOk) {
     hints.push(
-      '/run-browser: cd integrations/ai-support/submodules/browser-use → pip install -e . → python -m playwright install chromium',
+      'Chưa có browser-use/Playwright — gõ /run-browser (tự tải repo) rồi setup-runners-venv.ps1 nếu thiếu pip',
     );
   }
 
