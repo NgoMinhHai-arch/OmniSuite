@@ -1,0 +1,283 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+:root {
+  /* Matches Sidebar fixed width before client JS reads collapsed pref */
+  --sidebar-width: 300px;
+
+  /* Dark theme (default) */
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+  --card: 222.2 84% 4.9%;
+  --card-foreground: 210 40% 98%;
+  --popover: 222.2 84% 4.9%;
+  --popover-foreground: 210 40% 98%;
+  --primary: 217.2 91.2% 59.8%;
+  --primary-foreground: 222.2 47.4% 11.2%;
+  --secondary: 217.2 32.6% 17.5%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 217.2 32.6% 17.5%;
+  --muted-foreground: 215 20.2% 65.1%;
+  --accent: 217.2 32.6% 17.5%;
+  --accent-foreground: 210 40% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 217.2 32.6% 17.5%;
+  --input: 217.2 32.6% 17.5%;
+  --ring: 224.3 76.3% 48%;
+  
+  /* Brand Colors */
+  --deep-blue: #020617;
+  --glass-bg: rgba(15, 23, 42, 0.4);
+  --accent-indigo: 79 70 229;
+  
+  /* Body background and text */
+  --body-bg: #020617;
+  --body-text: #e2e8f0;
+  --sidebar-bg: #050814;
+  --card-bg: #0a0f1e;
+  --border-color: rgba(255, 255, 255, 0.05);
+  --border-hover: rgba(255, 255, 255, 0.1);
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.6);
+  --text-muted: rgba(255, 255, 255, 0.4);
+  --active-bg: rgba(79, 70, 229, 0.1);
+  --hover-bg: rgba(255, 255, 255, 0.05);
+  --scrollbar-thumb: #1e293b;
+  --scrollbar-thumb-hover: #334155;
+
+  /* Page chrome (aligned with body) */
+  --bg-primary: var(--body-bg);
+
+  /* Tool / dense dashboard surfaces (dark defaults) */
+  --tool-panel-bg: rgba(139, 92, 246, 0.06);
+  --tool-panel-bg-strong: rgba(139, 92, 246, 0.12);
+  --tool-panel-border: rgba(167, 139, 250, 0.25);
+  --tool-input-bg: rgba(0, 0, 0, 0.2);
+  --tool-input-border: rgba(255, 255, 255, 0.1);
+  --tool-input-text: #e2e8f0;
+  --tool-placeholder: #94a3b8;
+  --tool-violet-heading: #c4b5fd;
+  --tool-violet-body: #ede9fe;
+  --tool-violet-muted: rgba(196, 181, 253, 0.85);
+  --tool-empty-icon: rgba(167, 139, 250, 0.65);
+  --tool-surface-subtle: rgba(255, 255, 255, 0.03);
+  --tool-surface-border: rgba(255, 255, 255, 0.1);
+  --tool-chip-inactive-bg: rgba(255, 255, 255, 0.03);
+  --tool-chip-inactive-text: #cbd5e1;
+  --tool-on-fuchsia-tint: #fae8ff;
+}
+
+.light {
+  /* Light theme */
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 84% 4.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 84% 4.9%;
+  --primary: 217.2 91.2% 59.8%;
+  --primary-foreground: 222.2 47.4% 11.2%;
+  --secondary: 210 40% 96.1%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --accent: 210 40% 96.1%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 217.2 91.2% 59.8%;
+  
+  /* Light theme custom colors */
+  --deep-blue: #f8fafc;
+  --glass-bg: rgba(255, 255, 255, 0.8);
+  
+  /* Body background and text */
+  --body-bg: #f1f5f9;
+  --body-text: #334155;
+  --sidebar-bg: #ffffff;
+  --card-bg: #ffffff;
+  --border-color: rgba(0, 0, 0, 0.08);
+  --border-hover: rgba(0, 0, 0, 0.15);
+  --text-primary: #1e293b;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --active-bg: rgba(79, 70, 229, 0.08);
+  --hover-bg: rgba(0, 0, 0, 0.03);
+  --scrollbar-thumb: #cbd5e1;
+  --scrollbar-thumb-hover: #94a3b8;
+
+  --bg-primary: var(--body-bg);
+
+  --tool-panel-bg: rgba(139, 92, 246, 0.07);
+  --tool-panel-bg-strong: rgba(139, 92, 246, 0.14);
+  --tool-panel-border: rgba(109, 40, 217, 0.22);
+  --tool-input-bg: #f8fafc;
+  --tool-input-border: rgba(15, 23, 42, 0.12);
+  --tool-input-text: #0f172a;
+  --tool-placeholder: #64748b;
+  --tool-violet-heading: #5b21b6;
+  --tool-violet-body: #4c1d95;
+  --tool-violet-muted: rgba(91, 33, 182, 0.92);
+  --tool-empty-icon: rgba(91, 33, 182, 0.55);
+  --tool-surface-subtle: rgba(15, 23, 42, 0.04);
+  --tool-surface-border: rgba(15, 23, 42, 0.12);
+  --tool-chip-inactive-bg: rgba(15, 23, 42, 0.06);
+  --tool-chip-inactive-text: #475569;
+  --tool-on-fuchsia-tint: #86198f;
+}
+
+@layer base {
+  * {
+    border-color: var(--border-color);
+  }
+  body {
+    background-color: var(--body-bg);
+    color: var(--body-text);
+    @apply antialiased selection:bg-indigo-500/30 min-h-screen;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+  }
+
+  .glass {
+    background-color: var(--glass-bg);
+    backdrop-filter: blur(24px);
+    border: 1px solid var(--border-color);
+    @apply shadow-2xl;
+  }
+  
+  .glass-card {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    @apply rounded-2xl shadow-2xl transition-all duration-300;
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-violet-400 to-cyan-400 font-bold tracking-tight;
+  }
+
+
+  .glow-dot {
+    @apply w-2 h-2 rounded-full shadow-[0_0_10px_rgba(79,70,229,0.8)];
+  }
+
+  /* Custom Scrollbar Utility */
+  .force-scrollbar::-webkit-scrollbar {
+    height: 12px !important;
+    display: block !important;
+  }
+  .force-scrollbar::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border-radius: 10px !important;
+  }
+  .force-scrollbar::-webkit-scrollbar-thumb {
+    background: #6366f1 !important;
+    border-radius: 10px !important;
+    border: 3px solid #0a0f1e !important;
+  }
+  .force-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #818cf8 !important;
+  }
+
+  html.light .force-scrollbar::-webkit-scrollbar-thumb {
+    border: 3px solid #f1f5f9 !important;
+  }
+
+  /* Content tool / emerald-themed thin scrollbar */
+  .custom-scrollbar-emerald {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(16, 185, 129, 0.45) transparent;
+  }
+  .custom-scrollbar-emerald::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .custom-scrollbar-emerald::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar-emerald::-webkit-scrollbar-thumb {
+    background: rgba(16, 185, 129, 0.35);
+    border-radius: 9999px;
+  }
+  .custom-scrollbar-emerald::-webkit-scrollbar-thumb:hover {
+    background: rgba(16, 185, 129, 0.55);
+  }
+}
+
+/* ============================================================
+   CUSTOM TOOL THEMES (Scoped to specific tools)
+   ============================================================ */
+
+/* 1. MAP DISCOVERY TOOL THEME (SMART THEME-AWARE) */
+.tool-maps-container input {
+  color: var(--text-primary) !important;
+  background-color: var(--card-bg) !important;
+  border: 1px solid rgba(217, 70, 239, 0.2) !important;
+  font-weight: 500 !important;
+  transition: all 0.3s ease !important;
+}
+
+.tool-maps-container input:focus {
+  border-color: rgba(217, 70, 239, 0.6) !important;
+  box-shadow: 0 0 15px rgba(217, 70, 239, 0.1) !important;
+}
+
+.tool-maps-container input::placeholder {
+  color: var(--text-muted) !important;
+  opacity: 0.6 !important;
+}
+
+.tool-maps-container .relative.group .absolute.left-4 {
+  color: #d946ef !important;
+  opacity: 0.7;
+}
+
+/* 2. SETTINGS PAGE INPUT/SELECT VISUAL FIX (REMOVE WHITE BOXES) */
+.settings-theme-fix select,
+.settings-theme-fix input {
+  color: var(--text-primary) !important;
+}
+
+.settings-theme-fix select option {
+  background-color: #0a0f1e;
+  color: #e2e8f0;
+}
+
+html.light .settings-theme-fix select option {
+  background-color: #ffffff;
+  color: #1e293b;
+}
+
+.settings-theme-fix input:-webkit-autofill,
+.settings-theme-fix input:-webkit-autofill:hover,
+.settings-theme-fix input:-webkit-autofill:focus,
+.settings-theme-fix input:-webkit-autofill:active {
+  -webkit-text-fill-color: var(--text-primary) !important;
+  -webkit-box-shadow: 0 0 0 1000px color-mix(in srgb, var(--hover-bg) 100%, transparent) inset !important;
+  box-shadow: 0 0 0 1000px color-mix(in srgb, var(--hover-bg) 100%, transparent) inset !important;
+  transition: background-color 99999s ease-in-out 0s;
+}
+
+.advanced-seo-theme select option {
+  background-color: #0a0f1e;
+  color: #e2e8f0;
+}
+
+html.light .advanced-seo-theme select option {
+  background-color: #ffffff;
+  color: #1e293b;
+}

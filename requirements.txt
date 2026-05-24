@@ -1,0 +1,8 @@
+# OmniSuite — shared + legacy interpreter (:8081)
+-r python_engine/requirements.txt
+flask>=3.0.0
+flask-cors>=4.0.0
+requests>=2.32.0
+google-genai>=1.0.0
+openai>=1.50.0
+duckduckgo-search>=6.0.0

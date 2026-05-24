@@ -1,0 +1,110 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# Nested upstream clone (own .git) — không nhúng gitlink; dùng git submodule hoặc clone riêng nếu cần.
+/open-interpreter/
+
+# OpenManus /run: browser-use 0.1.x pip --target (song song submodule browser-use moi)
+integrations/ai-support/runners/.legacy-browser-use-deps/
+
+# misc
+.DS_Store
+*.pem
+
+# Optional upstream mirror đồng bộ bằng scripts/clone-integrations.* (Quản gia /integrations).
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (always keep real secrets local only)
+.env
+.env.*
+.env.local
+.env.local.*
+!.env.example
+!**/.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Install guard (machine binding — never commit)
+.omnisuite/
+
+# Local Data and Logs
+/data/*
+/logs/*
+/tmp/*
+/scratch/*
+*.log
+*.txt
+!README.md
+!LUAT_LE_HANK.txt
+!RESULT_VERIFICATION.txt
+!python_engine/requirements.txt
+!requirements.txt
+!services/clip_service/requirements.txt
+keyword_cache.json
+keyword_cache_demo.json
+db/*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.venv/
+.venv-runners/
+venv/
+
+# Agent files
+.gemini/
+.agents/
+.OmniToolAIrules
+.OmniToolAIrules.
+
+# Local Session & Brain Data
+src/app/brain/
+src/app/api/scrape/history/
+python_engine/scratch/
+.vscode/
+
+# Generated executables
+OmniSuite.exe
+*.exe
+
+# Git temp files
+*.tmp
+
+# Project local rules
+PROJECT_RULES.md
+Lu?t l? khi th?c hi?n d? �n.md
+
+# Internal docs
+/Lu?t l? khi th?c hi?n d? �n.md
+Lu*t l* khi th*c hi*n d* *n.md

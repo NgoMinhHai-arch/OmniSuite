@@ -1,0 +1,46 @@
+"""
+OmniSuite — <id> runner
+stdin: 1 line JSON · stdout: NDJSON · exit 0|1|2|3
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+_RUNNER_DIR = Path(__file__).resolve().parent
+if str(_RUNNER_DIR) not in sys.path:
+    sys.path.insert(0, str(_RUNNER_DIR))
+
+from _runner_base import (  # noqa: E402
+    REPO_ROOT,
+    ai_support_dir,
+    emit,
+    emit_log,
+    fail_error,
+    fail_setup,
+    read_input,
+    submodule_path,
+)
+
+# SUBMODULE = submodule_path("my-tool")  # under integrations/ai-support/submodules/
+
+
+def main() -> None:
+    payload = read_input()
+    task = str(payload.get("task") or "").strip()
+    if not task:
+        fail_error("Thiếu task.")
+
+    emit({"type": "ready", "runner": "my_tool"})
+    emit_log("info", f"Task: {task[:120]}…")
+    # … integration logic …
+    emit({"type": "done", "result": {"ok": True}})
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as exc:
+        fail_error(str(exc))

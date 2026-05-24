@@ -1,0 +1,7 @@
+[submodule "integrations/ai-support/submodules/open-manus"]
+	path = integrations/ai-support/submodules/open-manus
+	url = https://github.com/FoundationAgents/OpenManus.git
+
+[submodule "integrations/ai-support/submodules/browser-use"]
+	path = integrations/ai-support/submodules/browser-use
+	url = https://github.com/browser-use/browser-use.git

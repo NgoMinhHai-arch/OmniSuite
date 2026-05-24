@@ -1,0 +1,133 @@
+/* eslint-disable */
+/** AUTO-GENERATED from integrations/manifest.json — npm run integrations:codegen */
+
+import type { IntegrationEntry } from './integrations-registry.types';
+
+export const INTEGRATIONS: IntegrationEntry[] = [
+  {
+    id: "open_manus",
+    name: "OpenManus",
+    path: "integrations/ai-support/submodules/open-manus",
+    kind: "python-cli",
+    integrationStrategy: "ai-support-runner",
+    features: [
+      "Điều khiển máy cục bộ: Python execute / browser-use tool / editor (OpenManus)",
+      "Luồng Quản gia `/run` mặc định — agent Manus + OpenAI-compatible LLM"
+    ],
+    setupHint: "npm run integrations:sync + scripts/setup-runners-venv.ps1 (.venv-runners, PYTHON_BIN).",
+    slashCommand: "/run",
+    probe: { bin: "python", args: ["-c","import pathlib; p=pathlib.Path('integrations/ai-support/submodules/open-manus/app/agent/manus.py'); print('ok' if p.is_file() else 'missing')"] },
+  },
+  {
+    id: "browser_use",
+    name: "Browser Use (Browser Agent)",
+    path: "integrations/ai-support/submodules/browser-use",
+    kind: "python-cli",
+    integrationStrategy: "ai-support-runner",
+    features: [
+      "Browser automation thật bằng Playwright + LLM",
+      "Hỗ trợ Ollama / OpenAI / Gemini làm \"não\"",
+      "Streaming step-by-step events"
+    ],
+    setupHint: "scripts/setup-runners-venv.ps1 hoặc .sh — browser-use + Playwright trong .venv-runners.",
+    slashCommand: "/run-browser",
+    probe: { bin: "python", args: ["-c","import browser_use; import playwright; print('ok')"] },
+  },
+  {
+    id: "applypilot",
+    name: "ApplyPilot — autonomous job apply",
+    path: "integrations/applypilot",
+    kind: "python-cli",
+    integrationStrategy: "ai-support-runner",
+    features: [
+      "6-stage pipeline: discover → enrich → score → tailor → cover → apply",
+      "Browser-driven submission (Playwright + Claude Code CLI)",
+      "Multi-thread parallel apply"
+    ],
+    setupHint: "setup-runners-venv.ps1 hoặc pip install applypilot; lần đầu: applypilot init",
+    slashCommand: "/apply",
+    probe: { bin: "applypilot", args: ["--version"] },
+  },
+  {
+    id: "job_scraper",
+    name: "Job Scraper (LinkedIn + AI scoring)",
+    path: "integrations/job-scraper",
+    kind: "python-script",
+    integrationStrategy: "ai-support-runner",
+    features: [
+      "Scrape LinkedIn job postings",
+      "AI score JD vs resume (Gemini/OpenAI/Ollama qua litellm)",
+      "PDF resume generator",
+      "Supabase storage (tuỳ chọn)"
+    ],
+    setupHint: "scripts/setup-runners-venv.ps1 (requirements-runners.txt) hoặc pip install -r integrations/job-scraper/requirements.txt",
+    slashCommand: "/score",
+    probe: { bin: "python", args: ["-c","import sys; sys.path.insert(0, 'integrations/job-scraper'); import llm_client; print('ok')"] },
+  },
+  {
+    id: "ai_resume_tailor",
+    name: "AI Resume Tailor (Workopia)",
+    path: "integrations/benchmarks/ai-resume-tailor",
+    kind: "node-app",
+    integrationStrategy: "external-app",
+    features: [
+      "Next.js app: tailor resume theo JD",
+      "MCP server endpoint",
+      "Cần OPENAI_API_KEY"
+    ],
+    setupHint: "cd integrations/benchmarks/ai-resume-tailor && npm install && npm run dev",
+  },
+  {
+    id: "resume_lm",
+    name: "ResumeLM — full resume builder",
+    path: "integrations/benchmarks/resume-lm",
+    kind: "node-app",
+    integrationStrategy: "external-app",
+    features: [
+      "Resume builder Next.js 15 + Supabase + Stripe",
+      "AI chat assistant cho resume",
+      "ATS scoring"
+    ],
+    setupHint: "cd integrations/benchmarks/resume-lm && pnpm install && pnpm dev",
+  },
+  {
+    id: "job_ops",
+    name: "JobOps — multi-board job aggregator",
+    path: "integrations/benchmarks/job-ops",
+    kind: "docker-app",
+    integrationStrategy: "external-app",
+    features: [
+      "Tìm job đa nguồn (LinkedIn / Indeed / Glassdoor / 10+)",
+      "Tailor CV theo role",
+      "7+ extractor riêng",
+      "Visa sponsorship checker"
+    ],
+    setupHint: "cd integrations/benchmarks/job-ops && docker compose up -d",
+  },
+  {
+    id: "mr_jobs",
+    name: "MR.Jobs — local job hunting AI",
+    path: "integrations/benchmarks/mr-jobs",
+    kind: "docker-app",
+    integrationStrategy: "external-app",
+    features: [
+      "Discover → score → tailor → apply (Playwright)",
+      "Real-time local dashboard",
+      "Follow-up & ghost detection"
+    ],
+    setupHint: "cd integrations/benchmarks/mr-jobs && docker compose up -d",
+  },
+  {
+    id: "career_ops",
+    name: "Career-Ops — multi-agent CV pipeline",
+    path: "integrations/career-ops",
+    kind: "node-app",
+    integrationStrategy: "external-app",
+    features: [
+      "Đánh giá offer A-F (10 dimensions)",
+      "Tailor CV PDF qua Playwright",
+      "Scan portal Greenhouse/Ashby/Lever"
+    ],
+    setupHint: "cd integrations/career-ops && npm install — xem README chọn AI CLI",
+  },
+];

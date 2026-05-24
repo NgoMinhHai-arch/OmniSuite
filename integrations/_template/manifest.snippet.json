@@ -1,0 +1,21 @@
+{
+  "id": "my_tool",
+  "name": "My Tool — short title",
+  "path": "integrations/my-domain/submodules/my-tool",
+  "kind": "python-cli",
+  "integrationStrategy": "ai-support-runner",
+  "features": ["Feature one", "Feature two"],
+  "setupHint": "npm run integrations:sync && scripts/setup-runners-venv.ps1",
+  "slashCommand": "/my-tool",
+  "probe": {
+    "bin": "python",
+    "args": ["-c", "import my_tool; print('ok')"]
+  },
+  "runner": {
+    "script": "integrations/ai-support/runners/my_tool_runner.py",
+    "maxTaskLen": 4000
+  },
+  "submodule": {
+    "url": "https://github.com/org/my-tool.git"
+  }
+}
