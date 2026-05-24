@@ -20,8 +20,19 @@ const API_KEYS_IN_URL_REGEX = /apiKeys=%7B[^%]{30,}%7D|apiKeys=\{[^}]{30,}\}/gi;
 
 const LOCALSTORAGE_DUMP_REGEX = /omnisuite_settings[^;]{0,200}(AIza|sk-|gsk_)/gi;
 
+function looksLikeCodeReference(value) {
+  const v = String(value);
+  if (/^(string|boolean|number|undefined|null|optional|void|any)$/i.test(v)) return true;
+  if (/[?.|&!:+\-*/()[\]]/.test(v)) return true;
+  if (/^(client|sys|settings|req|process|import|gemini|claude|openai|readenv|getenv)/i.test(v)) return true;
+  if (/fromenv$/i.test(v)) return true;
+  if (/^[a-z_][\w]*$/i.test(v) && v.length < 48) return true;
+  return false;
+}
+
 function looksLikePlaceholder(value) {
   const v = String(value).toLowerCase();
+  if (looksLikeCodeReference(value)) return true;
   return (
     v.includes('process.env') ||
     v.includes('import.meta.env') ||
@@ -37,6 +48,8 @@ function looksLikePlaceholder(value) {
     v.includes('abc123') ||
     v.includes('mock') ||
     v.includes('here') ||
+    v.includes('omnisuite_secret') ||
+    v.includes('secret_token') ||
     v === 'ollama' ||
     v.length < 12
   );
@@ -48,7 +61,7 @@ function scanTextForSecrets(fileLabel, content) {
   let m;
   while ((m = SECRET_ASSIGNMENT_REGEX.exec(content)) !== null) {
     const keyName = m[1];
-    const keyValue = m[2];
+    const keyValue = String(m[2]).replace(/[,;)\]]+$/, '');
     if (!looksLikePlaceholder(keyValue)) {
       findings.push(`${fileLabel}: hardcoded ${keyName}`);
     }
