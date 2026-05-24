@@ -1,13 +1,13 @@
 # OmniSuite Integrations
 
-Thư mục `integrations/` gom **git submodule**, **Python runners** và **app bên thứ ba** mà AI Hỗ trợ biết tới.
+The `integrations/` folder holds **git submodules**, **Python runners**, and **third-party apps** that AI Butler knows about.
 
-> **Cảnh báo ZIP:** Tải repo dạng **Download ZIP** trên GitHub sẽ **không** có mã trong các thư mục con (submodule). Dùng `git clone` hoặc sau đó `npm run integrations:fetch -- <id>`. Trong Quản gia: `/tai-bang` xem trạng thái đã/chưa tải.
+> **Downloads:** Neither **ZIP** nor **`git clone`** bundles OpenManus, JobOps, browser-use, Crawl4AI, etc. Users **fetch each package themselves** (`integrations:fetch`, first `/run`, or `git clone` into the listed `path`). ZIP leaves folders empty; clone provides helper scripts. In AI Butler: `/tai-bang`, `/tai`.
 
-## Kiến trúc (3 lớp)
+## Architecture (3 layers)
 
 ```
-integrations/manifest.json     ← nguồn sự thật (SSOT)
+integrations/manifest.json     ← single source of truth (SSOT)
         │
         ├─► scripts/generate-integrations-registry.js
         │         └─► src/modules/ai-support/domain/*.generated.ts
@@ -17,40 +17,44 @@ integrations/manifest.json     ← nguồn sự thật (SSOT)
         └─► scripts/sync-integrations.js      (git submodule sync)
 ```
 
-| Lớp | Vai trò |
-|-----|---------|
-| **manifest** | Mô tả id, path, runner, probe, submodule URL |
-| **submodule** | Mã upstream (browser-use, OpenManus) — không sửa trực tiếp |
-| **runners** | Cầu nối OmniSuite → subprocess Python (NDJSON) |
-| **external-app** | Chạy độc lập; registry chỉ hướng dẫn setup |
+| Layer | Role |
+|-------|------|
+| **manifest** | id, path, runner, probe, submodule URL |
+| **submodule** | Upstream code (browser-use, OpenManus) — do not edit in place |
+| **runners** | Bridge OmniSuite → Python subprocess (NDJSON) |
+| **external-app** | Runs standalone; registry documents setup only |
 
-## Cách dùng (người dùng cuối)
+## End-user workflow
 
-1. `git clone https://github.com/NgoMinhHai-arch/OmniSuite.git`
-2. `npm install` + chạy `01_START_OMNISUITE.bat`
-3. Trong **Quản gia AI**, lần đầu gõ `/run` hoặc `/run-browser` → app **tự tải** đúng gói đó (không tải hết lúc setup).
+1. `git clone https://github.com/NgoMinhHai-arch/OmniSuite.git` (avoid ZIP when possible)
+2. `npm install` + run `01_START_OMNISUITE.bat` → **SEO + AI Butler chat** work
+3. **Each integration** (OpenManus, JobOps, …): user **downloads separately** — not included after steps 1–2
+4. Examples: `/run` or `npm run integrations:fetch -- open_manus` · status table: `/tai-bang` in AI Butler
 
-## Lệnh tùy chọn (dev / tải tay)
+## Optional commands (dev / manual fetch)
 
 ```bash
-npm run integrations:fetch -- open_manus    # chỉ OpenManus
-npm run integrations:fetch -- browser_use     # chỉ browser-use
-npm run integrations:sync:all                 # tải hết (không bắt buộc)
+npm run integrations:fetch -- open_manus      # OpenManus only
+npm run integrations:fetch -- browser_use   # browser-use only
+npm run integrations:fetch -- crawl4ai      # Crawl4AI web stack
+npm run integrations:fetch -- activepieces  # Activepieces
+npm run integrations:fetch -- --list        # list fetchable IDs
+npm run integrations:sync:all               # fetch all (dev only)
 npm run integrations:validate
 npm run integrations:codegen
 ```
 
-## Thêm integration mới
+## Add a new integration
 
-1. Sao chép `integrations/_template/`
-2. Thêm block vào `integrations/manifest.json`
+1. Copy `integrations/_template/`
+2. Add a block to `integrations/manifest.json`
 3. `npm run integrations:codegen`
 4. `npm run integrations:validate`
-5. Nếu là git submodule: cập nhật `.gitmodules` (hoặc chạy codegen — tự sinh từ manifest)
+5. For git submodules: update `.gitmodules` (or run codegen — generated from manifest)
 
-Chi tiết: `integrations/_template/README.md`
+Details: `integrations/_template/README.md`
 
-## Ranh giới
+## Boundaries
 
-- `src/` **không** import code từ `integrations/` — chỉ spawn runner hoặc gọi HTTP app ngoài.
-- Submodule upstream: patch qua fork hoặc wrapper trong `integrations/ai-support/runners/`.
+- `src/` does **not** import code from `integrations/` — only spawns runners or calls external HTTP apps.
+- Upstream submodules: patch via fork or wrappers in `integrations/ai-support/runners/`.

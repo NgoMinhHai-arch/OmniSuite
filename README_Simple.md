@@ -1,33 +1,41 @@
-# OmniSuite AI - Simple Guide
+# OmniSuite AI — Simple Guide
 
-## ⚠️ Cảnh báo: KHÔNG tải file .zip từ GitHub
+## Important: integrations are not bundled
 
-| Cách tải | Kết quả |
-|----------|---------|
-| **Download ZIP** trên GitHub | Thư mục `integrations/...` (OpenManus, browser-use, Crawl4AI…) **trống** — GitHub không gói submodule vào file zip. |
-| **`git clone`** (khuyến nghị) | Đủ để dùng OmniSuite; bot AI tải **khi cần** (xem bên dưới). |
+**Whether you use a GitHub ZIP or `git clone`, you only get the OmniSuite app shell** (UI, SEO tools, AI Butler chat).
 
-**Sau khi tải zip, app SEO / Quản gia chat vẫn chạy được**, nhưng **`/run`, `/run-browser` và các gói integration chưa có sẵn** cho đến khi bạn tải thêm (cần cài **Git** trên máy).
+Packages such as **OpenManus**, **browser-use**, **JobOps**, **Crawl4AI**, **resume-lm**, etc. are **not included**. You download **each one when you need it**.
 
-**Nếu đã tải zip rồi** — chọn một cách:
+| How you get OmniSuite | OpenManus / JobOps / … included? |
+|------------------------|----------------------------------|
+| **Download ZIP** | **No** (`integrations/` folders are empty) |
+| **`git clone`** (recommended) | **Also no** — easier to fetch each package later |
 
-1. Clone lại bằng Git (dễ nhất): xóa folder cũ → `git clone https://github.com/NgoMinhHai-arch/OmniSuite.git`
-2. Giữ folder zip, cài [Git](https://git-scm.com/), mở PowerShell trong folder OmniSuite:
+**SEO app + AI Butler chat** work after `npm install`. **`/run`, `/run-browser`, JobOps, etc.** only work after **you fetch or clone** those packages (requires **Git** + network).
+
+### Avoid ZIP if you can
+
+ZIP is worse than clone: GitHub does **not** pack submodule code into the archive. With clone you still fetch integrations yourself, but you can use `npm run integrations:fetch` and first-time `/run` auto-download.
+
+**Already downloaded a ZIP?** Pick one:
+
+1. **Re-clone with Git** (easiest): delete the folder → `git clone https://github.com/NgoMinhHai-arch/OmniSuite.git`
+2. **Keep the ZIP folder**, install [Git](https://git-scm.com/), open PowerShell in the OmniSuite folder:
    ```
    npm run integrations:fetch -- open_manus
    npm run integrations:fetch -- browser_use
    ```
-3. Trong **Quản gia** (`/dashboard/ai-support`): lần đầu gõ `/run` hoặc `/run-browser` → app **tự tải** gói tương ứng (cần Git + mạng).
+3. In **AI Butler** (`/dashboard/ai-support`): first `/run` or `/run-browser` **auto-downloads** that package (Git + network required).
 
-Gõ `/tai-bang` trong Quản gia để xem gói nào **đã tải** / **chưa tải** trên máy.
+Type **`/tai-bang`** in AI Butler to see what is **downloaded** vs **not downloaded** on your machine.
 
 ---
 
-## 🚀 How to Run (NO CODING KNOWLEDGE REQUIRED)
+## How to run (no coding required)
 
-### 1. Download (dùng Git clone — không dùng ZIP)
+### 1. Download (use `git clone` — not ZIP)
 
-Open Command Prompt/PowerShell and run:
+Open Command Prompt or PowerShell:
 
 ```
 git clone https://github.com/NgoMinhHai-arch/OmniSuite.git
@@ -35,42 +43,64 @@ cd OmniSuite
 npm install
 ```
 
-**Do not** use “Download ZIP” on GitHub for OmniSuite (integrations folders will be empty).
+Do **not** use “Download ZIP” on GitHub (integration folders will be empty).
 
-Quản gia AI (`/run`, `/run-browser`…): **lần đầu bạn dùng lệnh nào thì mới tải gói đó** (~vài trăm MB), không cài sẵn lúc mở app. Cần **Git** đã cài trên Windows.
+After `git clone` + `npm install`: OpenManus, JobOps, browser-use, etc. are **still not on disk** — use **`/tai-bang`** in AI Butler or:
+
+```
+npm run integrations:fetch -- <package_id>
+```
+
+First **`/run`** or **`/run-browser`** can **auto-download** one runner package (Git required on Windows).
 
 ### 2. Run
-Go to the downloaded folder → **Double-click** `01_START_OMNISUITE.bat`
 
-### 3. Configuration (First time)
-- The browser will open automatically
-- Click **Settings** (gear icon)
-- Enter your API keys (OpenAI, Gemini, etc.)
+Go to the project folder → double-click **`01_START_OMNISUITE.bat`**
+
+### 3. Configuration (first time)
+
+- The browser opens automatically
+- Open **Settings** (gear icon)
+- Enter API keys (OpenAI, Gemini, etc.)
 - Save
 
-### 4. Start Using!
-(If you have questions, please ask Windsurf or your IDE, don't ask me!)
+### 4. Start using
 
-## 🗑️ How to Delete
-Delete the folder = Delete everything (keeps no trace/files on your system)
-
-## 🤖 Quản gia — tải gói bot (tóm tắt)
-
-| Lệnh | Việc làm |
-|------|----------|
-| `/tai-bang` | Bảng đã tải / chưa tải |
-| `/tai` | Hướng dẫn tải từng gói |
-| `/integrations` | Danh sách + link GitHub |
-| `/run` | Tự tải OpenManus lần đầu |
-| `/run-browser` | Tự tải browser-use lần đầu |
-
-Tải tay (PowerShell trong folder OmniSuite): `npm run integrations:fetch -- <tên_gói>`  
-Ví dụ: `open_manus`, `browser_use`, `crawl4ai`, `activepieces` — xem đầy đủ: `npm run integrations:fetch -- --list`
+For questions, use your IDE assistant or the docs in the main [README.md](README.md).
 
 ---
 
-## ❓ Need Help?
-Where to get API keys:
-- OpenAI: https://platform.openai.com/api-keys
-- Gemini: https://aistudio.google.com/app/apikey
-- SerpAPI: https://serpapi.com/manage-api-key
+## AI Butler — download packages (cheat sheet)
+
+Open **`/dashboard/ai-support`** (AI Butler).
+
+| Command | What it does |
+|---------|----------------|
+| `/tai-bang` | Table: downloaded vs not downloaded |
+| `/tai` | How to fetch each package |
+| `/integrations` | Full list + GitHub links |
+| `/run` | Auto-fetch OpenManus on first use |
+| `/run-browser` | Auto-fetch browser-use on first use |
+
+Manual fetch (PowerShell in OmniSuite folder):
+
+```
+npm run integrations:fetch -- <package_id>
+```
+
+Examples: `open_manus`, `browser_use`, `crawl4ai`, `activepieces`  
+List all fetchable IDs: `npm run integrations:fetch -- --list`
+
+---
+
+## Delete
+
+Delete the project folder to remove everything (no extra uninstaller).
+
+---
+
+## API keys
+
+- OpenAI: https://platform.openai.com/api-keys  
+- Gemini: https://aistudio.google.com/app/apikey  
+- SerpAPI: https://serpapi.com/manage-api-key  

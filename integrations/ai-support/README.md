@@ -1,40 +1,40 @@
 # AI Support Integrations
 
-This folder contains external agent runtimes used by AI Support.
+This folder contains external agent runtimes used by **AI Butler** (`/dashboard/ai-support`).
 
 ## Submodules
 
-- `submodules/browser-use` -> https://github.com/browser-use/browser-use
-- `submodules/open-manus` -> https://github.com/FoundationAgents/OpenManus
+- `submodules/browser-use` → https://github.com/browser-use/browser-use  
+- `submodules/open-manus` → https://github.com/FoundationAgents/OpenManus  
 
-Initialize submodules (đầy đủ URL trong `.gitmodules`):
+Neither ZIP nor a plain `git clone` includes these folders with code. Users fetch them via `npm run integrations:fetch` or first-time `/run` / `/run-browser`.
+
+### Initialize submodules (full URLs in `.gitmodules`)
 
 ```bash
 git submodule sync --recursive
 git submodule update --init --recursive
 ```
 
-Hoặc (khuyến nghị — dùng npm, giống nhau trên Windows / macOS / Linux):
+Or (recommended — same on Windows / macOS / Linux):
 
 ```bash
-npm run integrations:sync
+npm run integrations:sync:all
 ```
 
-Kiểm tra nhanh submodule đã init đủ chưa (thoát mã 1 nếu thiếu):
+Quick check (exit code 1 if missing):
 
 ```bash
 npm run integrations:verify
 ```
 
-Cập nhật submodule lên **HEAD mới nhất trên remote** (có thể lệch khỏi commit pin của OmniSuite):
+Update submodules to **latest remote HEAD** (may differ from OmniSuite’s pinned commit):
 
 ```bash
 npm run integrations:sync:upstream
 ```
 
----
-
-Script cũ bọc cùng logic:
+Legacy wrappers (same logic):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/clone-integrations.ps1
@@ -44,11 +44,16 @@ powershell -ExecutionPolicy Bypass -File scripts/clone-integrations.ps1
 bash scripts/clone-integrations.sh
 ```
 
-`npm run integrations:sync` đồng bộ submodule (trong đó có OpenManus) và **shallow clone** `integrations/ai-support/submodules/open-manus` nếu chưa có (mirror khi clone tay không dùng submodule).
+On-demand fetch (one package):
 
-## Bootstrap (tất cả runner Python — khuyến nghị)
+```bash
+npm run integrations:fetch -- open_manus
+npm run integrations:fetch -- browser_use
+```
 
-Từ **root repo** OmniSuite (không phải chỉ thư mục `integrations/ai-support`):
+## Bootstrap (all Python runners — recommended)
+
+From the **OmniSuite repo root** (not only `integrations/ai-support`):
 
 ```powershell
 # Windows — OpenManus (/run), browser-use + Playwright, job-scraper deps, ApplyPilot
@@ -60,9 +65,9 @@ Từ **root repo** OmniSuite (không phải chỉ thư mục `integrations/ai-su
 bash scripts/setup-runners-venv.sh
 ```
 
-Tạo `.venv-runners/`. Trong `.env` đặt `PYTHON_BIN` trỏ tới Python của venv đó và `AI_SUPPORT_RUNNER_ENABLED=true`.
+Creates `.venv-runners/`. In `.env` set `PYTHON_BIN` to that venv’s Python and `AI_SUPPORT_RUNNER_ENABLED=true`.
 
-### Chỉ browser-use (legacy)
+### browser-use only (legacy)
 
 ```bash
 cd integrations/ai-support/submodules/browser-use
@@ -74,15 +79,15 @@ pip install -r requirements.txt
 
 ## Security gates for runner mode
 
-- `INTERNAL_TOKEN`: required for any future route that can spawn shell/Python.
-- `AI_SUPPORT_RUNNER_ENABLED=false`: default disabled. Enable only in trusted environments.
+- `AI_SUPPORT_RUNNER_SECRET`: optional; UI sends `x-internal-token` when set.
+- `AI_SUPPORT_RUNNER_ENABLED=false`: default off. Enable only on trusted machines.
 
 ## Canonical browser capability
 
-AI Support normalizes duplicate browser-control frameworks to one canonical ID:
+AI Butler normalizes browser frameworks to one ID:
 
-- `browser-use` -> `browser_agent`
-- `stagehand` -> `browser_agent`
-- `selenium` -> `browser_agent`
+- `browser-use` → `browser_agent`
+- `stagehand` → `browser_agent`
+- `selenium` → `browser_agent`
 
-This keeps user-facing slash commands and plan JSON consistent.
+Keeps slash commands and plan JSON consistent.

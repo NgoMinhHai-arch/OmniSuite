@@ -143,8 +143,8 @@ export function buildIntegrationsAnswer(): string {
     buildIntegrationsDownloadPreamble(),
     'CÁC TÍNH NĂNG TRONG integrations/ (tải theo nhu cầu)',
     '',
-    'Clone OmniSuite là đủ. Runner /run và /run-browser tự tải gói lần đầu.',
-    'App bên dưới: clone vào đúng thư mục path (hoặc pip install) rồi chạy theo setupHint.',
+    'ZIP hay clone đều không gói sẵn các mục dưới — người dùng tải từng gói (fetch, /run, hoặc git clone vào path).',
+    'Runner /run · /run-browser: có thể auto-fetch lần đầu. App JobOps, resume-lm…: chạy độc lập sau khi bạn clone.',
     '',
   ];
 

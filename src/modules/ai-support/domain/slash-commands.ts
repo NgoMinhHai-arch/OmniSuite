@@ -84,7 +84,7 @@ export const AI_SUPPORT_SLASH_COMMANDS: SlashCommandDef[] = [
   {
     command: '/tai',
     label: 'Hướng dẫn tải gói',
-    description: '/tai [open_manus|browser] — chỉ tải khi dùng /run hoặc /run-browser; không tải sẵn lúc cài app.',
+    description: '/tai [id] — hướng dẫn tải từng gói (zip/clone đều không có sẵn OpenManus, JobOps…).',
     handlerKind: 'static',
     example: '/tai open_manus',
   },

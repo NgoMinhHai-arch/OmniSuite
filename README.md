@@ -4,7 +4,7 @@
 
 ## Project status
 
-This reflects **what is in this repository today**. Prefer **`git clone`** (not GitHub “Download ZIP” — integration folders are empty in zip). Integrations such as OpenManus/browser-use are fetched **on demand** (`/run`, `npm run integrations:fetch`); full submodule sync is optional for devs.
+This reflects **what is in this repository today**. **ZIP and `git clone` both ship only the OmniSuite app** — OpenManus, JobOps, browser-use, Crawl4AI, and other integrations are **not bundled**; users download each package when needed (`npm run integrations:fetch`, first `/run` in AI Butler, or manual `git clone` into `integrations/…`). Prefer **`git clone`** over ZIP (empty integration folders in archives). Dev-only: `npm run integrations:sync:all`.
 
 ### Shipped in-repo
 
@@ -120,23 +120,21 @@ Copy `.env.example` to `.env`, configure secrets locally, then:
 npm run dev
 ```
 
-### Integrations (on-demand — not bundled in ZIP)
+### Integrations (not bundled — ZIP or clone)
 
-**Do not** download the repo as a ZIP if you need AI runners: GitHub leaves `integrations/...` submodule paths empty.
-
-After `git clone`:
+**Neither ZIP nor `git clone` includes** OpenManus, JobOps, browser-use, or other integration code. After clone:
 
 ```bash
 npm install
-# First use in Quản gia: /run or /run-browser auto-downloads the package (requires Git)
-# Or manual:
+# AI Butler (/dashboard/ai-support): /tai-bang shows downloaded vs missing
+# First /run or /run-browser can auto-fetch one package (requires Git)
 npm run integrations:fetch -- open_manus
 npm run integrations:fetch -- browser_use
 ```
 
-Dev (all submodules): `npm run integrations:sync:all`  
+Dev (fetch everything): `npm run integrations:sync:all`  
 Verify: `npm run integrations:verify`  
-Runner details: [`integrations/ai-support/README.md`](integrations/ai-support/README.md) · [`integrations/README.md`](integrations/README.md)
+Docs: [`integrations/README.md`](integrations/README.md) · [`integrations/ai-support/README.md`](integrations/ai-support/README.md) · [README_Simple.md](README_Simple.md)
 
 ### Useful commands
 
@@ -145,8 +143,9 @@ Runner details: [`integrations/ai-support/README.md`](integrations/ai-support/RE
 | `npm run app` | Run via launcher |
 | `npm run build:exe` | Build `OmniSuite.exe` |
 | `npm run dev` | Dev mode (frontend + backends) |
-| `npm run integrations:sync` | Fetch/update submodules |
-| `npm run integrations:verify` | Fail if submodules are missing |
+| `npm run integrations:fetch -- <id>` | Fetch one integration (on demand) |
+| `npm run integrations:sync:all` | Fetch all submodules (dev) |
+| `npm run integrations:verify` | Warn/fail if paths or runners are missing |
 | `npm run integrations:sync:upstream` | Advance submodules toward remote HEAD |
 | `npm run dev:next` | Next.js only |
 | `npm run dev:engine` | Python engine only |

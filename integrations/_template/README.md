@@ -1,29 +1,29 @@
 # Integration template
 
-Sao chép cấu trúc này khi thêm tool mới vào OmniSuite.
+Copy this layout when adding a new tool to OmniSuite.
 
 ## Checklist
 
-- [ ] Thêm entry trong `integrations/manifest.json`
+- [ ] Add entry in `integrations/manifest.json`
 - [ ] `npm run integrations:codegen`
 - [ ] `npm run integrations:validate`
-- [ ] Nếu **git submodule**: đặt repo dưới `integrations/.../submodules/<name>/`
-- [ ] Nếu **ai-support-runner**: tạo `integrations/ai-support/runners/<id>_runner.py` (xem `runner.py.stub`)
-- [ ] Cập nhật `scripts/requirements-runners.txt` nếu cần pip package
-- [ ] Chạy `scripts/setup-runners-venv.ps1`
-- [ ] Thêm slash trong `src/modules/ai-support/domain/slash-commands.ts` nếu có lệnh chat
+- [ ] If **git submodule**: place repo under `integrations/.../submodules/<name>/`
+- [ ] If **ai-support-runner**: add `integrations/ai-support/runners/<id>_runner.py` (see `runner.py.stub`)
+- [ ] Update `scripts/requirements-runners.txt` if a pip package is needed
+- [ ] Run `scripts/setup-runners-venv.ps1`
+- [ ] Add slash command in `src/modules/ai-support/domain/slash-commands.ts` if exposed in chat
 
-## Chiến lược tích hợp
+## Integration strategy
 
-| `integrationStrategy` | Khi nào dùng |
-|----------------------|--------------|
-| `ai-support-runner` | Spawn qua `/api/ai-support/run` |
-| `external-app` | App riêng (Docker / Next.js); chỉ document trong registry |
+| `integrationStrategy` | When to use |
+|----------------------|-------------|
+| `ai-support-runner` | Spawned via `/api/ai-support/run` |
+| `external-app` | Separate app (Docker / Next.js); documented in registry only |
 
 ## Runner contract (NDJSON)
 
-- **stdin**: một dòng JSON
-- **stdout**: mỗi dòng một event JSON (`ready`, `log`, `step`, `done`, `error`, `setup_required`)
+- **stdin**: one JSON line
+- **stdout**: one JSON event per line (`ready`, `log`, `step`, `done`, `error`, `setup_required`)
 - **exit**: `0` OK · `2` setup_required · `3` task failed · `1` unexpected
 
-Kế thừa `integrations/ai-support/runners/_runner_base.py`.
+Extend `integrations/ai-support/runners/_runner_base.py`.

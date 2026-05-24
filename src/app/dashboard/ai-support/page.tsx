@@ -307,6 +307,9 @@ export default function AiSupportPage() {
             content: [
               'Chào chủ nhân. Em là Quản gia OmniSuite — giao việc bằng tiếng Việt hoặc dùng lệnh slash bên dưới.',
               '',
+              'Lưu ý: OpenManus, JobOps, browser-use… không đi kèm khi tải OmniSuite (zip hay git clone).',
+              'Chủ nhân tự tải từng gói khi cần — /tai-bang xem đã tải chưa, /tai xem hướng dẫn.',
+              '',
               'Khám phá & cấu hình',
               '  /help              — in đầy đủ slash + ví dụ',
               '  /tour              — tour ~60 giây các nhóm công cụ',

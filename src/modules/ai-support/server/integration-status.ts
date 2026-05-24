@@ -154,11 +154,11 @@ export function buildIntegrationsStatusTable(root: string): string {
     ...rows.map(formatRow),
     '',
     'Ghi chú:',
-    '• Đã tải = thư mục integrations/... có nội dung (hoặc có sẵn trong repo).',
-    '• Sẵn sàng = file marker chính đã có (vd. manus.py, crawl4ai package).',
-    '• open_manus / browser_use: lần đầu /run hoặc /run-browser cũng tự tải.',
-    '• Crawl4AI + Activepieces: lõi cào web / workflow — npm run integrations:fetch -- <id>',
-    '• Danh sách đầy đủ + GitHub: /integrations · Hướng dẫn: /tai',
+    '• ZIP hay git clone OmniSuite: OpenManus, JobOps, browser-use… đều CHƯA có — bạn tự tải từng dòng.',
+    '• Đã tải = thư mục integrations/... có nội dung.',
+    '• Sẵn sàng = file marker chính đã có (vd. manus.py).',
+    '• Runner: /run · /run-browser có thể tự tải lần đầu · App khác: git clone theo cột Lệnh tải.',
+    '• /integrations · /tai',
   ];
 
   if (notDownloaded.length > 0 && notDownloaded.length <= 8) {
