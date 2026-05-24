@@ -2,6 +2,8 @@
 
 Thư mục `integrations/` gom **git submodule**, **Python runners** và **app bên thứ ba** mà AI Hỗ trợ biết tới.
 
+> **Cảnh báo ZIP:** Tải repo dạng **Download ZIP** trên GitHub sẽ **không** có mã trong các thư mục con (submodule). Dùng `git clone` hoặc sau đó `npm run integrations:fetch -- <id>`. Trong Quản gia: `/tai-bang` xem trạng thái đã/chưa tải.
+
 ## Kiến trúc (3 lớp)
 
 ```

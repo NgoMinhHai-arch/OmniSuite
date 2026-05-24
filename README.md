@@ -4,7 +4,7 @@
 
 ## Project status
 
-This reflects **what is in this repository today**. After cloning, run `git submodule update --init --recursive` where integrations are needed.
+This reflects **what is in this repository today**. Prefer **`git clone`** (not GitHub “Download ZIP” — integration folders are empty in zip). Integrations such as OpenManus/browser-use are fetched **on demand** (`/run`, `npm run integrations:fetch`); full submodule sync is optional for devs.
 
 ### Shipped in-repo
 
@@ -14,7 +14,7 @@ This reflects **what is in this repository today**. After cloning, run `git subm
 - **Launcher** (`node launcher.js` / `npm run app`) — starts the stack; optional browser open to localhost
 - **AI support** UI (`/dashboard/ai-support`): chat, slash commands, planner
 - **Runner API** `/api/ai-support/run` — OpenManus `/run`, browser-use `/run-browser`, optional ApplyPilot / job-scraper (**disabled by default**; optional shared secret)
-- Git **submodules** under `integrations/` plus `npm run integrations:sync` / `integrations:verify`
+- Integrations under `integrations/` (manifest + on-demand `integrations:fetch`; optional `integrations:sync:all` for devs)
 - Security tooling: `npm run security:scan`, `security:scan:staged`, `security:install-hooks`
 - `.env.example` and `.gitignore` excluding `.env`, `.venv-runners/`, and nested **`open-interpreter/`** (not tracked)
 
@@ -120,16 +120,23 @@ Copy `.env.example` to `.env`, configure secrets locally, then:
 npm run dev
 ```
 
-### Integrations (submodules)
+### Integrations (on-demand — not bundled in ZIP)
 
-After `git clone`, sync submodules:
+**Do not** download the repo as a ZIP if you need AI runners: GitHub leaves `integrations/...` submodule paths empty.
+
+After `git clone`:
 
 ```bash
-npm run integrations:sync
+npm install
+# First use in Quản gia: /run or /run-browser auto-downloads the package (requires Git)
+# Or manual:
+npm run integrations:fetch -- open_manus
+npm run integrations:fetch -- browser_use
 ```
 
-Verify: `npm run integrations:verify`.  
-Runner details: [`integrations/ai-support/README.md`](integrations/ai-support/README.md).
+Dev (all submodules): `npm run integrations:sync:all`  
+Verify: `npm run integrations:verify`  
+Runner details: [`integrations/ai-support/README.md`](integrations/ai-support/README.md) · [`integrations/README.md`](integrations/README.md)
 
 ### Useful commands
 
