@@ -77,6 +77,29 @@ export default function Sidebar() {
   const isGoogleConnected = status === "authenticated";
   const isConnecting = status === "loading";
 
+  const [runnerEnabled, setRunnerEnabled] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/system/runner')
+      .then((res) => res.json())
+      .then((data) => setRunnerEnabled(!!data.enabled))
+      .catch(() => {});
+  }, []);
+
+  const toggleRunner = async () => {
+    try {
+      const nextState = !runnerEnabled;
+      const res = await fetch('/api/system/runner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: nextState }),
+      });
+      if (res.ok) {
+        setRunnerEnabled(nextState);
+      }
+    } catch {}
+  };
+
   /** Sync theme + sidebar from localStorage before paint to avoid flash and layout jumps */
   useLayoutEffect(() => {
     try {
@@ -275,6 +298,51 @@ export default function Sidebar() {
           </div>
         ))}
       </nav>
+
+      {/* AI Runner Status Toggle */}
+      {isCollapsed ? (
+        <div className="py-4 flex justify-center border-t" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--hover-bg)' }}>
+          <button
+            onClick={toggleRunner}
+            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all border relative"
+            style={{ 
+              backgroundColor: runnerEnabled ? 'rgba(16, 185, 129, 0.1)' : 'rgba(244, 63, 94, 0.1)',
+              borderColor: runnerEnabled ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)',
+            }}
+            title={runnerEnabled ? 'AI Runner: ĐANG BẬT (Bấm để tắt)' : 'AI Runner: ĐANG TẮT (Bấm để bật)'}
+          >
+            <div className={`w-2.5 h-2.5 rounded-full ${runnerEnabled ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]' : 'bg-rose-500 shadow-[0_0_8px_rgba(244, 63, 94, 0.8)]'}`} />
+          </button>
+        </div>
+      ) : (
+        <div className="px-6 py-4 border-t transition-opacity duration-200" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--hover-bg)' }}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className={`w-2.5 h-2.5 rounded-full ${runnerEnabled ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]'} shrink-0`} />
+              <div className="flex flex-col min-w-0">
+                <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: 'var(--text-primary)' }}>AI Runner</span>
+                <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>
+                  {runnerEnabled ? 'Đang kích hoạt' : 'Đã tạm tắt'}
+                </span>
+              </div>
+            </div>
+            {/* Toggle Switch */}
+            <button
+              onClick={toggleRunner}
+              className="w-9 h-5 rounded-full transition-colors relative focus:outline-none"
+              style={{ backgroundColor: runnerEnabled ? '#6366f1' : 'var(--active-bg)', border: '1px solid var(--border-color)' }}
+            >
+              <div 
+                className="w-3.5 h-3.5 rounded-full bg-white absolute top-[2px] transition-transform shadow"
+                style={{ 
+                  left: '2px',
+                  transform: runnerEnabled ? 'translateX(16px)' : 'translateX(0)' 
+                }} 
+              />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* User Area */}
       <div className={`backdrop-blur-md relative ${isCollapsed ? 'p-3' : 'p-6'}`} style={{ borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--hover-bg)' }}>
