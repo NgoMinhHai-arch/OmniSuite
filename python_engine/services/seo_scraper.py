@@ -566,11 +566,8 @@ def extract_keywords_weighted(html_content: str) -> list[str]:
         return []
 
 
-async def analyze_url(url: str, keyword: str = None) -> SeoAnalysisResponse:
-    """
-    Logic cào dữ liệu Async bằng Playwright.
-    Duy trì tính độc lập hoàn toàn, không phụ thuộc vào FastAPI Router.
-    """
+async def _analyze_url_impl(url: str, keyword: str | None = None) -> SeoAnalysisResponse:
+    """Playwright scrape + parse (runs inside browser queue + RAM throttle)."""
     start_time = time.time()
 
     async with async_playwright() as p:
@@ -579,8 +576,6 @@ async def analyze_url(url: str, keyword: str = None) -> SeoAnalysisResponse:
         )
         try:
             page = await browser.new_page()
-
-            # Thêm timeout và xử lý lỗi cơ bản
             try:
                 response = await page.goto(str(url), wait_until="domcontentloaded", timeout=45000)
                 status_code = response.status if response else 0
@@ -708,3 +703,12 @@ async def analyze_url(url: str, keyword: str = None) -> SeoAnalysisResponse:
         status_code=status_code,
         response_time_ms=round(response_time, 2),
     )
+
+
+async def analyze_url(url: str, keyword: str = None) -> SeoAnalysisResponse:
+    """
+    Queued browser analysis with dynamic RAM-based concurrency.
+    """
+    from python_engine.core.browser_task_queue import get_browser_queue
+
+    return await get_browser_queue().submit(lambda: _analyze_url_impl(url, keyword))

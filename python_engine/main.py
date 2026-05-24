@@ -15,10 +15,14 @@ logger = get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting up Python Engine application...")
-    # Initialize DB on startup
+    from python_engine.core.browser_task_queue import get_browser_queue
+
     await database.init_db()
+    await get_browser_queue().start()
     yield
     logger.info("Shutting down Python Engine application...")
+    await get_browser_queue().stop()
+    await database.shutdown_db()
 
 
 app = FastAPI(

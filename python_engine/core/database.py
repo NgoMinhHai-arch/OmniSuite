@@ -1,17 +1,31 @@
 import json
+
 import asyncpg
+
 from python_engine.core.config import get_settings
 from python_engine.core.logger import get_logger
+from python_engine.core.sqlite_ledger import get_ledger, ledger_enabled
 
 settings = get_settings()
 logger = get_logger()
 
-# Global connection pool
 _pool = None
 
+
+def _postgres_skipped() -> bool:
+    return (get_settings().DATABASE_URL or "").strip().lower() in (
+        "",
+        "skip",
+        "none",
+        "disabled",
+    )
+
+
 async def get_pool():
-    """Gets or creates the PostgreSQL connection pool."""
+    """Gets or creates the PostgreSQL connection pool (optional)."""
     global _pool
+    if _postgres_skipped():
+        return None
     if _pool is None:
         try:
             logger.info("Initializing PostgreSQL database connection pool...")
@@ -20,7 +34,7 @@ async def get_pool():
                 min_size=1,
                 max_size=10,
                 max_queries=50000,
-                max_inactive_connection_lifetime=300.0
+                max_inactive_connection_lifetime=300.0,
             )
             logger.info("PostgreSQL database connection pool initialized successfully.")
         except Exception as e:
@@ -30,20 +44,20 @@ async def get_pool():
 
 
 async def init_db():
-    """Initializes the database and creates the necessary tables."""
+    """Initialize optional PostgreSQL + SQLite Write-Ahead Ledger."""
     global _pool
-    skip = (get_settings().DATABASE_URL or "").strip().lower() in (
-        "",
-        "skip",
-        "none",
-        "disabled",
-    )
-    if skip:
-        logger.warning("DATABASE_URL empty/skip — SEO PostgreSQL persistence disabled.")
+
+    if ledger_enabled():
+        await get_ledger().start()
+
+    if _postgres_skipped():
+        logger.warning("DATABASE_URL empty/skip — SEO PostgreSQL persistence disabled (SQLite ledger active).")
         return
 
     try:
         pool = await get_pool()
+        if not pool:
+            return
         async with pool.acquire() as conn:
             logger.info("Creating seo_results table if not exists...")
             await conn.execute("""
@@ -57,8 +71,8 @@ async def init_db():
                     keyword_density TEXT,
                     keywords_in_title INTEGER,
                     keywords_in_meta INTEGER,
-                    top_keywords TEXT, -- JSON string
-                    image_stats TEXT,  -- JSON string
+                    top_keywords TEXT,
+                    image_stats TEXT,
                     status_code INTEGER,
                     response_time_ms FLOAT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -68,21 +82,33 @@ async def init_db():
     except Exception as e:
         _pool = None
         logger.warning(
-            "PostgreSQL unavailable (%s). Python engine still runs; SEO history DB is off. "
-            "Install/start PostgreSQL or set DATABASE_URL=skip in .env to hide this warning.",
+            "PostgreSQL unavailable (%s). Python engine still runs; SEO history uses SQLite ledger.",
             e,
         )
 
 
+async def shutdown_db():
+    if ledger_enabled():
+        await get_ledger().stop()
+    global _pool
+    if _pool:
+        await _pool.close()
+        _pool = None
+
+
 async def save_seo_result(result_dict: dict):
-    """
-    Saves or updates an SEO audit result in PostgreSQL.
-    result_dict should follow the SeoAnalysisResponse structure.
-    """
+    """Buffered write via SQLite ledger; optional dual-write to PostgreSQL."""
+    if ledger_enabled():
+        await get_ledger().enqueue(result_dict)
+
+    if _postgres_skipped():
+        return
+
     try:
         pool = await get_pool()
+        if not pool:
+            return
         async with pool.acquire() as conn:
-            # Convert objects to JSON strings if they aren't already
             top_kws = result_dict.get("top_keywords", [])
             if not isinstance(top_kws, str):
                 top_kws = json.dumps(top_kws, ensure_ascii=False)
@@ -92,12 +118,10 @@ async def save_seo_result(result_dict: dict):
                 img_stats = json.dumps(img_stats, ensure_ascii=False)
 
             url = str(result_dict.get("url"))
-            logger.info(f"Saving SEO result for URL: {url}")
-
             await conn.execute(
                 """
                 INSERT INTO seo_results (
-                    url, title, description, h1, word_count, 
+                    url, title, description, h1, word_count,
                     keyword_density, keywords_in_title, keywords_in_meta,
                     top_keywords, image_stats, status_code, response_time_ms,
                     created_at
@@ -129,23 +153,29 @@ async def save_seo_result(result_dict: dict):
                 result_dict.get("status_code", 200),
                 result_dict.get("response_time_ms", 0.0),
             )
-            logger.info(f"Successfully saved SEO result for {url}")
     except Exception as e:
-        logger.error(f"Failed to save SEO result for {result_dict.get('url')}: {e}")
-        raise e
+        logger.error(f"Failed to save SEO result to PostgreSQL for {result_dict.get('url')}: {e}")
 
 
 async def get_all_seo_results():
-    """Retrieves all historical SEO results sorted by date from PostgreSQL."""
+    """Read history from SQLite ledger (always) with PostgreSQL fallback when configured."""
+    if ledger_enabled():
+        rows = await get_ledger().fetch_all()
+        if rows:
+            return rows
+
+    if _postgres_skipped():
+        return []
+
     try:
         pool = await get_pool()
+        if not pool:
+            return []
         async with pool.acquire() as conn:
-            logger.info("Fetching all SEO results from database...")
             rows = await conn.fetch("SELECT * FROM seo_results ORDER BY created_at DESC")
             results = []
             for row in rows:
                 item = dict(row)
-                # Deserialize JSON fields
                 try:
                     item["top_keywords"] = json.loads(item["top_keywords"])
                 except Exception:
@@ -155,7 +185,6 @@ async def get_all_seo_results():
                 except Exception:
                     item["image_stats"] = {}
                 results.append(item)
-            logger.info(f"Retrieved {len(results)} SEO results.")
             return results
     except Exception as e:
         logger.error(f"Failed to retrieve SEO results: {e}")
@@ -163,13 +192,16 @@ async def get_all_seo_results():
 
 
 async def clear_seo_history():
-    """Deletes all records from the seo_results table in PostgreSQL."""
+    if ledger_enabled():
+        await get_ledger().clear()
+    if _postgres_skipped():
+        return
     try:
         pool = await get_pool()
+        if not pool:
+            return
         async with pool.acquire() as conn:
-            logger.info("Clearing all SEO history from database...")
             await conn.execute("DELETE FROM seo_results")
-            logger.info("Successfully cleared SEO history.")
     except Exception as e:
         logger.error(f"Failed to clear SEO history: {e}")
         raise e

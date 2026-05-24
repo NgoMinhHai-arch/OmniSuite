@@ -126,12 +126,23 @@ function Ensure-FullPythonFallback {
 function Test-PythonSmoke {
     param([string]$Exe)
     if (-not (Test-Path $Exe)) { return $false }
+    $prevUtf8 = $env:PYTHONUTF8
+    $prevIo = $env:PYTHONIOENCODING
+    $env:PYTHONUTF8 = '1'
+    $env:PYTHONIOENCODING = 'utf-8'
     try {
-        $out = & $Exe -c 'import sys; print(sys.executable)' 2>&1
-        return ($LASTEXITCODE -eq 0 -and $out)
+        # Do not print sys.executable — Unicode paths (e.g. "Dữ Liệu") break cp1252 consoles.
+        & $Exe -c 'import sys' 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $ver = & $Exe --version 2>&1
+        return ($LASTEXITCODE -eq 0 -and $ver)
     }
     catch {
         return $false
+    }
+    finally {
+        if ($null -eq $prevUtf8) { Remove-Item Env:PYTHONUTF8 -ErrorAction SilentlyContinue } else { $env:PYTHONUTF8 = $prevUtf8 }
+        if ($null -eq $prevIo) { Remove-Item Env:PYTHONIOENCODING -ErrorAction SilentlyContinue } else { $env:PYTHONIOENCODING = $prevIo }
     }
 }
 
@@ -228,10 +239,23 @@ if (-not (Test-Path $LocalPythonExe)) {
 
 Refresh-PathEnv
 
-if (-not (Test-PythonSmoke -Exe $LocalPythonExe)) {
-    Write-Err "Local Python smoke test failed at $LocalPythonExe"
+$pythonOk = Test-PythonSmoke -Exe $LocalPythonExe
+if (-not $pythonOk) {
+    Write-Warn 'Python embed khong qua kiem tra — thu Python day du (winget)...'
+    $full = Ensure-FullPythonFallback
+    Refresh-PathEnv
+    if ($full -and (Test-PythonSmoke -Exe $full)) {
+        $pythonOk = $true
+        Write-Ok "Python (winget fallback): OK"
+    }
+}
+
+if (-not $pythonOk) {
+    Write-Err "Khong khoi dong duoc Python tai $LocalPythonExe"
+    Write-Host '      Thu: xoa thu muc .omnisuite\python roi chay lai 01_START_OMNISUITE.bat'
     exit 1
 }
+
 $pyVer = & $LocalPythonExe --version 2>&1
 Write-Ok "Python (Local): OK ($pyVer)"
 

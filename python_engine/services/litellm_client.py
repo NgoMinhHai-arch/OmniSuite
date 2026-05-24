@@ -178,6 +178,10 @@ class LiteLLMClient:
         if provider_normalized == "9router" and not resolved_key:
             resolved_key = "9router"
 
+        from python_engine.core.html_sanitizer import maybe_clean_prompt_for_llm
+
+        user_prompt = maybe_clean_prompt_for_llm(user_prompt)
+
         litellm_url = getattr(settings, "LITELLM_BASE_URL", "") or ""
         if litellm_url:
             return await self._generate_via_litellm(

@@ -35,6 +35,11 @@ class TavilyResearchService:
 
     @staticmethod
     def _strip_markup(raw: str) -> str:
+        from python_engine.core.html_sanitizer import clean_html_for_llm, maybe_clean_prompt_for_llm
+
+        cleaned = maybe_clean_prompt_for_llm(raw, max_chars=14000)
+        if cleaned != raw.strip():
+            return TavilyResearchService._clean_text(cleaned)
         cleaned = raw
         cleaned = re.sub(r"!\[.*?\]\(.*?\)", "", cleaned)
         cleaned = re.sub(r"<img[^>]*>", "", cleaned, flags=re.IGNORECASE)
@@ -44,7 +49,7 @@ class TavilyResearchService:
         cleaned = re.sub(r"\[([^\]]*)\]\([^)]+\)", r"\1", cleaned)
         cleaned = re.sub(r"^https?:\/\/\S+$", "", cleaned, flags=re.MULTILINE)
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-        return TavilyResearchService._clean_text(cleaned)
+        return TavilyResearchService._clean_text(clean_html_for_llm(cleaned, max_chars=14000))
 
     @staticmethod
     def _build_context(sources: list[ResearchSource], limit_chars: int = 7000) -> str:
