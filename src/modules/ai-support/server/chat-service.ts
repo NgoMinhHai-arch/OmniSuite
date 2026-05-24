@@ -119,6 +119,8 @@ export function buildSystemCheckAnswer(merged: Record<string, boolean>): string 
     { key: 'deepseek_api_key', label: 'DeepSeek' },
     { key: 'openrouter_api_key', label: 'OpenRouter' },
     { key: 'ollama_base_url', label: 'Ollama URL (local: tự http://localhost:11434)' },
+    { key: 'ninerouter_api_key', label: '9Router API key' },
+    { key: 'ninerouter_base_url', label: '9Router URL (mặc định http://127.0.0.1:20128)' },
     { key: 'serpapi_key', label: 'SerpAPI' },
     { key: 'tavily_api_key', label: 'Tavily' },
   ];
@@ -132,7 +134,7 @@ export function buildSystemCheckAnswer(merged: Record<string, boolean>): string 
   lines.push('');
   if (okCount === 0) {
     lines.push('Chưa có provider nào được cấu hình.');
-    lines.push('→ Vào /dashboard/settings để nhập API key, hoặc cài Ollama (local, miễn phí).');
+    lines.push('→ Vào /dashboard/settings: API key cloud, Ollama local, hoặc 9Router (npm i -g 9router).');
   } else {
     lines.push(`Đã có ${okCount}/${required.length} mục được cấu hình.`);
     lines.push('Đổi provider mặc định / nhập thêm key tại /dashboard/settings.');

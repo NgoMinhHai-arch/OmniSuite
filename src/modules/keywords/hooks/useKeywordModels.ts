@@ -47,13 +47,15 @@ export function useKeywordModels(onRateLimitMessage?: (msg: string) => void) {
       deepseek: settings.deepseek_api_key,
       ollama: settings.ollama_api_key || "ollama",
       ollama_base_url: settings.ollama_base_url,
+      ninerouter: settings.ninerouter_api_key || "9router",
+      ninerouter_base_url: settings.ninerouter_base_url,
     }),
     [settings],
   );
 
   const fetchModels = useCallback(async () => {
     const { apiKey, customBaseUrl } = getLlmCredentialsFromSettings(provider, settings);
-    if (provider !== "ollama" && !apiKey) {
+    if (provider !== "ollama" && provider !== "9router" && !apiKey) {
       setAvailableModels([]);
       setSelectedModel("");
       setModelsError(null);
@@ -69,7 +71,7 @@ export function useKeywordModels(onRateLimitMessage?: (msg: string) => void) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             provider,
-            apiKey: apiKey || "ollama",
+            apiKey: apiKey || (provider === "9router" ? "9router" : "ollama"),
             ...(customBaseUrl ? { customBaseUrl } : {}),
           }),
         },

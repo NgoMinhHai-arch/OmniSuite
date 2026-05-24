@@ -52,6 +52,8 @@ export default function SettingsPage() {
     openrouter_api_key: '',
     ollama_base_url: '',
     ollama_api_key: '',
+    ninerouter_base_url: '',
+    ninerouter_api_key: '',
     serpapi_key: '',
     pexels_api_key: '',
     outscraper_key: '',
@@ -193,9 +195,18 @@ export default function SettingsPage() {
         else if (provider === 'DeepSeek') apiKey = (parsed.deepseek_api_key as string) || '';
         else if (provider === 'OpenRouter') apiKey = (parsed.openrouter_api_key as string) || '';
         else if (provider === 'Ollama') apiKey = (parsed.ollama_api_key as string) || 'ollama';
+        else if (provider === '9Router') apiKey = (parsed.ninerouter_api_key as string) || '9router';
 
-        if (apiKey || provider === 'Ollama') {
-          fetchModels(provider, apiKey, provider === 'Ollama' ? (parsed.ollama_base_url as string) : undefined);
+        if (apiKey || provider === 'Ollama' || provider === '9Router') {
+          fetchModels(
+            provider,
+            apiKey,
+            provider === 'Ollama'
+              ? (parsed.ollama_base_url as string)
+              : provider === '9Router'
+                ? (parsed.ninerouter_base_url as string)
+                : undefined
+          );
         }
       } catch (e) {
         console.error('Failed to parse settings');
@@ -249,12 +260,17 @@ export default function SettingsPage() {
       else if (provider === 'Ollama') {
         apiKey = settings.ollama_api_key || 'ollama';
         customBaseUrl = settings.ollama_base_url || undefined;
+      } else if (provider === '9Router') {
+        apiKey = settings.ninerouter_api_key || '9router';
+        customBaseUrl = settings.ninerouter_base_url || undefined;
       }
     } else if (provider === 'Ollama') {
       customBaseUrl = baseUrlOverride || settings.ollama_base_url || undefined;
+    } else if (provider === '9Router') {
+      customBaseUrl = baseUrlOverride || settings.ninerouter_base_url || undefined;
     }
 
-    if (!apiKey && provider !== 'Ollama') return;
+    if (!apiKey && provider !== 'Ollama' && provider !== '9Router') return;
 
     setIsFetchingModels(true);
     try {
@@ -263,8 +279,12 @@ export default function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           provider,
-          apiKey: apiKey || 'ollama',
-          ...(customBaseUrl || provider === 'Ollama' ? { customBaseUrl: customBaseUrl || settings.ollama_base_url } : {}),
+          apiKey: apiKey || (provider === '9Router' ? '9router' : 'ollama'),
+          ...(customBaseUrl || provider === 'Ollama'
+            ? { customBaseUrl: customBaseUrl || settings.ollama_base_url }
+            : customBaseUrl || provider === '9Router'
+              ? { customBaseUrl: customBaseUrl || settings.ninerouter_base_url }
+              : {}),
         })
       });
       const data = await resp.json();
@@ -324,6 +344,11 @@ export default function SettingsPage() {
       addHistory('Hệ thống', 'Ngắt kết nối', 'Đã xóa cấu hình Ollama (URL / key).', 'info');
       return;
     }
+    if (providerId === '9Router') {
+      setSettings(prev => ({ ...prev, ninerouter_api_key: '', ninerouter_base_url: '' }));
+      addHistory('Hệ thống', 'Ngắt kết nối', 'Đã xóa cấu hình 9Router (URL / key).', 'info');
+      return;
+    }
     const fieldName = `${providerId.toLowerCase()}_api_key`;
     setSettings(prev => ({ ...prev, [fieldName]: '' }));
     addHistory('Hệ thống', 'Ngắt kết nối', `Đã xóa Key của ${providerId}`, 'info');
@@ -345,9 +370,18 @@ export default function SettingsPage() {
       else if (provider === 'DeepSeek') apiKey = settings.deepseek_api_key;
       else if (provider === 'OpenRouter') apiKey = settings.openrouter_api_key;
       else if (provider === 'Ollama') apiKey = settings.ollama_api_key || 'ollama';
+      else if (provider === '9Router') apiKey = settings.ninerouter_api_key || '9router';
       
-      if (apiKey || provider === 'Ollama') {
-        fetchModels(provider, apiKey, provider === 'Ollama' ? settings.ollama_base_url : undefined);
+      if (apiKey || provider === 'Ollama' || provider === '9Router') {
+        fetchModels(
+          provider,
+          apiKey,
+          provider === 'Ollama'
+            ? settings.ollama_base_url
+            : provider === '9Router'
+              ? settings.ninerouter_base_url
+              : undefined
+        );
       }
     }
   };
@@ -375,6 +409,11 @@ export default function SettingsPage() {
     settings.default_provider === 'Ollama'
       ? [{ id: 'Ollama' as const, key: settings.ollama_api_key || settings.ollama_base_url || 'local', icon: HardDrive }]
       : []),
+    ...(settings.ninerouter_base_url?.trim() ||
+    settings.ninerouter_api_key?.trim() ||
+    settings.default_provider === '9Router'
+      ? [{ id: '9Router' as const, key: settings.ninerouter_api_key || settings.ninerouter_base_url || 'local', icon: Globe }]
+      : []),
   ].filter(p => p.key);
 
   const sections: SettingSection[] = [
@@ -383,7 +422,7 @@ export default function SettingsPage() {
       icon: Cpu,
       description: 'Hệ thống tự động nhận diện Key và Model viết bài.',
       fields: [
-        { id: 'default_provider', label: 'Nhà cung cấp AI mặc định', type: 'select', options: ['OpenAI', 'Gemini', 'Claude', 'Groq', 'DeepSeek', 'OpenRouter', 'Ollama'] },
+        { id: 'default_provider', label: 'Nhà cung cấp AI mặc định', type: 'select', options: ['OpenAI', 'Gemini', 'Claude', 'Groq', 'DeepSeek', 'OpenRouter', 'Ollama', '9Router'] },
         { id: 'default_model', label: 'Model viết bài mặc định', type: availableModels.length > 0 ? 'select' : 'text', options: availableModels, placeholder: 'Quét để xem model' },
         { id: 'openrouter_api_key', label: 'OpenRouter API Key', placeholder: 'sk-or-v1-...', type: 'password' },
         {
@@ -393,6 +432,20 @@ export default function SettingsPage() {
           type: 'text',
           tooltip:
             'Chạy local: để trống hoặc ghi http://localhost:11434 (Ollama mặc định). Remote/tunnel: dán origin không có /v1, ví dụ https://xxx.trycloudflare.com — có thể dán cả /v1/chat/completions, hệ thống chuẩn hóa.',
+        },
+        {
+          id: 'ninerouter_base_url',
+          label: '9Router — URL máy chủ',
+          placeholder: 'http://127.0.0.1:20128 (mặc định nếu để trống)',
+          type: 'text',
+          tooltip:
+            'Cài 9Router: npm i -g 9router && 9router. Dashboard: http://127.0.0.1:20128. Dán origin không có /v1; API OpenAI-compat tại /v1. Xem https://github.com/decolua/9router',
+        },
+        {
+          id: 'ninerouter_api_key',
+          label: '9Router — API Key',
+          placeholder: 'Copy từ dashboard 9Router → API Keys',
+          type: 'password',
         },
         {
           id: 'ollama_api_key',

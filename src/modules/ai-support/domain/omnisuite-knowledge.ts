@@ -49,7 +49,7 @@ export const OMNISUITE_PAGES: OmniSuitePage[] = [
     what: 'Research → outline → bài viết hoàn chỉnh, có queue bulk & similarity guard.',
     steps: [
       'Nhập chủ đề / từ khóa chính',
-      'Chọn LLM provider (Gemini/OpenAI/Claude/Groq/DeepSeek/OpenRouter/Ollama)',
+      'Chọn LLM provider (Gemini/OpenAI/Claude/Groq/DeepSeek/OpenRouter/Ollama/9Router)',
       'Cấu hình variants (số bài) → bấm bắt đầu',
       'Theo dõi queue, tải DOCX khi xong',
     ],
@@ -100,22 +100,69 @@ export const OMNISUITE_PAGES: OmniSuitePage[] = [
   {
     href: '/dashboard/ai-support',
     name: 'Quản gia',
-    what: 'Quản gia OmniSuite (tiếng Việt): giao việc tự nhiên hoặc slash — tìm web khi có Tavily/SerpAPI (/web hoặc tự đoán); nút mở trang / DuckDuckGo; /plan; /run (OpenManus); /run-browser (browser-use).',
-    aliases: ['quan gia', 'tro ly', 'ai support', 'chat ho tro'],
+    what:
+      'Trợ lý tiếng Việt trong app: chat tự nhiên + slash. Biết sản phẩm OmniSuite (trang, LLM, lỗi thường gặp). Có Tavily/SerpAPI → tìm web. Có runner → /run (OpenManus), /run-browser (Playwright). Luôn mở đúng origin Next (vd. http://127.0.0.1:3000).',
+    steps: [
+      'Mở /dashboard/ai-support',
+      'Mới vào: gõ /tour hoặc /tools',
+      'Cần hướng dẫn trang: /howto viết bài AI (hoặc keywords, ollama, 9router…)',
+      'Cần kế hoạch agent: /plan — thực thi local: /run hoặc /run-browser (nếu đã bật runner)',
+    ],
+    whenToUse: 'Không biết bắt đầu từ đâu, cần điều hướng nhanh, hoặc gợi ý workflow SEO/content.',
+    aliases: ['quan gia', 'tro ly', 'ai support', 'chat ho tro', 'butler', 'omnisuite'],
   },
   {
     href: '/dashboard/settings',
     name: 'Cấu hình hệ thống',
-    what: 'Nhập API key (Gemini/OpenAI/Claude/Groq/DeepSeek/OpenRouter), URL & token Ollama, chọn provider mặc định.',
+    what:
+      'Nhập API key cloud (Gemini/OpenAI/Claude/Groq/DeepSeek/OpenRouter), Ollama (local/tunnel), 9Router (proxy miễn phí OpenAI-compat), Tavily/SerpAPI, SerpAPI… Chọn provider + model mặc định. Lưu trong trình duyệt (localStorage), không commit git.',
     steps: [
-      'Vào Cấu hình → nhập API key cần dùng',
-      'Đặt "Nhà cung cấp AI mặc định"',
-      'Với Ollama local: để URL trống, app tự gọi http://localhost:11434',
+      'Mở /dashboard/settings',
+      'Dán API key hoặc URL máy chủ (Ollama / 9Router)',
+      'Chọn "Nhà cung cấp AI mặc định" → quét model → chọn model mặc định',
+      'Bấm Lưu — reload tab tool nếu vừa đổi provider',
     ],
-    whenToUse: 'Trước khi dùng bất kỳ tool LLM nào.',
-    aliases: ['cau hinh', 'settings', 'api key'],
+    whenToUse: 'Trước khi dùng LLM, tìm web (Quản gia), hoặc tool cần SerpAPI/DataForSEO.',
+    aliases: ['cau hinh', 'settings', 'api key', 'cau hinh he thong'],
   },
 ];
+
+/** Bối cảnh sản phẩm — dùng trong prompt và /howto omnisuite. */
+export const OMNISUITE_PRODUCT_FACTS = {
+  tagline:
+    'OmniSuite = hub SEO/marketing trên Next.js 16 + Python FastAPI: từ khóa, viết bài AI, quét Maps, 80+ tool SEO, Quản gia (chat tiếng Việt).',
+  stack: [
+    'Frontend: Next.js 16 (App Router), React 19, Tailwind — dashboard tại /dashboard/*',
+    'Python engine: FastAPI cổng 8082 (PYTHON_ENGINE_URL) — keywords, content queue, job',
+    'Khởi chạy: npm run app hoặc node launcher.js (Next + Python cùng lúc)',
+    'API keys UI: localStorage key omnisuite_settings; .env cho server/runner (không commit)',
+  ],
+  dataFlow: [
+    'Viết bài / SEO tool (Next) → gọi LLM qua API route hoặc proxy sang Python engine',
+    'Phân tích từ khóa: UI Next → POST Python /keywords với provider + api_keys',
+    'Quản gia: chat tại /dashboard/ai-support — slash tĩnh (không LLM) hoặc LLM + optional Tavily/SerpAPI',
+  ],
+  securityNotes: [
+    'Runner (/run, /run-browser): TẮT mặc định — cần AI_SUPPORT_RUNNER_ENABLED=true (thực thi code local)',
+    'Không có auth toàn cục trên mọi /api — giả định máy tin cậy / localhost',
+    'OMNISUITE_LOCALHOST_ONLY=1 mặc định — chỉ localhost truy cập dashboard',
+  ],
+};
+
+/** Vai trò và giới hạn của Quản gia — tránh bịa tính năng. */
+export const BUTLER_CAPABILITIES = {
+  can: [
+    'Trả lời tiếng Việt về cách dùng OmniSuite (trang, workflow, provider LLM)',
+    'Đề xuất nút mở trang (/dashboard/...) hoặc lệnh slash (/plan, /howto, /run…)',
+    'Tìm web khi có Tavily/SerpAPI (/web hoặc tự đoán khi cần thông tin ngoài app)',
+    'Lập kế hoạch 3 tầng (/plan), kiểm tra key (/check), tour (/tour)',
+  ],
+  cannot: [
+    'Không trực tiếp chạy tool SEO thay chủ nhân (chỉ hướng dẫn + mở đúng trang)',
+    'Không đọc file trên máy chủ ngoài phạm vi API đã expose',
+    'Không bật runner nếu .env chưa cho phép — phải nhắc cấu hình',
+  ],
+};
 
 /** Chuẩn hóa nhẹ để match tiếng Việt (bỏ dấu, đ→d). */
 export function normalizeViFold(s: string): string {
@@ -186,6 +233,12 @@ export const SUPPORTED_LLM_PROVIDERS = [
   { id: 'deepseek', label: 'DeepSeek', notes: 'Giá rẻ cho task lý luận.' },
   { id: 'openrouter', label: 'OpenRouter', notes: 'Gateway nhiều model — có rate limit chia sẻ.' },
   { id: 'ollama', label: 'Ollama', notes: 'Local 100% offline. Mặc định http://localhost:11434.' },
+  {
+    id: '9router',
+    label: '9Router',
+    notes:
+      'Proxy OpenAI-compat local http://127.0.0.1:20128/v1 — route tới 40+ provider (Kiro, OpenCode Free…). Cài: npm i -g 9router && 9router. Key copy từ dashboard 9Router.',
+  },
 ];
 
 /** Đặc tả ngắn cách OmniSuite vận hành Ollama mượt — đồng bộ với src/shared/lib/ollama.ts. */
@@ -196,6 +249,15 @@ export const OLLAMA_RUNTIME_DEFAULTS = {
   idleWatcher: 'Sau 2 phút không có inference, OmniSuite chủ động gọi /api/ps + unload mọi model.',
   shutdownUnload: 'Khi tắt app (Ctrl+C / OmniSuite.exe), launcher gọi unload toàn bộ model trước khi thoát.',
   override: 'Override qua biến môi trường: OLLAMA_MAX_CONCURRENT, OLLAMA_KEEP_ALIVE, OLLAMA_NUM_CTX, OLLAMA_IDLE_UNLOAD_MS, OLLAMA_TIMEOUT_MS.',
+};
+
+/** 9Router — proxy AI miễn phí (https://github.com/decolua/9router). */
+export const NINEROUTER_SETUP = {
+  install: 'npm i -g 9router → chạy lệnh 9router (dashboard http://127.0.0.1:20128)',
+  settings:
+    'Cấu hình → provider 9Router → API key từ dashboard 9Router → URL để trống = http://127.0.0.1:20128',
+  models: 'Quét model trong Cấu hình; dùng id combo 9Router (vd. cc/claude-sonnet-4-5, kr/claude-sonnet-4.5)',
+  pythonOnly: 'Route mọi LLM Python qua 9Router: LITELLM_BASE_URL=http://127.0.0.1:20128 trong .env (không thêm /v1)',
 };
 
 /** Các vấn đề thường gặp + cách xử lý nhanh. */
@@ -247,6 +309,22 @@ export const TROUBLESHOOT_KNOWLEDGE: Array<{ problem: string; fix: string }> = [
     problem: '/run-browser báo "setup_required: browser_use/playwright"',
     fix: 'cd integrations/ai-support/submodules/browser-use → pip install -e . → python -m playwright install chromium.',
   },
+  {
+    problem: '9Router: không kết nối / không lấy được model',
+    fix: 'Chạy 9router trong terminal. Mở http://127.0.0.1:20128 → kết nối provider trong dashboard → copy API key vào Cấu hình OmniSuite. Dùng 127.0.0.1 thay localhost nếu lỗi IPv6.',
+  },
+  {
+    problem: 'Python engine không chạy / keywords lỗi 502',
+    fix: 'Kiểm tra PYTHON_ENGINE_URL=http://127.0.0.1:8082. Chạy npm run app (launcher khởi động FastAPI). Xem log python_engine — PostgreSQL phải chạy nếu route cần DB.',
+  },
+  {
+    problem: 'Quản gia slash /run lỗi hoặc không phản hồi',
+    fix: 'Mở Quản gia trên cùng origin với Next (vd. http://127.0.0.1:3000), không embed host khác. Bật AI_SUPPORT_RUNNER_ENABLED và cài .venv-runners.',
+  },
+  {
+    problem: 'Đăng nhập dashboard lặp vô hạn',
+    fix: 'Đặt NEXTAUTH_SECRET trong .env. Xóa cookie session cũ. Chạy lại npm run dev.',
+  },
 ];
 
 /** Workflow mẫu để gợi ý người dùng — dùng cho /tour và /howto generic. */
@@ -277,19 +355,55 @@ export const COMMON_WORKFLOWS: Array<{ title: string; steps: string[] }> = [
       '3. Thực thi local: /run <task> (OpenManus) hoặc /run-browser <task> (browser-use + Playwright)',
     ],
   },
+  {
+    title: 'Dùng AI gần như miễn phí (9Router + Ollama)',
+    steps: [
+      '1. Cài 9router (npm i -g 9router) hoặc Ollama (ollama.com)',
+      '2. /dashboard/settings → 9Router hoặc Ollama làm provider mặc định',
+      '3. Quét model → chọn combo/model phù hợp',
+      '4. Dùng Viết bài AI / Keywords / Quản gia với cùng provider',
+    ],
+  },
 ];
 
 /**
  * Khối knowledge cô đọng inject vào system prompt LLM.
  * GIỮ NGẮN GỌN — đây là context cho mỗi turn chat.
  */
+export function buildOmniSuiteOverviewAnswer(): string {
+  const lines: string[] = [
+    'OMNISUITE — TỔNG QUAN (cho Quản gia / chủ nhân)',
+    '',
+    OMNISUITE_PRODUCT_FACTS.tagline,
+    '',
+    'Kiến trúc:',
+    ...OMNISUITE_PRODUCT_FACTS.stack.map((s) => `• ${s}`),
+    '',
+    'Luồng dữ liệu chính:',
+    ...OMNISUITE_PRODUCT_FACTS.dataFlow.map((s) => `• ${s}`),
+    '',
+    'Quản gia (em) có thể:',
+    ...BUTLER_CAPABILITIES.can.map((s) => `• ${s}`),
+    '',
+    'Quản gia KHÔNG:',
+    ...BUTLER_CAPABILITIES.cannot.map((s) => `• ${s}`),
+    '',
+    'Bắt đầu nhanh: /tour → /tools → /dashboard/settings (API key) → /howto <tên trang>.',
+  ];
+  return lines.join('\n');
+}
+
 export function omniSuiteKnowledgePromptBlock(): string {
   const pageLines = OMNISUITE_PAGES.map((p) => `- ${p.href} (${p.name}): ${p.what}`).join('\n');
   const providerLines = SUPPORTED_LLM_PROVIDERS.map((p) => `- ${p.id} → ${p.label}: ${p.notes}`).join('\n');
   return [
     '# OMNISUITE — bối cảnh sản phẩm bạn đang hỗ trợ',
-    'OmniSuite là bộ công cụ Next.js + Python engine cho SEO / content, có Quản gia (chat tiếng Việt, có nút việc làm).',
-    'Ngôn ngữ trả lời mặc định: tiếng Việt, ngắn gọn, có hành động cụ thể (đường dẫn /dashboard/... khi cần).',
+    OMNISUITE_PRODUCT_FACTS.tagline,
+    'Bạn là QUẢN GIA: trợ lý vận hành OmniSuite — chỉ tiếng Việt, gọn, đưa việc cụ thể (href /dashboard hoặc slash).',
+    'Không bịa URL/tính năng ngoài danh sách dưới đây.',
+    '',
+    '## Kiến trúc (nhớ khi debug)',
+    ...OMNISUITE_PRODUCT_FACTS.stack.map((s) => `- ${s}`),
     '',
     '## Trang chính (sidebar)',
     pageLines,
@@ -297,17 +411,25 @@ export function omniSuiteKnowledgePromptBlock(): string {
     '## Provider LLM hỗ trợ',
     providerLines,
     '',
-    '## Ollama runtime (mặc định, không cần chỉnh .env)',
+    '## Ollama (local)',
     `- ${OLLAMA_RUNTIME_DEFAULTS.sequentialQueue}`,
-    `- ${OLLAMA_RUNTIME_DEFAULTS.keepAlive}`,
+    `- ${OLLAMA_RUNTIME_DEFAULTS.numCtx}`,
     `- ${OLLAMA_RUNTIME_DEFAULTS.idleWatcher}`,
-    `- ${OLLAMA_RUNTIME_DEFAULTS.shutdownUnload}`,
+    '',
+    '## 9Router (proxy OpenAI-compat)',
+    `- ${NINEROUTER_SETUP.install}`,
+    `- ${NINEROUTER_SETUP.settings}`,
+    `- ${NINEROUTER_SETUP.models}`,
+    '',
+    '## Cấu hình API',
+    '- UI: /dashboard/settings → lưu localStorage (omnisuite_settings)',
+    '- Server: .env (GEMINI_API_KEY, PYTHON_ENGINE_URL, runner flags…) — không commit',
     '',
     '## Slash command trong Quản gia',
     '- /help: liệt kê lệnh',
     '- /tour: tour tổng quan OmniSuite',
     '- /tools: danh sách trang chính',
-    '- /howto <từ khóa>: hướng dẫn dùng tính năng cụ thể',
+    '- /howto <từ khóa>: hướng dẫn dùng tính năng cụ thể (vd. viết bài AI, ollama, 9router, omnisuite)',
     '- /check: kiểm tra API key / provider đã cấu hình',
     '- /llm: gợi ý chọn provider/model phù hợp',
     '- /settings: nhắc đường dẫn Cấu hình',
@@ -328,10 +450,14 @@ export function buildTourAnswer(): string {
   const lines: string[] = [
     'TOUR OMNISUITE — 60 giây',
     '',
+    OMNISUITE_PRODUCT_FACTS.tagline,
+    '',
     'OmniSuite có 3 nhóm:',
     '1) TỔNG QUAN — /dashboard',
-    '2) CÔNG CỤ — keywords / content / maps / seo-tools / images / ai-support',
-    '3) HỆ THỐNG — settings (API key, Ollama)',
+    '2) CÔNG CỤ — keywords / content / maps / seo-tools / images / ai-support (Quản gia)',
+    '3) HỆ THỐNG — settings (API key, Ollama, 9Router, Tavily…)',
+    '',
+    'Em (Quản gia) ở /dashboard/ai-support — gõ /help để xem lệnh slash.',
     '',
     'Dòng chảy điển hình:',
   ];
@@ -360,7 +486,21 @@ export function buildToolsAnswer(): string {
 export function buildHowToAnswer(query: string): string | null {
   const q = query.trim().toLowerCase();
   if (!q) {
-    return 'Cú pháp: /howto <tên trang>. Ví dụ: /howto viết bài AI, /howto keywords, /howto ollama.';
+    return 'Cú pháp: /howto <tên trang>. Ví dụ: /howto viết bài AI, /howto keywords, /howto ollama, /howto 9router, /howto omnisuite.';
+  }
+  if (/(omnisuite|san pham|la gi|tong quan|kien truc|architecture)/.test(q)) {
+    return buildOmniSuiteOverviewAnswer();
+  }
+  if (/(9router|9 router|chin router)/.test(q)) {
+    return [
+      'CÁCH DÙNG 9ROUTER VỚI OMNISUITE:',
+      `1. ${NINEROUTER_SETUP.install}`,
+      '2. Trong dashboard 9Router: kết nối provider (Kiro, OpenCode Free…) + tạo API key',
+      `3. ${NINEROUTER_SETUP.settings}`,
+      `4. ${NINEROUTER_SETUP.models}`,
+      '5. Dùng Viết bài AI / Keywords / Quản gia với cùng provider 9Router',
+      `6. (Tuỳ chọn Python) ${NINEROUTER_SETUP.pythonOnly}`,
+    ].join('\n');
   }
   if (/(ollama|local llm|gpu|vram)/.test(q)) {
     return [
@@ -408,12 +548,17 @@ export function buildSettingsAnswer(): string {
   return [
     'CẤU HÌNH HỆ THỐNG: /dashboard/settings',
     '',
-    '• Nhập API key cho provider muốn dùng (Gemini/OpenAI/Claude/Groq/DeepSeek/OpenRouter).',
-    '• Đặt "Nhà cung cấp AI mặc định" — toàn bộ tool sẽ dùng provider này khi không override.',
-    '• Ollama local: chỉ cần chạy "ollama serve" + "ollama pull <model>". Để URL trống, OmniSuite tự gọi http://localhost:11434.',
-    '• Ollama remote (Colab/server tunnel): dán origin (không có /v1) vào "Ollama — URL máy chủ".',
+    'LLM (chọn một hoặc nhiều):',
+    '• Cloud: Gemini, OpenAI, Claude, Groq, DeepSeek, OpenRouter — dán API key tương ứng.',
+    '• Ollama local: ollama serve + ollama pull <model>; URL để trống = http://localhost:11434.',
+    `• 9Router: ${NINEROUTER_SETUP.install} — key từ dashboard 9Router; URL trống = http://127.0.0.1:20128.`,
     '',
-    'Sau khi lưu cấu hình, reload tab tool đang mở.',
+    'Sau khi nhập key: chọn "Nhà cung cấp AI mặc định" → quét model → chọn model mặc định → Lưu.',
+    'Tìm web (Quản gia): thêm Tavily hoặc SerpAPI key ở cùng trang Cấu hình.',
+    'Runner (/run): AI_SUPPORT_RUNNER_SECRET khớp .env nếu bật runner.',
+    '',
+    'Lưu trong trình duyệt (localStorage). Server đọc thêm .env — xem .env.example.',
+    'Sau khi lưu: reload tab tool đang mở.',
   ].join('\n');
 }
 
@@ -421,8 +566,8 @@ export function buildSettingsAnswer(): string {
 export function buildLlmAdviceAnswer(query: string): string {
   const q = query.trim().toLowerCase();
   const lines: string[] = ['GỢI Ý CHỌN PROVIDER / MODEL:'];
-  if (/local|offline|riêng tư|private|free/.test(q) || !q) {
-    lines.push('• Chạy local / không tốn tiền: Ollama + llama3.2 (3B-8B Q4) hoặc qwen2.5.');
+  if (/local|offline|riêng tư|private|free|mien phi|9router/.test(q) || !q) {
+    lines.push('• Gần miễn phí: 9Router (proxy combo Kiro/OpenCode…) hoặc Ollama + llama3.2 / qwen2.5.');
   }
   if (/json|schema|tool call|structured/.test(q) || !q) {
     lines.push('• Cần JSON ổn định / structured output: OpenAI gpt-4o-mini hoặc Gemini 1.5 Flash.');

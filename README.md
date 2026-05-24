@@ -9,7 +9,7 @@ This reflects **what is in this repository today**. After cloning, run `git subm
 ### Shipped in-repo
 
 - Next.js 16 (App Router) dashboard and SEO tooling
-- Multi-provider AI (Gemini, OpenAI, Claude, Groq, DeepSeek, OpenRouter, **Ollama** local/tunnel)
+- Multi-provider AI (Gemini, OpenAI, Claude, Groq, DeepSeek, OpenRouter, **Ollama** local/tunnel, **[9Router](https://github.com/decolua/9router)** proxy)
 - Python **FastAPI** engine (`python_engine/`) with keyword, content, and job-related routes
 - **Launcher** (`node launcher.js` / `npm run app`) — starts the stack; optional browser open to localhost
 - **AI support** UI (`/dashboard/ai-support`): chat, slash commands, planner
@@ -48,7 +48,7 @@ This reflects **what is in this repository today**. After cloning, run `git subm
 ### AI-driven insights
 
 - **Intent engine:** Search-intent classification with multimodal models
-- **Providers:** Gemini, OpenAI, Claude, Groq, DeepSeek, OpenRouter, **Ollama**
+- **Providers:** Gemini, OpenAI, Claude, Groq, DeepSeek, OpenRouter, **Ollama**, **9Router**
 - **Local-first:** Offline-capable with Ollama (no cloud API key required)
 
 ### Advanced scraping
@@ -168,6 +168,19 @@ Node 18+, Python 3.10+, API keys in `.env` as needed, optional Ollama for local 
 3. For a remote tunnel, paste the **origin** only (no `/v1`). Optional bearer token goes in **Ollama API Key**.
 
 **VRAM / RAM friendly defaults:** sequential inference queue, `keep_alive` tuning, idle unload, optional `num_ctx` cap — see `.env.example` (`OLLAMA_*`). The launcher attempts to unload loaded models on exit.
+
+---
+
+## 9Router (free AI proxy, OpenAI-compatible)
+
+[9Router](https://github.com/decolua/9router) routes CLI tools and OpenAI-compatible clients to 40+ providers (subscription, cheap, and free tiers) with optional RTK token savings and auto-fallback.
+
+1. Install and start: `npm i -g 9router` then `9router` (dashboard at `http://127.0.0.1:20128`).
+2. In the 9Router dashboard, connect providers (e.g. Kiro AI, OpenCode Free) and copy an **API key**.
+3. In OmniSuite **Settings**, set the default provider to **9Router**, paste the API key, and leave the URL blank to use `http://127.0.0.1:20128`.
+4. Pick a model from the list (e.g. `cc/claude-sonnet-4-5`, `kr/claude-sonnet-4.5`) — names match 9Router combos.
+
+**Python engine only (all providers via 9Router):** set `LITELLM_BASE_URL=http://127.0.0.1:20128` in `.env` (origin without `/v1`). See `.env.example`.
 
 ---
 

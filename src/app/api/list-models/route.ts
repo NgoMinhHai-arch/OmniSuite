@@ -5,7 +5,7 @@ export async function POST(req: Request) {
   try {
     const { provider, apiKey, customBaseUrl } = await req.json();
     const pl = String(provider || '').toLowerCase();
-    const allowEmptyKey = pl === 'claude' || pl === 'anthropic' || pl === 'ollama';
+    const allowEmptyKey = pl === 'claude' || pl === 'anthropic' || pl === 'ollama' || pl === '9router' || pl === 'ninerouter';
     if (!apiKey && !allowEmptyKey) {
       return NextResponse.json({ error: "API Key is required" }, { status: 400 });
     }

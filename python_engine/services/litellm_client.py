@@ -32,6 +32,8 @@ class LiteLLMClient:
             return "gemini"
         if normalized == "anthropic":
             return "claude"
+        if normalized in {"ninerouter", "nine-router", "nine_router"}:
+            return "9router"
         return normalized
 
     @staticmethod
@@ -42,9 +44,22 @@ class LiteLLMClient:
         return f"{raw}/v1"
 
     @staticmethod
+    def _ninerouter_v1_base(custom_base_url: str | None) -> str:
+        raw = (custom_base_url or settings.NINEROUTER_BASE_URL or "http://127.0.0.1:20128").strip().rstrip("/")
+        for tail in ("/v1/chat/completions", "/v1/models", "/dashboard"):
+            if raw.lower().endswith(tail):
+                raw = raw[: -len(tail)]
+                break
+        if raw.endswith("/v1"):
+            return raw
+        return f"{raw}/v1"
+
+    @staticmethod
     def _openai_compatible_v1_base(provider: str, custom_base_url: str | None) -> str:
         if provider == "ollama":
             return LiteLLMClient._ollama_v1_base(custom_base_url)
+        if provider == "9router":
+            return LiteLLMClient._ninerouter_v1_base(custom_base_url)
         if custom_base_url:
             u = custom_base_url.strip().rstrip("/")
             return u if u.endswith("/v1") else f"{u}/v1"
@@ -78,10 +93,13 @@ class LiteLLMClient:
             "deepseek": settings.DEEPSEEK_API_KEY,
             "openrouter": settings.OPENROUTER_API_KEY,
             "ollama": settings.OLLAMA_API_KEY,
+            "9router": settings.NINEROUTER_API_KEY,
         }
         key = mapping.get(provider, "") or ""
         if not key and provider == "ollama":
             return "ollama"
+        if not key and provider == "9router":
+            return "9router"
         return key
 
     @staticmethod
@@ -96,6 +114,7 @@ class LiteLLMClient:
             "claude": "claude-3-5-sonnet-latest",
             "anthropic": "claude-3-5-sonnet-latest",
             "ollama": "llama3.2",
+            "9router": "cc/claude-sonnet-4-5",
         }
         return defaults.get(provider, "gpt-4o-mini")
 
@@ -125,6 +144,8 @@ class LiteLLMClient:
             return strip_prefix(model, "openai/")
         if provider == "ollama":
             return strip_prefix(model, "ollama/")
+        if provider == "9router":
+            return strip_prefix(model, "9router/")
         return model
 
     @staticmethod
@@ -150,10 +171,12 @@ class LiteLLMClient:
         provider_normalized = self._normalize_provider(provider)
         normalized_model_name = self._normalize_model_name(provider_normalized, model_name)
         resolved_key = self._resolve_api_key(provider_normalized, api_key)
-        if not resolved_key and provider_normalized != "ollama":
+        if not resolved_key and provider_normalized not in {"ollama", "9router"}:
             raise ValueError(f"Missing API key for provider: {provider_normalized}")
         if provider_normalized == "ollama" and not resolved_key:
             resolved_key = "ollama"
+        if provider_normalized == "9router" and not resolved_key:
+            resolved_key = "9router"
 
         litellm_url = getattr(settings, "LITELLM_BASE_URL", "") or ""
         if litellm_url:

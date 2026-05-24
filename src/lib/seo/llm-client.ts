@@ -11,6 +11,8 @@ interface KeyBag {
   openrouter_api_key?: string;
   ollama_base_url?: string;
   ollama_api_key?: string;
+  ninerouter_base_url?: string;
+  ninerouter_api_key?: string;
 }
 
 function readClientKeys(): KeyBag {
@@ -30,6 +32,8 @@ function readClientKeys(): KeyBag {
         "openrouter_api_key",
         "ollama_base_url",
         "ollama_api_key",
+        "ninerouter_base_url",
+        "ninerouter_api_key",
       ] as const
     ).forEach((k) => {
       const v = parsed[k];

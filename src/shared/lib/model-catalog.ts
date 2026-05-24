@@ -1,4 +1,5 @@
 import { normalizeOllamaOrigin, ollamaOpenAiV1Base } from './ollama';
+import { nineRouterOpenAiV1Base } from './ninerouter';
 
 type ProviderName =
   | 'openai'
@@ -10,6 +11,7 @@ type ProviderName =
   | 'openrouter'
   | 'deepseek'
   | 'ollama'
+  | '9router'
   | 'custom';
 
 export interface OpenRouterModelMeta {
@@ -49,6 +51,13 @@ const DEFAULT_MODELS: Record<string, string[]> = {
   ],
   deepseek: ['deepseek-chat', 'deepseek-coder'],
   ollama: ['llama3.2', 'llama3.1', 'mistral', 'qwen2.5'],
+  '9router': [
+    'cc/claude-sonnet-4-5',
+    'cc/claude-opus-4-6',
+    'kr/claude-sonnet-4.5',
+    'glm/glm-5',
+    'cx/gpt-5.4',
+  ],
 };
 
 const VISION_MODEL_HINTS: Record<string, string[]> = {
@@ -61,6 +70,7 @@ const VISION_MODEL_HINTS: Record<string, string[]> = {
   deepseek: [],
   openrouter: [],
   ollama: [],
+  '9router': [],
   custom: [],
 };
 
@@ -103,6 +113,7 @@ export function normalizeProvider(provider?: string): ProviderName {
   if (lower === 'anthropic') return 'claude';
   if (lower === 'custom') return 'custom';
   if (lower === 'ollama') return 'ollama';
+  if (lower === '9router' || lower === 'ninerouter') return '9router';
   if (lower === 'openai' || lower === 'gemini' || lower === 'groq' || lower === 'claude' || lower === 'openrouter' || lower === 'deepseek') {
     return lower;
   }
@@ -210,6 +221,29 @@ export async function fetchModelsForProvider(params: {
       if (!resp.ok) throw new Error(data.error?.message || 'Failed to fetch DeepSeek models');
       const models = ((data.data || []) as ModelIdItem[]).map((m) => m.id);
       return normalizeModels(models.length > 0 ? models : DEFAULT_MODELS.deepseek);
+    }
+
+    if (provider === '9router') {
+      const v1 = nineRouterOpenAiV1Base(customBaseUrl);
+      const requestHeaders: Record<string, string> = { Accept: 'application/json' };
+      if (apiKey?.trim()) {
+        requestHeaders.Authorization = `Bearer ${apiKey.trim()}`;
+      }
+      const resp = await fetch(`${v1}/models`, {
+        cache: 'no-store',
+        headers: requestHeaders,
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        const detail = (data as { error?: { message?: string } }).error?.message || `9Router HTTP ${resp.status}`;
+        throw new Error(
+          `Không lấy được model từ 9Router tại ${v1}. Đảm bảo 9router đang chạy (npm i -g 9router && 9router) và API key khớp dashboard. (${detail})`
+        );
+      }
+      const models = ((data as { data?: ModelIdItem[] }).data || [])
+        .map((m) => m.id)
+        .filter(Boolean);
+      return normalizeModels(models.length > 0 ? models : DEFAULT_MODELS['9router']);
     }
 
     if (provider === 'ollama') {

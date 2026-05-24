@@ -4,19 +4,23 @@
  */
 
 import { shouldExposeOllamaInUi } from "@/shared/lib/ollama";
+import { shouldExposeNineRouterInUi } from "@/shared/lib/ninerouter";
 
 /** Provider id dùng chung Keywords / AI Hỗ trợ (google = Gemini API). */
 export function getDashboardLlmProviderFromSettings(parsed: Record<string, unknown>): string {
   const fromDefault = uiProviderLabelToKeywordsProviderId(
     typeof parsed.default_provider === "string" ? parsed.default_provider : undefined
   );
-  const settingsKeyForLlm = fromDefault === "google" ? "gemini" : fromDefault;
+  const settingsKeyForLlm =
+    fromDefault === "google" ? "gemini" : fromDefault === "9router" ? "ninerouter" : fromDefault;
   const apiKeyVal = parsed[`${settingsKeyForLlm}_api_key`];
 
   const defaultHasKey =
     fromDefault === "ollama"
       ? shouldExposeOllamaInUi(parsed)
-      : typeof apiKeyVal === "string" && apiKeyVal.trim().length > 0;
+      : fromDefault === "9router"
+        ? shouldExposeNineRouterInUi(parsed)
+        : typeof apiKeyVal === "string" && apiKeyVal.trim().length > 0;
 
   if (defaultHasKey) return fromDefault;
 
@@ -30,6 +34,13 @@ export function getDashboardLlmProviderFromSettings(parsed: Record<string, unkno
     {
       id: "ollama",
       key: parsed.ollama_base_url || parsed.ollama_api_key || (parsed.default_provider === "Ollama" ? "local" : ""),
+    },
+    {
+      id: "9router",
+      key:
+        parsed.ninerouter_api_key ||
+        parsed.ninerouter_base_url ||
+        (parsed.default_provider === "9Router" ? "local" : ""),
     },
   ].find((p) => {
     const k = p.key;
@@ -49,10 +60,11 @@ export function uiProviderLabelToLlmSlug(label: string | undefined | null): stri
     DeepSeek: "deepseek",
     OpenRouter: "openrouter",
     Ollama: "ollama",
+    "9Router": "9router",
   };
   if (map[key]) return map[key];
   const lower = key.toLowerCase();
-  if (["openai", "gemini", "google", "claude", "groq", "deepseek", "openrouter", "ollama"].includes(lower)) {
+  if (["openai", "gemini", "google", "claude", "groq", "deepseek", "openrouter", "ollama", "9router", "ninerouter"].includes(lower)) {
     return lower === "google" ? "gemini" : lower;
   }
   return "gemini";
@@ -69,6 +81,7 @@ export function uiProviderLabelToKeywordsProviderId(label: string | undefined | 
     DeepSeek: "deepseek",
     OpenRouter: "openrouter",
     Ollama: "ollama",
+    "9Router": "9router",
   };
   return map[key] || "google";
 }

@@ -75,8 +75,23 @@ class UniversalIntentManager:
             # Ollama: OpenAI-compatible /v1; base_url chỉ là placeholder, runtime
             # sẽ chuẩn hoá theo api_keys["ollama_base_url"] hoặc settings.OLLAMA_BASE_URL.
             "ollama": {"base_url": "http://localhost:11434/v1", "default": "llama3.2"},
+            "9router": {"base_url": "http://127.0.0.1:20128/v1", "default": "cc/claude-sonnet-4-5"},
         }
         self.model_cache = {}
+
+    @staticmethod
+    def _resolve_ninerouter_v1_base(custom_base_url: str | None) -> str:
+        raw = (custom_base_url or settings.NINEROUTER_BASE_URL or "http://127.0.0.1:20128").strip()
+        raw = raw.rstrip("/")
+        if not raw:
+            return "http://127.0.0.1:20128/v1"
+        for tail in ("/v1/chat/completions", "/v1/models", "/dashboard"):
+            if raw.lower().endswith(tail):
+                raw = raw[: -len(tail)]
+                break
+        if raw.lower().endswith("/v1"):
+            return raw
+        return f"{raw}/v1"
 
     @staticmethod
     def _resolve_ollama_v1_base(custom_base_url: str | None) -> str:
@@ -101,7 +116,11 @@ class UniversalIntentManager:
         import time
 
         now = time.time()
-        cache_key = f"{provider}|{custom_base_url or ''}" if provider == "ollama" else provider
+        cache_key = (
+            f"{provider}|{custom_base_url or ''}"
+            if provider in {"ollama", "9router"}
+            else provider
+        )
         if cache_key in self.model_cache:
             model, expiry = self.model_cache[cache_key]
             if now < expiry:
@@ -122,6 +141,23 @@ class UniversalIntentManager:
                             best = sorted(flash_models, reverse=True)[0]
                             self.model_cache[cache_key] = (best, now + 3600)
                             return best
+                elif provider == "9router":
+                    base_v1 = self._resolve_ninerouter_v1_base(custom_base_url)
+                    headers: dict[str, str] = {}
+                    if api_key and api_key != "9router":
+                        headers["Authorization"] = f"Bearer {api_key}"
+                    try:
+                        resp = await client.get(f"{base_v1}/models", headers=headers)
+                        if resp.status_code == 200:
+                            ids = [
+                                m.get("id") for m in (resp.json().get("data") or []) if m.get("id")
+                            ]
+                            if ids:
+                                best = ids[0]
+                                self.model_cache[cache_key] = (best, now + 600)
+                                return best
+                    except Exception:
+                        pass
                 elif provider == "ollama":
                     # Ưu tiên /api/tags (Ollama native), fallback /v1/models cho tunnel.
                     base_v1 = self._resolve_ollama_v1_base(custom_base_url)
@@ -180,11 +216,14 @@ class UniversalIntentManager:
                 "deepseek": "deepseek",
                 "openrouter": "openrouter",
                 "ollama": "ollama",
+                "9router": "ninerouter",
             }
             api_key = api_keys.get(key_map.get(provider, ""), "")
             if provider == "ollama":
                 # Frontend gửi kèm `ollama_base_url` để định tuyến local/tunnel.
                 custom_base_url = api_keys.get("ollama_base_url") or None
+            if provider == "9router":
+                custom_base_url = api_keys.get("ninerouter_base_url") or None
 
         if not api_key:
             if provider == "google":
@@ -201,10 +240,14 @@ class UniversalIntentManager:
                 api_key = settings.OPENROUTER_API_KEY
             elif provider == "ollama":
                 api_key = settings.OLLAMA_API_KEY
+            elif provider == "9router":
+                api_key = settings.NINEROUTER_API_KEY
 
         if provider == "ollama":
             # Local Ollama không cần Bearer thật; SDK chấp nhận placeholder "ollama".
             api_key = (api_key or "ollama").strip() or "ollama"
+        elif provider == "9router":
+            api_key = (api_key or "9router").strip() or "9router"
         elif not api_key:
             return {kw: "I" for kw in keywords}
 
@@ -257,9 +300,11 @@ class UniversalIntentManager:
                     if resp.status_code == 200:
                         text = resp.json()["content"][0]["text"]
                         return self._parse_json_res(text)
-                else:  # OpenAI, Groq, DeepSeek, OpenRouter, Ollama
+                else:  # OpenAI, Groq, DeepSeek, OpenRouter, Ollama, 9Router
                     if provider == "ollama":
                         base = self._resolve_ollama_v1_base(custom_base_url)
+                    elif provider == "9router":
+                        base = self._resolve_ninerouter_v1_base(custom_base_url)
                     else:
                         base = self.providers[provider]["base_url"]
                     url = f"{base}/chat/completions"

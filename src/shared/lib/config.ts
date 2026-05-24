@@ -16,6 +16,10 @@ export interface SystemConfig {
   ollama_base_url?: string;
   /** Optional; local Ollama often needs no real key (placeholder sent to SDK). */
   ollama_api_key?: string;
+  /** 9Router dashboard origin, e.g. http://127.0.0.1:20128 (no /v1). */
+  ninerouter_base_url?: string;
+  /** API key from 9Router dashboard (Settings → API keys). */
+  ninerouter_api_key?: string;
   serpapi_key?: string;
   tavily_api_key?: string;
   pexels_api_key?: string;
@@ -59,6 +63,8 @@ export const getSystemConfig = (): SystemConfig => {
     openrouter_api_key: process.env.OPENROUTER_API_KEY,
     ollama_base_url: process.env.OLLAMA_BASE_URL,
     ollama_api_key: process.env.OLLAMA_API_KEY,
+    ninerouter_base_url: process.env.NINEROUTER_BASE_URL || process.env.NINE_ROUTER_BASE_URL,
+    ninerouter_api_key: process.env.NINEROUTER_API_KEY || process.env.NINE_ROUTER_API_KEY,
     serpapi_key: process.env.SERPAPI_KEY,
     tavily_api_key: process.env.TAVILY_API_KEY,
     pexels_api_key: process.env.PEXELS_API_KEY,

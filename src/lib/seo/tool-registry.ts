@@ -34,7 +34,7 @@ export interface RequirementMeta {
 export const REQUIREMENTS: Record<RequirementKey, RequirementMeta> = {
   llm: {
     id: "llm",
-    label: "LLM (OpenAI/Gemini/Claude/Groq/DeepSeek/OpenRouter/Ollama)",
+    label: "LLM (OpenAI/Gemini/Claude/Groq/DeepSeek/OpenRouter/Ollama/9Router)",
     settingsKeys: [
       "openai_api_key",
       "gemini_api_key",
@@ -44,6 +44,8 @@ export const REQUIREMENTS: Record<RequirementKey, RequirementMeta> = {
       "openrouter_api_key",
       "ollama_base_url",
       "ollama_api_key",
+      "ninerouter_base_url",
+      "ninerouter_api_key",
     ],
   },
   serpapi: { id: "serpapi", label: "SerpApi", settingsKeys: ["serpapi_key"], helpUrl: "https://serpapi.com" },

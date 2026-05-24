@@ -10,6 +10,8 @@ export interface ClientKeys {
   openrouter_api_key?: string;
   ollama_base_url?: string;
   ollama_api_key?: string;
+  ninerouter_base_url?: string;
+  ninerouter_api_key?: string;
   /** Tavily — Quản gia có thể tìm web khi có key (Cấu hình hoặc .env). */
   tavily_api_key?: string;
   /** SerpAPI — fallback tìm web cho Quản gia. */
@@ -33,5 +35,7 @@ export function buildKeys(client?: ClientKeys): LlmKeys {
     openrouter_api_key: client?.openrouter_api_key || sys.openrouter_api_key,
     ollama_base_url: client?.ollama_base_url || sys.ollama_base_url,
     ollama_api_key: client?.ollama_api_key || sys.ollama_api_key,
+    ninerouter_base_url: client?.ninerouter_base_url || sys.ninerouter_base_url,
+    ninerouter_api_key: client?.ninerouter_api_key || sys.ninerouter_api_key,
   };
 }

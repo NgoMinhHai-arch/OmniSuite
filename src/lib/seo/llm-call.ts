@@ -8,6 +8,7 @@ import {
   readOllamaNumCtx,
   withOllamaInferenceLock,
 } from "@/shared/lib/ollama";
+import { nineRouterOpenAiV1Base } from "@/shared/lib/ninerouter";
 import { uiProviderLabelToLlmSlug } from "@/shared/lib/llm-default-provider";
 
 export type LlmProvider =
@@ -18,7 +19,8 @@ export type LlmProvider =
   | "groq"
   | "deepseek"
   | "openrouter"
-  | "ollama";
+  | "ollama"
+  | "9router";
 
 export interface LlmKeys {
   openai_api_key?: string;
@@ -29,6 +31,8 @@ export interface LlmKeys {
   openrouter_api_key?: string;
   ollama_base_url?: string;
   ollama_api_key?: string;
+  ninerouter_base_url?: string;
+  ninerouter_api_key?: string;
 }
 
 export interface LlmRequest {
@@ -62,6 +66,7 @@ const FALLBACK_MODEL: Record<LlmProvider, string> = {
   deepseek: "deepseek-chat",
   openrouter: "openrouter/auto",
   ollama: "llama3.2",
+  "9router": "cc/claude-sonnet-4-5",
 };
 
 /**
@@ -92,6 +97,9 @@ export function sanitizeModelForOutboundApi(provider: string, rawModel: string):
   if (p === "ollama") {
     return m.replace(/^ollama\//i, "");
   }
+  if (p === "9router") {
+    return m.replace(/^9router\//i, "");
+  }
   if (p === "gemini" || p === "google") {
     return m
       .replace(/^models\//i, "")
@@ -99,6 +107,22 @@ export function sanitizeModelForOutboundApi(provider: string, rawModel: string):
       .replace(/^gemini\//i, "");
   }
   return m;
+}
+
+function nineRouterConfigured(
+  keys: LlmKeys,
+  sys: ReturnType<typeof getSystemConfig>,
+  preferredSlug?: string | null
+): boolean {
+  if (
+    keys.ninerouter_api_key?.trim() ||
+    keys.ninerouter_base_url?.trim() ||
+    sys.ninerouter_api_key?.trim() ||
+    sys.ninerouter_base_url?.trim()
+  ) {
+    return true;
+  }
+  return (preferredSlug || "").trim().toLowerCase() === "9router";
 }
 
 function ollamaConfigured(
@@ -134,6 +158,12 @@ export function pickProviderFromKeys(
   if (preferredSlug === "ollama") {
     return { provider: "ollama", apiKey: keys.ollama_api_key?.trim() || sys.ollama_api_key?.trim() || "ollama" };
   }
+  if (preferredSlug === "9router") {
+    return {
+      provider: "9router",
+      apiKey: keys.ninerouter_api_key?.trim() || sys.ninerouter_api_key?.trim() || "9router",
+    };
+  }
 
   const tryOpenaiCompatible = (p: LlmProvider): { provider: LlmProvider; apiKey: string } | null => {
     if (p === "openai" && keys.openai_api_key?.trim()) return { provider: "openai", apiKey: keys.openai_api_key };
@@ -160,6 +190,12 @@ export function pickProviderFromKeys(
     if (hit) return hit;
   }
 
+  if (nineRouterConfigured(keys, sys, preferredSlug)) {
+    return {
+      provider: "9router",
+      apiKey: keys.ninerouter_api_key?.trim() || sys.ninerouter_api_key?.trim() || "9router",
+    };
+  }
   if (ollamaConfigured(keys, sys, preferredSlug)) {
     return { provider: "ollama", apiKey: keys.ollama_api_key?.trim() || sys.ollama_api_key?.trim() || "ollama" };
   }
@@ -186,14 +222,17 @@ export async function callLlm(req: LlmRequest, fallbackKeys: LlmKeys = {}): Prom
       providerLower === "deepseek" ? fallbackKeys.deepseek_api_key :
       providerLower === "openrouter" ? fallbackKeys.openrouter_api_key :
       providerLower === "ollama" ? fallbackKeys.ollama_api_key || sysCfg.ollama_api_key || "ollama" :
+      providerLower === "9router" ? fallbackKeys.ninerouter_api_key || sysCfg.ninerouter_api_key || "9router" :
       "";
     if (pickedKey) apiKey = pickedKey;
   }
 
-  if (!apiKey && providerLower !== "ollama") {
+  if (!apiKey && providerLower !== "ollama" && providerLower !== "9router") {
     const auto = pickProviderFromKeys(fallbackKeys, req.preferredProvider);
     if (!auto) {
-      throw new Error("Chưa có API key cho bất kỳ LLM nào. Hãy mở Cấu hình hệ thống và thêm OpenAI/Gemini/Claude/Groq/DeepSeek/OpenRouter, hoặc cấu hình Ollama (URL máy chủ).");
+      throw new Error(
+        "Chưa có API key cho bất kỳ LLM nào. Hãy mở Cấu hình hệ thống và thêm OpenAI/Gemini/Claude/Groq/DeepSeek/OpenRouter, hoặc cấu hình 9Router / Ollama (URL máy chủ)."
+      );
     }
     providerLower = auto.provider;
     apiKey = auto.apiKey;
@@ -201,6 +240,9 @@ export async function callLlm(req: LlmRequest, fallbackKeys: LlmKeys = {}): Prom
 
   if (providerLower === "ollama" && !apiKey) {
     apiKey = fallbackKeys.ollama_api_key?.trim() || sysCfg.ollama_api_key?.trim() || "ollama";
+  }
+  if (providerLower === "9router" && !apiKey) {
+    apiKey = fallbackKeys.ninerouter_api_key?.trim() || sysCfg.ninerouter_api_key?.trim() || "9router";
   }
 
   const provider = providerLower;
@@ -256,6 +298,10 @@ export async function callLlm(req: LlmRequest, fallbackKeys: LlmKeys = {}): Prom
       ollamaOriginSource =
         fallbackKeys.ollama_base_url?.trim() || sysCfg.ollama_base_url?.trim() || undefined;
       url = `${ollamaOpenAiV1Base(ollamaOriginSource)}/chat/completions`;
+    } else if (provider === "9router") {
+      const nineOrigin =
+        fallbackKeys.ninerouter_base_url?.trim() || sysCfg.ninerouter_base_url?.trim() || undefined;
+      url = `${nineRouterOpenAiV1Base(nineOrigin)}/chat/completions`;
     } else if (provider === "openai") url = "https://api.openai.com/v1/chat/completions";
     else if (provider === "deepseek") url = "https://api.deepseek.com/v1/chat/completions";
     else if (provider === "groq") url = "https://api.groq.com/openai/v1/chat/completions";

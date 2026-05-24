@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     SERPAPI_KEY: str = ""
     TAVILY_API_KEY: str = ""
     LITELLM_BASE_URL: str = ""
+    # 9Router local proxy (OpenAI-compatible). Origin without /v1 — https://github.com/decolua/9router
+    NINEROUTER_BASE_URL: str = Field(
+        default="",
+        validation_alias=AliasChoices("NINEROUTER_BASE_URL", "NINE_ROUTER_BASE_URL"),
+    )
+    NINEROUTER_API_KEY: str = Field(
+        default="",
+        validation_alias=AliasChoices("NINEROUTER_API_KEY", "NINE_ROUTER_API_KEY"),
+    )
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

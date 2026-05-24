@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getLlmCredentialsFromSettings } from "@/shared/lib/client-llm-credentials";
+import { shouldExposeNineRouterInUi } from "@/shared/lib/ninerouter";
 
 const SETTINGS_KEY = "omnisuite_settings";
 
@@ -44,6 +45,9 @@ export function useContentModels() {
     if (parsed.ollama_base_url?.trim() || parsed.ollama_api_key?.trim() || parsed.default_provider === "Ollama") {
       connected.push("Ollama");
     }
+    if (shouldExposeNineRouterInUi(parsed)) {
+      connected.push("9Router");
+    }
     setConnectedProviders(connected);
 
     const defaultProvider = parsed.default_provider || "Gemini";
@@ -60,7 +64,7 @@ export function useContentModels() {
   const fetchModels = useCallback(
     async (provider: string) => {
       const { apiKey, customBaseUrl } = getLlmCredentialsFromSettings(provider, settings);
-      if (provider !== "Ollama" && !apiKey) return;
+      if (provider !== "Ollama" && provider !== "9Router" && !apiKey) return;
 
       setIsLoadingModels(true);
       try {
@@ -69,7 +73,7 @@ export function useContentModels() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             provider,
-            apiKey: apiKey || "ollama",
+            apiKey: apiKey || (provider === "9Router" ? "9router" : "ollama"),
             ...(customBaseUrl ? { customBaseUrl } : {}),
           }),
         });
