@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import type { BulkContentJobStatus } from "@/shared/contracts/content-engine";
+import { DEFAULT_PYTHON_ENGINE_URL } from "@/shared/lib/python-engine-url";
 
 export function useContentJobs(
   onNotify: (message: string, type?: "success" | "error") => void,
@@ -11,15 +12,15 @@ export function useContentJobs(
 
   const explainFetchFailure = useCallback((err: unknown): Error => {
     if (err instanceof TypeError) {
-      const m = err.message || "";
-      if (m === "Failed to fetch" || /failed to fetch|networkerror|load failed/i.test(m)) {
+      const message = err.message || "";
+      if (message === "Failed to fetch" || /failed to fetch|networkerror|load failed/i.test(message)) {
         return new Error(
-          "Không kết nối được máy chủ (Failed to fetch). Kiểm tra: (1) Next.js đang chạy, (2) Python Content Engine đã bật trên cổng trong PYTHON_ENGINE_URL (mặc định http://127.0.0.1:8082), (3) tường lửa/proxy không chặn localhost.",
+          `KhÃ´ng káº¿t ná»‘i Ä‘Æ°á»£c mÃ¡y chá»§ (Failed to fetch). Kiá»ƒm tra: (1) Next.js Ä‘ang cháº¡y, (2) Python Content Engine Ä‘Ã£ báº­t trÃªn cá»•ng trong PYTHON_ENGINE_URL (máº·c Ä‘á»‹nh ${DEFAULT_PYTHON_ENGINE_URL}), (3) tÆ°á»ng lá»­a/proxy khÃ´ng cháº·n localhost.`,
         );
       }
     }
     if (err instanceof Error) return err;
-    return new Error("Lỗi mạng không xác định.");
+    return new Error("Lá»—i máº¡ng khÃ´ng xÃ¡c Ä‘á»‹nh.");
   }, []);
 
   const fetchJsonOrThrow = useCallback(
@@ -27,8 +28,8 @@ export function useContentJobs(
       let resp: Response;
       try {
         resp = await fetch(input, init);
-      } catch (e) {
-        throw explainFetchFailure(e);
+      } catch (error) {
+        throw explainFetchFailure(error);
       }
       let data: Record<string, unknown>;
       try {
@@ -36,7 +37,7 @@ export function useContentJobs(
       } catch {
         const txt = await resp.text().catch(() => "");
         throw new Error(
-          resp.ok ? `Phản hồi không phải JSON: ${txt.slice(0, 160)}` : `HTTP ${resp.status}: ${txt.slice(0, 240)}`,
+          resp.ok ? `Pháº£n há»“i khÃ´ng pháº£i JSON: ${txt.slice(0, 160)}` : `HTTP ${resp.status}: ${txt.slice(0, 240)}`,
         );
       }
       return { resp, data };
@@ -51,28 +52,28 @@ export function useContentJobs(
           let resp: Response;
           try {
             resp = await fetch(`/api/content-jobs/${jobId}`);
-          } catch (netErr) {
-            throw explainFetchFailure(netErr);
+          } catch (error) {
+            throw explainFetchFailure(error);
           }
           const data = await resp.json();
-          if (!resp.ok) throw new Error(data.error || "Không thể đọc trạng thái job");
+          if (!resp.ok) throw new Error(String(data.error || "KhÃ´ng thá»ƒ Ä‘á»c tráº¡ng thÃ¡i job"));
           setBulkJob(data);
           if (data.status === "completed" || data.status === "failed" || data.status === "cancelled") {
             clearInterval(interval);
             setLoading(false);
             if (data.status === "completed") {
               onBulkComplete?.(data as BulkContentJobStatus);
-              onNotify(`Bulk hoàn tất: ${data.results?.length || 0} bài`, "success");
+              onNotify(`Bulk hoÃ n táº¥t: ${data.results?.length || 0} bÃ i`, "success");
             } else if (data.status === "failed") {
-              onNotify(data.error || "Bulk job thất bại", "error");
+              onNotify(String(data.error || "Bulk job tháº¥t báº¡i"), "error");
             } else {
-              onNotify("Đã hủy bulk job", "error");
+              onNotify("ÄÃ£ há»§y bulk job", "error");
             }
           }
-        } catch (err: unknown) {
+        } catch (error: unknown) {
           clearInterval(interval);
           setLoading(false);
-          const message = err instanceof Error ? err.message : "Lỗi polling bulk job";
+          const message = error instanceof Error ? error.message : "Lá»—i polling bulk job";
           onNotify(message, "error");
         }
       }, 2200);
