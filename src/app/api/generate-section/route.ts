@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requestSection } from '@/shared/lib/content-engine-client';
 import type { ContentSectionRequest } from '@/shared/contracts/content-engine';
+import { pythonBridgeErrorResponse } from '@/shared/lib/server/python-bridge';
 
 export const maxDuration = 60;
 
@@ -15,7 +16,7 @@ export async function POST(req: Request) {
       sectionIndex,
       totalSections,
       masterContext,
-      framework = 'Tự do',
+      framework = 'Tá»± do',
       provider,
       modelName,
       apiKey,
@@ -52,8 +53,6 @@ export async function POST(req: Request) {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });
   } catch (error: unknown) {
-    console.error('Section Gen Error:', error);
-    const msg = error instanceof Error ? error.message : 'Lỗi tạo phần viết';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return pythonBridgeErrorResponse(error);
   }
 }
