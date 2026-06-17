@@ -1,38 +1,36 @@
-import { NextResponse } from "next/server";
-import { getPythonEngineUrl } from "@/shared/lib/python-engine-url";
-import { logger } from "@/shared/lib/logger";
-import { internalTokenHeaders } from "@/shared/lib/server/internal-token";
+import { NextResponse } from 'next/server';
+import { getPythonEngineUrl } from '@/shared/lib/python-engine-url';
+import { logger } from '@/shared/lib/logger';
+import { internalTokenHeaders } from '@/shared/lib/server/internal-token';
+import {
+  parsePythonJsonOrThrow,
+  pythonBridgeErrorResponse,
+} from '@/shared/lib/server/python-bridge';
 
 export async function POST(req: Request) {
+  const engine = getPythonEngineUrl();
   try {
     const { keyword, url } = await req.json();
     if (!keyword) {
-      return NextResponse.json({ error: "Keyword is required" }, { status: 400 });
+      return NextResponse.json({ error: 'Keyword is required' }, { status: 400 });
     }
     if (!url) {
-      return NextResponse.json({ error: "URL is required" }, { status: 400 });
+      return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
 
-    const engine = getPythonEngineUrl();
     const response = await fetch(`${engine}/api/seo/analyze`, {
-      method: "POST",
-      headers: { 
-        "Content-Type": "application/json",
-        ...internalTokenHeaders()
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...internalTokenHeaders(),
       },
       body: JSON.stringify({ url, keyword }),
     });
 
-    if (!response.ok) {
-      const detail = await response.text();
-      return NextResponse.json({ error: "SEO analyze failed", detail }, { status: response.status });
-    }
-
-    const data = await response.json();
+    const data = await parsePythonJsonOrThrow(response, engine);
     return NextResponse.json({ audit: data });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    logger.error(`Audit API Error (density): ${message}`);
-    return NextResponse.json({ error: "Internal Server Error", details: message }, { status: 500 });
+    logger.error(`Audit API Error (density): ${error instanceof Error ? error.message : String(error)}`);
+    return pythonBridgeErrorResponse(error, engine);
   }
 }
