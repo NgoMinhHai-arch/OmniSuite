@@ -4,10 +4,17 @@ import type {
   ContentOutlineRequest,
   ContentOutlineResponse,
   ContentSectionRequest,
+  ContentWorkflowRequest,
+  ContentWorkflowResponse,
 } from '@/shared/contracts/content-engine';
+import { getPythonEngineUrl } from '@/shared/lib/python-engine-url';
 import { requireInternalToken } from '@/shared/lib/server/internal-token';
-
-const PYTHON_ENGINE_URL = process.env.PYTHON_ENGINE_URL || 'http://127.0.0.1:8082';
+import {
+  buildPythonEngineUnreachableMessage,
+  buildPythonHttpError,
+  normalizePythonBridgeError,
+  parsePythonJsonOrThrow,
+} from '@/shared/lib/server/python-bridge';
 
 function getHeaders(contentType?: string) {
   const headers: Record<string, string> = {
@@ -19,109 +26,105 @@ function getHeaders(contentType?: string) {
   return headers;
 }
 
-function engineUnreachableMessage(err: unknown): Error {
-  const hint =
-    `Không kết nối được Python Content Engine (${PYTHON_ENGINE_URL}). ` +
-    'Chạy python_engine trên đúng cổng và kiểm tra biến PYTHON_ENGINE_URL trong môi trường Next.js.';
+function engineUnreachableMessage(err: unknown, engineUrl: string): Error {
+  const hint = buildPythonEngineUnreachableMessage(engineUrl);
   if (err instanceof Error) {
-    const m = err.message || '';
-    if (/fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|terminated/i.test(m)) {
-      return new Error(`${hint} (${m})`);
+    const message = err.message || '';
+    if (/fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|terminated/i.test(message)) {
+      return new Error(`${hint} (${message})`);
     }
     return err;
   }
   return new Error(`${hint} (${String(err)})`);
 }
 
-async function parseJsonSafe(resp: Response) {
-  return resp.json().catch(() => ({}));
-}
-
 export async function requestOutline(payload: ContentOutlineRequest): Promise<ContentOutlineResponse> {
-  let resp: Response;
+  const pythonEngineUrl = getPythonEngineUrl();
+  let response: Response;
   try {
-    resp = await fetch(`${PYTHON_ENGINE_URL}/api/content/outline`, {
+    response = await fetch(`${pythonEngineUrl}/api/content/outline`, {
       method: 'POST',
       headers: getHeaders('application/json'),
       body: JSON.stringify(payload),
     });
-  } catch (e) {
-    throw engineUnreachableMessage(e);
+  } catch (error) {
+    throw normalizePythonBridgeError(engineUnreachableMessage(error, pythonEngineUrl), pythonEngineUrl);
   }
-  if (!resp.ok) {
-    const err = await parseJsonSafe(resp);
-    throw new Error(err.detail || err.error || 'Outline generation failed');
-  }
-  return resp.json();
+  return parsePythonJsonOrThrow<ContentOutlineResponse>(response, pythonEngineUrl);
 }
 
 export async function requestSection(payload: ContentSectionRequest): Promise<string> {
-  let resp: Response;
+  const pythonEngineUrl = getPythonEngineUrl();
+  let response: Response;
   try {
-    resp = await fetch(`${PYTHON_ENGINE_URL}/api/content/section`, {
+    response = await fetch(`${pythonEngineUrl}/api/content/section`, {
       method: 'POST',
       headers: getHeaders('application/json'),
       body: JSON.stringify(payload),
     });
-  } catch (e) {
-    throw engineUnreachableMessage(e);
+  } catch (error) {
+    throw normalizePythonBridgeError(engineUnreachableMessage(error, pythonEngineUrl), pythonEngineUrl);
   }
-  if (!resp.ok) {
-    const err = await parseJsonSafe(resp);
-    throw new Error(err.detail || err.error || 'Section generation failed');
+  if (!response.ok) {
+    throw await buildPythonHttpError(response, pythonEngineUrl);
   }
-  return resp.text();
+  return response.text();
+}
+
+export async function requestWorkflow(payload: ContentWorkflowRequest): Promise<ContentWorkflowResponse> {
+  const pythonEngineUrl = getPythonEngineUrl();
+  let response: Response;
+  try {
+    response = await fetch(`${pythonEngineUrl}/api/content/workflow`, {
+      method: 'POST',
+      headers: getHeaders('application/json'),
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    throw normalizePythonBridgeError(engineUnreachableMessage(error, pythonEngineUrl), pythonEngineUrl);
+  }
+  return parsePythonJsonOrThrow<ContentWorkflowResponse>(response, pythonEngineUrl);
 }
 
 export async function createContentJob(payload: BulkContentJobRequest): Promise<BulkContentJobStatus> {
-  let resp: Response;
+  const pythonEngineUrl = getPythonEngineUrl();
+  let response: Response;
   try {
-    resp = await fetch(`${PYTHON_ENGINE_URL}/api/content/jobs`, {
+    response = await fetch(`${pythonEngineUrl}/api/content/jobs`, {
       method: 'POST',
       headers: getHeaders('application/json'),
       body: JSON.stringify(payload),
     });
-  } catch (e) {
-    throw engineUnreachableMessage(e);
+  } catch (error) {
+    throw normalizePythonBridgeError(engineUnreachableMessage(error, pythonEngineUrl), pythonEngineUrl);
   }
-  if (!resp.ok) {
-    const err = await parseJsonSafe(resp);
-    throw new Error(err.detail || err.error || 'Create job failed');
-  }
-  return resp.json();
+  return parsePythonJsonOrThrow<BulkContentJobStatus>(response, pythonEngineUrl);
 }
 
 export async function getContentJob(jobId: string): Promise<BulkContentJobStatus> {
-  let resp: Response;
+  const pythonEngineUrl = getPythonEngineUrl();
+  let response: Response;
   try {
-    resp = await fetch(`${PYTHON_ENGINE_URL}/api/content/jobs/${jobId}`, {
+    response = await fetch(`${pythonEngineUrl}/api/content/jobs/${jobId}`, {
       cache: 'no-store',
       headers: getHeaders(),
     });
-  } catch (e) {
-    throw engineUnreachableMessage(e);
+  } catch (error) {
+    throw normalizePythonBridgeError(engineUnreachableMessage(error, pythonEngineUrl), pythonEngineUrl);
   }
-  if (!resp.ok) {
-    const err = await parseJsonSafe(resp);
-    throw new Error(err.detail || err.error || 'Get job failed');
-  }
-  return resp.json();
+  return parsePythonJsonOrThrow<BulkContentJobStatus>(response, pythonEngineUrl);
 }
 
 export async function cancelContentJob(jobId: string): Promise<BulkContentJobStatus> {
-  let resp: Response;
+  const pythonEngineUrl = getPythonEngineUrl();
+  let response: Response;
   try {
-    resp = await fetch(`${PYTHON_ENGINE_URL}/api/content/jobs/${jobId}/cancel`, {
+    response = await fetch(`${pythonEngineUrl}/api/content/jobs/${jobId}/cancel`, {
       method: 'POST',
       headers: getHeaders(),
     });
-  } catch (e) {
-    throw engineUnreachableMessage(e);
+  } catch (error) {
+    throw normalizePythonBridgeError(engineUnreachableMessage(error, pythonEngineUrl), pythonEngineUrl);
   }
-  if (!resp.ok) {
-    const err = await parseJsonSafe(resp);
-    throw new Error(err.detail || err.error || 'Cancel job failed');
-  }
-  return resp.json();
+  return parsePythonJsonOrThrow<BulkContentJobStatus>(response, pythonEngineUrl);
 }
-
