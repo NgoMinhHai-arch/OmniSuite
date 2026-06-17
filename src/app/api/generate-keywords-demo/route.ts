@@ -1,70 +1,69 @@
 import { NextResponse } from 'next/server';
-import { requireInternalToken } from '@/shared/lib/server/internal-token';
-import { spawn } from 'child_process';
-import path from 'path';
 import { logger } from '@/shared/lib/logger';
+import { getPythonEngineUrl } from '@/shared/lib/python-engine-url';
+import { internalTokenHeaders } from '@/shared/lib/server/internal-token';
+import {
+  parsePythonJsonOrThrow,
+  pythonBridgeErrorResponse,
+} from '@/shared/lib/server/python-bridge';
 
 export const maxDuration = 300;
 
+function normalizeKeywordProvider(provider: unknown): string {
+  const value = String(provider || 'google').trim().toLowerCase();
+  if (value === 'gemini') return 'google';
+  if (value === 'anthropic') return 'claude';
+  if (value === 'ninerouter') return '9router';
+  return value || 'google';
+}
+
 export async function POST(req: Request) {
+  const pythonEngineUrl = getPythonEngineUrl();
   try {
     const body = await req.json();
-    const { seedKeyword, provider, model, mode, keywordList, ranks, disableAI } = body;
-    
-    const pythonEngineUrl = process.env.PYTHON_ENGINE_URL || 'http://127.0.0.1:8082';
-    const internalToken = requireInternalToken();
+    const { seedKeyword, provider, model, mode, keywordList, ranks, disableAI, enable_cpc } = body;
+    const normalizedProvider = normalizeKeywordProvider(provider);
 
     const response = await fetch(`${pythonEngineUrl}/api/keywords/analyze`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-internal-token': internalToken
+        ...internalTokenHeaders(),
       },
       body: JSON.stringify({
         seed_keyword: seedKeyword,
-        mode: mode || "FULL",
+        mode: mode || 'FULL',
         keyword_list: keywordList,
-        ranks: ranks,
-        provider: provider || "google",
-        model: model,
+        ranks,
+        provider: normalizedProvider,
+        model,
         disable_ai: disableAI === true,
-        api_keys: body.apiKeys
-      })
+        enable_cpc: enable_cpc === true,
+        api_keys: body.apiKeys || {},
+      }),
     });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      return NextResponse.json({ 
-        error: 'Python Engine failed', 
-        details: errorData.detail || response.statusText 
-      }, { status: response.status });
-    }
-
-    const data = await response.json();
-
-    // Stream the data back to the client to maintain the original UI experience
+    const data = await parsePythonJsonOrThrow<any[]>(response, pythonEngineUrl);
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
         for (const item of data) {
           controller.enqueue(encoder.encode(JSON.stringify(item) + '\n'));
-          // Small delay to simulate real-time processing and ensure smooth UI rendering
-          await new Promise(resolve => setTimeout(resolve, 50)); 
+          await new Promise((resolve) => setTimeout(resolve, 50));
         }
         controller.close();
-      }
+      },
     });
 
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
+        Connection: 'keep-alive',
       },
     });
-
-  } catch (error: any) {
-    logger.error(`Next.js API Error (Keywords Demo): ${error.message || error}`);
-    return NextResponse.json({ error: "Lỗi API: " + error.message }, { status: 500 });
+  } catch (error: unknown) {
+    logger.error(`Next.js API Error (Keywords Demo): ${error instanceof Error ? error.message : String(error)}`);
+    return pythonBridgeErrorResponse(error, pythonEngineUrl);
   }
 }
