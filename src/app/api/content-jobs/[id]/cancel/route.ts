@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cancelContentJob } from '@/shared/lib/content-engine-client';
+import { pythonBridgeErrorResponse } from '@/shared/lib/server/python-bridge';
 
 export async function POST(_: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -7,8 +8,6 @@ export async function POST(_: Request, context: { params: Promise<{ id: string }
     const job = await cancelContentJob(id);
     return NextResponse.json(job);
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Cancel job failed';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return pythonBridgeErrorResponse(error);
   }
 }
-
