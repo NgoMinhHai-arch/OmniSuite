@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requestOutline } from '@/shared/lib/content-engine-client';
 import type { ContentOutlineRequest } from '@/shared/contracts/content-engine';
+import { pythonBridgeErrorResponse } from '@/shared/lib/server/python-bridge';
 
 export const maxDuration = 60;
 
@@ -12,7 +13,7 @@ export async function POST(req: Request) {
       keyword,
       secondaryKeywords,
       masterContext,
-      framework = 'Tự do',
+      framework = 'Tá»± do',
       provider,
       modelName,
       apiKey,
@@ -41,8 +42,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json(result);
   } catch (error: unknown) {
-    console.error('Outline Gen Error:', error);
-    const msg = error instanceof Error ? error.message : 'Lỗi tạo dàn ý';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return pythonBridgeErrorResponse(error);
   }
 }
