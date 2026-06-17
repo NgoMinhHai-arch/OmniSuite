@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createContentJob } from '@/shared/lib/content-engine-client';
 import type { BulkContentJobRequest } from '@/shared/contracts/content-engine';
+import { pythonBridgeErrorResponse } from '@/shared/lib/server/python-bridge';
 
 export async function POST(req: Request) {
   try {
@@ -11,8 +12,6 @@ export async function POST(req: Request) {
     const job = await createContentJob(body);
     return NextResponse.json(job);
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Create job failed';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return pythonBridgeErrorResponse(error);
   }
 }
-
