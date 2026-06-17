@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { spawn } from 'child_process';
-import path from 'path';
 import { logger } from '@/shared/lib/logger';
-import { requireInternalToken } from '@/shared/lib/server/internal-token';
+import { getPythonEngineUrl } from '@/shared/lib/python-engine-url';
+import { internalTokenHeaders } from '@/shared/lib/server/internal-token';
+import {
+  parsePythonJsonOrThrow,
+  pythonBridgeErrorResponse,
+} from '@/shared/lib/server/python-bridge';
 
 export async function POST(req: NextRequest) {
+  const pythonEngineUrl = getPythonEngineUrl();
   try {
     const { keyword } = await req.json();
 
@@ -12,31 +16,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Keyword is required' }, { status: 400 });
     }
 
-    const pythonEngineUrl = process.env.PYTHON_ENGINE_URL || 'http://127.0.0.1:8082';
-    const internalToken = requireInternalToken();
-
     const response = await fetch(`${pythonEngineUrl}/api/keywords/deep-scan`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-internal-token': internalToken
+        ...internalTokenHeaders(),
       },
-      body: JSON.stringify({ keyword })
+      body: JSON.stringify({ keyword }),
     });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      return NextResponse.json({ 
-        error: 'Python Engine failed', 
-        details: errorData.detail || response.statusText 
-      }, { status: response.status });
-    }
-
-    const data = await response.json();
+    const data = await parsePythonJsonOrThrow(response, pythonEngineUrl);
     return NextResponse.json(data);
-
-  } catch (err: any) {
-    logger.error(`Next.js API Error (Keyword Deep Scan): ${err.message || err}`);
-    return NextResponse.json({ error: 'Server error', message: err.message }, { status: 500 });
+  } catch (error: unknown) {
+    logger.error(`Next.js API Error (Keyword Deep Scan): ${error instanceof Error ? error.message : String(error)}`);
+    return pythonBridgeErrorResponse(error, pythonEngineUrl);
   }
 }
