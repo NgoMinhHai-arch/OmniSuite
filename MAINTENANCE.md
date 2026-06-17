@@ -1,72 +1,84 @@
 # OmniSuite Maintenance Guide
 
-A brief document to reduce maintenance costs — please read before adding features.
+Short guide for keeping OmniSuite architecture clean and predictable.
 
-## Architecture Summary
+## Core runtime
+
+Main execution path:
+
+`Next.js UI -> Next API -> Python FastAPI :8082 -> UI`
+
+Core layers:
 
 | Layer | Path | Notes |
-|-----|--------|---------|
+|---|---|---|
 | Next.js UI | `src/app/dashboard/` | App Router |
-| SEO tools | `src/app/dashboard/seo-tools/[slug]/` | Metadata: `src/lib/seo/tool-registry.ts` |
-| SEO Hub | `src/app/dashboard/seo-tools/page.tsx` | List generated from `hub-catalog.ts` ← registry |
-| Next API | `src/app/api/` | Proxy to Python or TS logic |
-| Python engine | `python_engine/` | FastAPI **:8082** — primary source for SEO/keywords/content |
-| Legacy interpreter | `scripts/interpreter_service.py` | **:8081** — search keywords, task heartbeat (optional) |
-| CLIP / Image | `services/clip_service/` | **:8000** — only when using image pipeline |
+| Next API | `src/app/api/` | Server bridge layer |
+| Python engine | `python_engine/` | FastAPI `:8082` for SEO, keywords, content, jobs |
+| SEO tools | `src/app/dashboard/seo-tools/[slug]/` | Tool pages |
+| SEO Hub | `src/app/dashboard/seo-tools/page.tsx` | Generated from registry |
 
-**Rules:** New APIs call Python via `getPythonEngineUrl()` (`PYTHON_ENGINE_URL`, port 8082). Legacy interpreter is accessed via `getInterpreterUrl()` (`INTERPRETER_URL`, port 8081). Client does not call Flask directly — use `/api/interpreter/*`.
+Rules:
 
-**Dev:**
+- New Next API routes that call Python must use `getPythonEngineUrl()`.
+- Core features should assume only the `8082` engine is required.
+- JSON errors from Next API should be explicit when Python is unreachable, unauthorized, or returns invalid data.
+
+## Optional runtime
+
+These are optional and must not be presented as required for the core:
+
+| Layer | Path | Notes |
+|---|---|---|
+| Legacy interpreter | `scripts/interpreter_service.py` | `:8081`, optional |
+| CLIP / image pipeline | `services/clip_service/` | `:8000`, optional |
+| Integrations | `integrations/` | OpenManus, browser-use, Crawl4AI, JobOps, etc. |
+
+## Dev commands
 
 | Command | Process |
-|------|---------|
-| `npm run dev` | Next + python_engine (8082) |
-| `npm run dev:legacy` | Plus interpreter (8081) + CLIP (8000) — needed for finding URL keywords & task heartbeat |
+|---|---|
+| `npm run dev` | Core runtime: Next + Python FastAPI `8082` |
+| `npm run dev:legacy` | Core runtime + optional `8081` + optional `8000` |
 
-## Adding / Modifying SEO Tools
+## Adding or modifying SEO tools
 
-1. Edit **`src/lib/seo/tool-registry.ts`** (slug, title, category, `requires`, `aliasOf`).
-2. Pure LLM Tools: Add preset to **`src/lib/seo/llm-tool-presets.ts`** — route `[slug]/page.tsx` renders automatically (no separate folder required).
-3. Custom Tools: Create `src/app/dashboard/seo-tools/<slug>/page.tsx` — use `ToolShell`, `GscQueryShell`, or custom UI.
-4. Alias: Delete static page; `findTool(slug)` + `[slug]/page.tsx` handles aliases automatically (or re-export to canonical if custom).
-5. Hub updates automatically — **do not** manually edit the list on `seo-tools/page.tsx`.
+1. Edit `src/lib/seo/tool-registry.ts`.
+2. Pure LLM tools: add preset to `src/lib/seo/llm-tool-presets.ts`.
+3. Custom tools: create `src/app/dashboard/seo-tools/<slug>/page.tsx`.
+4. Alias tools should resolve through registry, not duplicate static pages.
+5. Do not manually maintain a second hardcoded SEO hub list.
 
-## Large Modules (Avoid bloating)
+## Large modules
 
-| File | Handling Strategy when Editing |
-|------|---------------------|
-| `content/page.tsx` | Move model/job logic → `src/modules/content/hooks/` |
-| `keywords/page.tsx` | Move model/retry logic → `src/modules/keywords/hooks/` |
-| `api/scrape/route.ts` | Separate handlers according to scrape mode |
+| File | Handling strategy |
+|---|---|
+| `content/page.tsx` | Move model/job logic into `src/modules/content/hooks/` |
+| `keywords/page.tsx` | Move model/retry logic into `src/modules/keywords/hooks/` |
+| `api/scrape/route.ts` | Separate handlers by scrape mode |
 
-## Run & Test
+## Run and test
 
 ```bash
-npm run dev          # Next + python_engine (8082)
-npm run dev:legacy   # + interpreter 8081 + CLIP 8000 (keywords search, heartbeat)
-npm run typecheck    # TypeScript
-npm run test         # pytest python_engine/tests
+npm run dev
+npm run dev:legacy
+npm run typecheck
 npm run lint
-npm run integrations:verify   # Submodule integrations/
+npm run test
 ```
 
 ## Integrations
 
-**SSOT:** `integrations/manifest.json` → `npm run integrations:codegen` → `*.generated.ts` in `src/modules/ai-support/domain/`.
+Single source of truth:
 
-After clone:
+`integrations/manifest.json -> npm run integrations:codegen -> generated files in src/modules/ai-support/domain/`
 
-```bash
-npm run integrations:sync
-npm run integrations:validate
-scripts/setup-runners-venv.ps1   # Windows
-```
+Integrations are optional. Core SEO and AI Butler do not require OpenManus, browser-use, or JobOps to exist on disk.
 
-New integration: copy `integrations/_template/`, edit manifest, codegen, validate. See `integrations/README.md`.
+## PR checklist
 
-## PR Checklist (Minimum)
-
-- [ ] New SEO tool has an entry in `tool-registry.ts`
-- [ ] No hardcoded hub catalog duplicates registry
-- [ ] Python API uses `getPythonEngineUrl()` / `PYTHON_ENGINE_URL`
-- [ ] `npm run typecheck` and `npm run test` pass
+- New Python bridge code uses `getPythonEngineUrl()`
+- Core runtime still works with only Next + Python `8082`
+- Optional runtimes are documented as optional
+- `npm run typecheck` passes
+- `npm run test` passes when Python environment is ready
