@@ -12,7 +12,7 @@ async def verify_token(
 ):
     expected_token = settings.INTERNAL_TOKEN
     
-    # If no token is set in config/env, allow request (for development/testing setup)
+    # This fallback exists only for edge-case tests; normal runtime is validated in config.py.
     if not expected_token:
         return True
         
