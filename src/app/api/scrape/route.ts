@@ -4,7 +4,8 @@ import { imageSize } from 'image-size';
 import { logger } from '@/shared/lib/logger';
 import { chromium } from 'playwright';
 import { PLAYWRIGHT_HEADLESS, PLAYWRIGHT_LAUNCH_ARGS } from '@/shared/lib/playwright/config';
-import { requireInternalToken } from '@/shared/lib/server/internal-token';
+import { getPythonEngineUrl } from '@/shared/lib/python-engine-url';
+import { internalTokenHeaders } from '@/shared/lib/server/internal-token';
 
 // ---------------------------------------------------------
 // SEO SCRAPER CONSTANTS & HELPERS
@@ -12,10 +13,10 @@ import { requireInternalToken } from '@/shared/lib/server/internal-token';
 const COMMON_AFFILIATE_PATTERNS = ['shopee.vn', 'shope.ee', 'tiki.vn', 'lazada.vn', 'accesstrade.vn'];
 const VIETNAMESE_STOP_WORDS = new Set([
   "this", "that", "and", "the", "for", "with", "you", "are", "our", "your", "from",
-  "là", "của", "những", "các", "một", "cho", "với", "không", "thì", "mà", "như", "khi", "từ", "này", "được", "về", "vào", "ra", "đến", "ở", "tại", "sự", "thêm", "lại", "chi", "tiết", "trang", "bài", "viết", "xem", "người", "nhất", "hơn", "nào", "đó", "đây", "rất", "hay", "cũng", "đang", "qua", "trên", "dưới", "ngoài", "phần", "website", "tổng", "quan", "công", "ty", "dịch", "vụ", "giá", "rẻ", "uy", "tín", "chất", "lượng"
+  "lÃ ", "cá»§a", "nhá»¯ng", "cÃ¡c", "má»™t", "cho", "vá»›i", "khÃ´ng", "thÃ¬", "mÃ ", "nhÆ°", "khi", "tá»«", "nÃ y", "Ä‘Æ°á»£c", "vá»", "vÃ o", "ra", "Ä‘áº¿n", "á»Ÿ", "táº¡i", "sá»±", "thÃªm", "láº¡i", "chi", "tiáº¿t", "trang", "bÃ i", "viáº¿t", "xem", "ngÆ°á»i", "nháº¥t", "hÆ¡n", "nÃ o", "Ä‘Ã³", "Ä‘Ã¢y", "ráº¥t", "hay", "cÅ©ng", "Ä‘ang", "qua", "trÃªn", "dÆ°á»›i", "ngoÃ i", "pháº§n", "website", "tá»•ng", "quan", "cÃ´ng", "ty", "dá»‹ch", "vá»¥", "giÃ¡", "ráº»", "uy", "tÃ­n", "cháº¥t", "lÆ°á»£ng"
 ]);
 const VIETNAMESE_FILLER_WORDS = new Set([
-  'và', 'hoặc', 'là', 'của', 'cho', 'với', 'trong', 'trên', 'dưới', 'tại', 'được', 'những', 'các', 'một', 'này', 'kia'
+  'vÃ ', 'hoáº·c', 'lÃ ', 'cá»§a', 'cho', 'vá»›i', 'trong', 'trÃªn', 'dÆ°á»›i', 'táº¡i', 'Ä‘Æ°á»£c', 'nhá»¯ng', 'cÃ¡c', 'má»™t', 'nÃ y', 'kia'
 ]);
 
 type HeadingNode = {
@@ -77,15 +78,15 @@ const buildHeadingTree = (headings: { tag: string; text: string }[]): HeadingNod
 };
 
 const formatKeyword = (kw: string) => {
-    // Làm sạch các ký tự rác do AI có thể trả về (ngoặc kép, chấm cuối câu)
+    // LÃ m sáº¡ch cÃ¡c kÃ½ tá»± rÃ¡c do AI cÃ³ thá»ƒ tráº£ vá» (ngoáº·c kÃ©p, cháº¥m cuá»‘i cÃ¢u)
     let clean = kw.trim().replace(/^["']|["']$|\.$/g, ''); 
     
-    // Loại bỏ các tiền tố AI hay dùng (Detailed SEO Style)
-    clean = clean.replace(/^(Từ khóa chính là:|Từ khóa là:|Focus keyword:|Keyword:)\s*/i, '');
+    // Loáº¡i bá» cÃ¡c tiá»n tá»‘ AI hay dÃ¹ng (Detailed SEO Style)
+    clean = clean.replace(/^(Tá»« khÃ³a chÃ­nh lÃ :|Tá»« khÃ³a lÃ :|Focus keyword:|Keyword:)\s*/i, '');
 
     if (!clean) return "";
     if (clean === "Missing") return clean;
-    // Viết hoa chữ cái đầu và GIỮ NGUYÊN phần còn lại (để không hỏng danh từ riêng Nha Trang, SEO...)
+    // Viáº¿t hoa chá»¯ cÃ¡i Ä‘áº§u vÃ  GIá»® NGUYÃŠN pháº§n cÃ²n láº¡i (Ä‘á»ƒ khÃ´ng há»ng danh tá»« riÃªng Nha Trang, SEO...)
     return clean.charAt(0).toUpperCase() + clean.slice(1);
 };
 
@@ -179,33 +180,33 @@ const detectSeoIssues = (params: {
       id: 'http-error',
       severity: 'error',
       category: 'HTTP',
-      message: `Trang trả về mã lỗi ${statusCode}.`,
+      message: `Trang tráº£ vá» mÃ£ lá»—i ${statusCode}.`,
     });
   } else if (statusCode >= 300) {
     issues.push({
       id: 'http-redirect',
       severity: 'info',
       category: 'HTTP',
-      message: `Trang trả về chuyển hướng ${statusCode}.`,
+      message: `Trang tráº£ vá» chuyá»ƒn hÆ°á»›ng ${statusCode}.`,
     });
   }
 
   if (!title) {
-    issues.push({ id: 'title-missing', severity: 'error', category: 'Title', message: 'Thiếu thẻ title.' });
+    issues.push({ id: 'title-missing', severity: 'error', category: 'Title', message: 'Thiáº¿u tháº» title.' });
   } else {
     if (title.length > 60) {
       issues.push({
         id: 'title-too-long',
         severity: 'warning',
         category: 'Title',
-        message: `Title dài (${title.length} ký tự), nên <= 60.`,
+        message: `Title dÃ i (${title.length} kÃ½ tá»±), nÃªn <= 60.`,
       });
     } else if (title.length < 20) {
       issues.push({
         id: 'title-too-short',
         severity: 'info',
         category: 'Title',
-        message: `Title ngắn (${title.length} ký tự), có thể chưa đủ ngữ cảnh SEO.`,
+        message: `Title ngáº¯n (${title.length} kÃ½ tá»±), cÃ³ thá»ƒ chÆ°a Ä‘á»§ ngá»¯ cáº£nh SEO.`,
       });
     }
   }
@@ -215,26 +216,26 @@ const detectSeoIssues = (params: {
       id: 'meta-description-missing',
       severity: 'warning',
       category: 'Meta Description',
-      message: 'Thiếu meta description.',
+      message: 'Thiáº¿u meta description.',
     });
   } else if (description.length > 160) {
     issues.push({
       id: 'meta-description-too-long',
       severity: 'info',
       category: 'Meta Description',
-      message: `Meta description dài (${description.length} ký tự), nên <= 160.`,
+      message: `Meta description dÃ i (${description.length} kÃ½ tá»±), nÃªn <= 160.`,
     });
   }
 
   if (!h1) {
-    issues.push({ id: 'h1-missing', severity: 'error', category: 'Heading', message: 'Thiếu thẻ H1.' });
+    issues.push({ id: 'h1-missing', severity: 'error', category: 'Heading', message: 'Thiáº¿u tháº» H1.' });
   }
   if ((headingCounts.h1 || 0) > 1) {
     issues.push({
       id: 'h1-multiple',
       severity: 'warning',
       category: 'Heading',
-      message: `Có nhiều H1 (${headingCounts.h1}).`,
+      message: `CÃ³ nhiá»u H1 (${headingCounts.h1}).`,
     });
   }
 
@@ -243,7 +244,7 @@ const detectSeoIssues = (params: {
       id: 'canonical-missing',
       severity: 'warning',
       category: 'Canonical',
-      message: 'Thiếu canonical URL.',
+      message: 'Thiáº¿u canonical URL.',
     });
   }
 
@@ -252,7 +253,7 @@ const detectSeoIssues = (params: {
       id: 'robots-noindex',
       severity: 'info',
       category: 'Indexability',
-      message: 'Trang đang đặt noindex.',
+      message: 'Trang Ä‘ang Ä‘áº·t noindex.',
     });
   }
 
@@ -261,7 +262,7 @@ const detectSeoIssues = (params: {
       id: 'thin-content',
       severity: 'warning',
       category: 'Content',
-      message: `Nội dung mỏng (${wordCount} từ).`,
+      message: `Ná»™i dung má»ng (${wordCount} tá»«).`,
     });
   }
 
@@ -270,7 +271,7 @@ const detectSeoIssues = (params: {
       id: 'slow-response',
       severity: 'warning',
       category: 'Performance',
-      message: `Phản hồi chậm (${responseTimeMs}ms).`,
+      message: `Pháº£n há»“i cháº­m (${responseTimeMs}ms).`,
     });
   }
 
@@ -279,7 +280,7 @@ const detectSeoIssues = (params: {
       id: 'images-missing-alt',
       severity: imagesMissingAlt >= 5 ? 'warning' : 'info',
       category: 'Images',
-      message: `${imagesMissingAlt} ảnh thiếu alt.`,
+      message: `${imagesMissingAlt} áº£nh thiáº¿u alt.`,
     });
   }
 
@@ -288,7 +289,7 @@ const detectSeoIssues = (params: {
       id: 'external-links-all-dofollow',
       severity: 'info',
       category: 'Links',
-      message: 'Có external links dofollow, nên rà soát rủi ro outbound link.',
+      message: 'CÃ³ external links dofollow, nÃªn rÃ  soÃ¡t rá»§i ro outbound link.',
     });
   }
 
@@ -299,27 +300,27 @@ const detectSeoIssues = (params: {
 async function extractKeywordAI(text: string, aiSettings: any) {
     if (!text || !aiSettings) return null;
     
-    // Tự động nhận diện Provider và Key
+    // Tá»± Ä‘á»™ng nháº­n diá»‡n Provider vÃ  Key
     const provider = aiSettings.default_provider || 'Gemini';
     let apiKey = '';
     let apiEndpoint = '';
     let model = aiSettings.default_model || '';
 
-    // Xác định Key và Endpoint phù hợp
+    // XÃ¡c Ä‘á»‹nh Key vÃ  Endpoint phÃ¹ há»£p
     if (provider === 'Groq' && aiSettings.groq_api_key) {
         apiKey = aiSettings.groq_api_key;
         apiEndpoint = 'https://api.groq.com/openai/v1/chat/completions';
         if (!model || !model.includes('llama') && !model.includes('mixtral')) model = 'llama-3.3-70b-versatile';
     } else if (provider === 'Gemini' && aiSettings.gemini_api_key) {
         apiKey = aiSettings.gemini_api_key;
-        apiEndpoint = 'GeminiAPI'; // Đánh dấu dùng luồng Gemini riêng
+        apiEndpoint = 'GeminiAPI'; // ÄÃ¡nh dáº¥u dÃ¹ng luá»“ng Gemini riÃªng
         if (!model || !model.includes('gemini')) model = 'gemini-1.5-flash';
     } else if (provider === 'OpenAI' && aiSettings.openai_api_key) {
         apiKey = aiSettings.openai_api_key;
         apiEndpoint = 'https://api.openai.com/v1/chat/completions';
         if (!model || !model.includes('gpt')) model = 'gpt-3.5-turbo';
     } else {
-        // Fallback tự động tìm Key bất kỳ nếu Provider chính không có Key
+        // Fallback tá»± Ä‘á»™ng tÃ¬m Key báº¥t ká»³ náº¿u Provider chÃ­nh khÃ´ng cÃ³ Key
         if (aiSettings.gemini_api_key) {
             apiKey = aiSettings.gemini_api_key;
             apiEndpoint = 'GeminiAPI';
@@ -341,24 +342,24 @@ async function extractKeywordAI(text: string, aiSettings: any) {
         
         let prompt = "";
         if (isOutline) {
-            prompt = `Bạn là chuyên gia SEO kỳ cựu. Tôi sẽ cung cấp sơ đồ các thẻ Heading (H1-H6). Xác định DUY NHẤT một "Từ khóa chính" (Focus Keyword) có giá trị SEO cao nhất.
-              NGUYÊN TẮC BẮT BUỘC: 
-              - CHỈ TRẢ VỀ DUY NHẤT CỤM TỪ KHÓA. 
-              - KHÔNG GIẢI THÍCH, KHÔNG CHỦ NGỮ, KHÔNG DẤU CÂU.
-              - Nếu không thể xác định, trả về "Missing".
+            prompt = `Báº¡n lÃ  chuyÃªn gia SEO ká»³ cá»±u. TÃ´i sáº½ cung cáº¥p sÆ¡ Ä‘á»“ cÃ¡c tháº» Heading (H1-H6). XÃ¡c Ä‘á»‹nh DUY NHáº¤T má»™t "Tá»« khÃ³a chÃ­nh" (Focus Keyword) cÃ³ giÃ¡ trá»‹ SEO cao nháº¥t.
+              NGUYÃŠN Táº®C Báº®T BUá»˜C: 
+              - CHá»ˆ TRáº¢ Vá»€ DUY NHáº¤T Cá»¤M Tá»ª KHÃ“A. 
+              - KHÃ”NG GIáº¢I THÃCH, KHÃ”NG CHá»¦ NGá»®, KHÃ”NG Dáº¤U CÃ‚U.
+              - Náº¿u khÃ´ng thá»ƒ xÃ¡c Ä‘á»‹nh, tráº£ vá» "Missing".
               
-              Sơ đồ Heading:\n${text}`;
+              SÆ¡ Ä‘á»“ Heading:\n${text}`;
         } else if (isH1) {
-            prompt = `Bạn là chuyên gia SEO. Trích xuất một từ khóa chính (Focus Keyword) từ tiêu đề H1 sau. 
-              YÊU CẦU: 
-              - Kết quả phải là cụm danh từ tự nhiên (ví dụ: 'Dịch vụ SEO Nha Trang').
-              - KHÔNG GIẢI THÍCH, KHÔNG DẪN DẮT.
-              - TRẢ VỀ DUY NHẤT CỤM TỪ KHÓA.
-              Tiêu đề: "${text}"`;
+            prompt = `Báº¡n lÃ  chuyÃªn gia SEO. TrÃ­ch xuáº¥t má»™t tá»« khÃ³a chÃ­nh (Focus Keyword) tá»« tiÃªu Ä‘á» H1 sau. 
+              YÃŠU Cáº¦U: 
+              - Káº¿t quáº£ pháº£i lÃ  cá»¥m danh tá»« tá»± nhiÃªn (vÃ­ dá»¥: 'Dá»‹ch vá»¥ SEO Nha Trang').
+              - KHÃ”NG GIáº¢I THÃCH, KHÃ”NG DáºªN Dáº®T.
+              - TRáº¢ Vá»€ DUY NHáº¤T Cá»¤M Tá»ª KHÃ“A.
+              TiÃªu Ä‘á»: "${text}"`;
         } else {
-            prompt = `Phân tích đoạn nội dung này và xác định 1 từ khóa SEO chính (Focus Keyword) duy nhất. 
-              CHỈ TRẢ VỀ ĐÚNG TỪ KHÓA, KHÔNG GIẢI THÍCH.
-              Nội dung: ${text.slice(0, 1500)}`;
+            prompt = `PhÃ¢n tÃ­ch Ä‘oáº¡n ná»™i dung nÃ y vÃ  xÃ¡c Ä‘á»‹nh 1 tá»« khÃ³a SEO chÃ­nh (Focus Keyword) duy nháº¥t. 
+              CHá»ˆ TRáº¢ Vá»€ ÄÃšNG Tá»ª KHÃ“A, KHÃ”NG GIáº¢I THÃCH.
+              Ná»™i dung: ${text.slice(0, 1500)}`;
         }
 
 
@@ -629,124 +630,62 @@ export async function POST(req: NextRequest) {
         const robots = $('meta[name="robots"]').attr('content') || 'index, follow';
         const lang = $('html').attr('lang') || 'N/A';
 
-        // Metadata: Open Graph
-        const og = {
-          title: $('meta[property="og:title"]').attr('content') || '',
-          description: $('meta[property="og:description"]').attr('content') || '',
-          image: $('meta[property="og:image"]').attr('content') || '',
-          type: $('meta[property="og:type"]').attr('content') || '',
-        };
+        // Open Graph & Twitter
+        const og: Record<string, string> = {};
+        $('meta[property^="og:"]').each((i, el) => {
+          const prop = $(el).attr('property')?.replace('og:', '') || '';
+          og[prop] = $(el).attr('content') || '';
+        });
+        const twitter: Record<string, string> = {};
+        $('meta[name^="twitter:"]').each((i, el) => {
+          const name = $(el).attr('name')?.replace('twitter:', '') || '';
+          twitter[name] = $(el).attr('content') || '';
+        });
 
-        // Metadata: Twitter
-        const twitter = {
-          card: $('meta[name="twitter:card"]').attr('content') || '',
-          title: $('meta[name="twitter:title"]').attr('content') || '',
-          description: $('meta[name="twitter:description"]').attr('content') || '',
-        };
+        // Collect a rendered snapshot for JS-mutated SEO metadata and lazy images.
+        const { images: renderedImages, rendered: renderedMeta } = await collectImagesWithPlaywright(url);
 
-        // Image Analysis (covers <img>, lazy-loaded images, and prevents double-counting in <picture>)
-        let totalImages = 0;
-        let imagesMissingAlt = 0;
-        let imagesMissingTitle = 0;
-        let images: { src: string; alt: string; title: string; sizeKb: number; width: number | null; height: number | null }[] = [];
-
+        // Images â†’ absolute URL + metadata
+        const imageMap = new Map<string, { src: string; alt: string; title: string }>();
         $('img').each((i, el) => {
-          totalImages++;
-          
-          const alt = $(el).attr('alt') || '';
-          if (alt.trim() === '') imagesMissingAlt++;
-          
-          const titleAttr =
-            $(el).attr('title') ||
-            $(el).attr('data-title') ||
-            $(el).attr('aria-label') ||
-            $(el).attr('data-caption') ||
-            '';
-          // Treat image title as missing only when BOTH title and alt are empty.
-          if (titleAttr.trim() === '' && alt.trim() === '') imagesMissingTitle++;
-          
-          // Comprehensive Lazy-load detection
-          const src = $(el).attr('src') || 
-                      $(el).attr('data-src') || 
-                      $(el).attr('data-lazy-src') || 
-                      $(el).attr('data-original') ||
-                      $(el).attr('data-srcset')?.split(' ')[0] ||
-                      '';
-          
-          if (src && !src.startsWith('data:')) {
-            try {
-              const fullSrc = new URL(src, url).href;
-              images.push({ src: fullSrc, alt, title: titleAttr, sizeKb: 0, width: null, height: null });
-            } catch (e) {
-               if (src.startsWith('http')) {
-                 images.push({ src, alt, title: titleAttr, sizeKb: 0, width: null, height: null });
-               }
+          const srcRaw = $(el).attr('src') || $(el).attr('data-src') || $(el).attr('data-lazy-src') || '';
+          if (!srcRaw) return;
+          try {
+            const abs = new URL(srcRaw, url).href;
+            if (!imageMap.has(abs)) {
+              imageMap.set(abs, {
+                src: abs,
+                alt: ($(el).attr('alt') || '').trim(),
+                title: ($(el).attr('title') || '').trim(),
+              });
             }
-          }
+          } catch {}
         });
-
-        // Refined background-image detection
-        $('[style*="background-image"]').each((i, el) => {
-          const style = $(el).attr('style') || '';
-          const match = style.match(/background-image:\s*url\(['"]?([^'"]+)['"]?\)/);
-          if (match && match[1]) {
-            const bgUrl = match[1];
-            if (!bgUrl.startsWith('data:')) {
-              totalImages++;
-              try {
-                const fullBgUrl = new URL(bgUrl, url).href;
-                images.push({ src: fullBgUrl, alt: 'BG Image', title: '', sizeKb: 0, width: null, height: null });
-              } catch(e) {
-                images.push({ src: bgUrl, alt: 'BG Image', title: '', sizeKb: 0, width: null, height: null });
-              }
-            }
-          }
-        });
-
-        // Count <picture> as 1 image even if it has multiple <source> tags
-        // the <img> inside is already counted. If no <img> but has <source>, count it.
-        $('picture').each((i, el) => {
-           if ($(el).find('img').length === 0) {
-              totalImages++;
-           }
-        });
-
-        // Prefer Playwright-rendered DOM for image completeness (human/bot visible),
-        // fallback to static Cheerio extraction if Playwright is unavailable.
-        const playwrightResult = await collectImagesWithPlaywright(url);
-        const playwrightImages = playwrightResult.images;
-        const renderedMeta = playwrightResult.rendered;
-        if (playwrightImages.length) {
-          images = playwrightImages.map((img) => ({
-            src: img.src,
-            alt: img.alt || '',
-            title: img.title || '',
-            sizeKb: 0,
-            width: null,
-            height: null,
-          }));
-          totalImages = images.length;
-          imagesMissingAlt = images.filter((img) => !img.alt.trim()).length;
-          imagesMissingTitle = images.filter((img) => !img.title.trim() && !img.alt.trim()).length;
+        for (const img of renderedImages) {
+          if (!img.src) continue;
+          if (!imageMap.has(img.src)) imageMap.set(img.src, img);
         }
+        const images = await Promise.all(
+          Array.from(imageMap.values()).map(async (img) => {
+            const meta = await enrichImageMeta(img.src);
+            return { ...img, ...meta };
+          }),
+        );
+        const totalImages = images.length;
+        const imagesMissingAlt = images.filter(i => !i.alt || i.alt === '').length;
+        const imagesMissingTitle = images.filter(i => !i.title || i.title === '').length;
 
-        // Enrich image rows with file size and dimensions for UI details modal.
-        const IMAGE_META_LIMIT = 500;
-        const META_CONCURRENCY = 8;
-        const enrichTargets = images.slice(0, IMAGE_META_LIMIT);
-        for (let i = 0; i < enrichTargets.length; i += META_CONCURRENCY) {
-          const batch = enrichTargets.slice(i, i + META_CONCURRENCY);
-          const metas = await Promise.allSettled(batch.map((img) => enrichImageMeta(img.src)));
-          metas.forEach((result, idx) => {
-            if (result.status === 'fulfilled') {
-              batch[idx].sizeKb = result.value.sizeKb;
-              batch[idx].width = result.value.width;
-              batch[idx].height = result.value.height;
-            }
-          });
-        }
-
-        // --- PROFESSIONAL SEO LINK AUDIT ENGINE (V3.0) ---
+        // Links â†’ collect both anchor navigation links and resource references.
+        const origin = new URL(url).origin;
+        const normalizeHref = (href: string) => {
+          try {
+            return new URL(href, url).href;
+          } catch {
+            return href;
+          }
+        };
+        const affiliatePatterns = COMMON_AFFILIATE_PATTERNS;
+        const isAffiliateLink = (href: string) => affiliatePatterns.some((pattern) => href.includes(pattern));
         const linkBuckets = {
           anchor: {
             internal: 0,
@@ -767,113 +706,64 @@ export async function POST(req: NextRequest) {
             externalUrls: new Set<string>(),
           },
         };
-        const externalDomains = new Set<string>();
-        const affiliateDomains = new Set<string>();
-        const baseHostname = new URL(url).hostname.replace('www.', '');
 
         type LinkRow = {
-          source: string;
-          target: string;
-          anchor: string;
+          source: 'anchor' | 'resource';
+          href: string;
+          type: 'internal' | 'external';
           rel: string;
-          bucket: 'internal' | 'external';
           follow: 'nofollow' | 'dofollow' | 'unknown';
-          linkType: 'anchor' | 'resource';
+          affiliate: boolean;
+          text: string;
+          tag: string;
         };
         const linkRows: LinkRow[] = [];
-        const LINK_ROWS_LIMIT = 1000;
 
-        const normalizeRelTokens = (relRaw: string): Set<string> => {
-          return new Set((relRaw || '').toLowerCase().split(/\s+/).map((token) => token.trim()).filter(Boolean));
-        };
-
-        const pushLinkRow = (row: LinkRow) => {
-          if (linkRows.length < LINK_ROWS_LIMIT) linkRows.push(row);
-        };
-
-        const processUrl = (
-          hrefRaw: string,
-          rel: string = '',
-          bucket: 'anchor' | 'resource' = 'anchor',
-          anchor: string = '',
-        ) => {
-          const href = hrefRaw.trim();
-          if (!href) return;
-          const relTokens = normalizeRelTokens(rel);
-          const follow: 'nofollow' | 'dofollow' | 'unknown' = relTokens.has('nofollow')
+        const addLink = (hrefRaw: string, source: 'anchor' | 'resource', relRaw: string, text: string, tag: string) => {
+          if (!hrefRaw) return;
+          const href = normalizeHref(hrefRaw);
+          if (!/^https?:/i.test(href)) return;
+          const type = href.startsWith(origin) ? 'internal' : 'external';
+          const rel = (relRaw || '').toLowerCase();
+          const follow: 'nofollow' | 'dofollow' | 'unknown' = rel.includes('nofollow')
             ? 'nofollow'
-            : 'dofollow';
-          try {
-            if (href.startsWith('#') || href.startsWith('javascript:')) {
-              linkBuckets[bucket].internal++;
-              pushLinkRow({
-                source: url,
-                target: href,
-                anchor,
-                rel,
-                bucket: 'internal',
-                follow,
-                linkType: bucket,
-              });
-              return;
-            }
-            if (href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('sms:')) {
-              linkBuckets[bucket].external++;
-              if (follow === 'nofollow') linkBuckets[bucket].nofollow++;
-              else if (follow === 'dofollow') linkBuckets[bucket].dofollow++;
-              else linkBuckets[bucket].unknown++;
-              pushLinkRow({
-                source: url,
-                target: href,
-                anchor,
-                rel,
-                bucket: 'external',
-                follow,
-                linkType: bucket,
-              });
-              return;
-            }
-
-            const absoluteUrl = new URL(href, url);
-            const isInternal = absoluteUrl.hostname.replace('www.', '') === baseHostname;
-            if (isInternal) {
-              linkBuckets[bucket].internal++;
-              linkBuckets[bucket].internalUrls.add(absoluteUrl.href);
-            } else {
-              linkBuckets[bucket].external++;
-              linkBuckets[bucket].externalUrls.add(absoluteUrl.href);
-              const domain = absoluteUrl.hostname.toLowerCase().replace('www.', '');
-              externalDomains.add(domain);
-              if (COMMON_AFFILIATE_PATTERNS.some(p => domain.includes(p))) affiliateDomains.add(domain);
-            }
-            if (follow === 'nofollow') linkBuckets[bucket].nofollow++;
-            else if (follow === 'dofollow') linkBuckets[bucket].dofollow++;
-            else linkBuckets[bucket].unknown++;
-            pushLinkRow({
-              source: url,
-              target: absoluteUrl.href,
-              anchor,
-              rel,
-              bucket: isInternal ? 'internal' : 'external',
-              follow,
-              linkType: bucket,
-            });
-          } catch (e) {}
+            : rel
+              ? 'dofollow'
+              : 'unknown';
+          const bucket = linkBuckets[source];
+          bucket[type] += 1;
+          bucket[follow] += 1;
+          if (type === 'internal') bucket.internalUrls.add(href);
+          else bucket.externalUrls.add(href);
+          linkRows.push({
+            source,
+            href,
+            type,
+            rel,
+            follow,
+            affiliate: isAffiliateLink(href),
+            text: text.trim(),
+            tag,
+          });
         };
 
-        // 1. Anchor Tags (<a>) - Main Navigation
-        $('a').each((i, el) => {
-          const anchorText = ($(el).text() || '').replace(/\s+/g, ' ').trim().slice(0, 200);
-          processUrl($(el).attr('href') || '', $(el).attr('rel') || '', 'anchor', anchorText);
+        $('a[href]').each((i, el) => {
+          const href = $(el).attr('href') || '';
+          addLink(href, 'anchor', $(el).attr('rel') || '', $(el).text() || '', 'a');
+        });
+        $('[src]').each((i, el) => {
+          const tag = $(el).prop('tagName')?.toLowerCase() || 'resource';
+          if (tag === 'img' || tag === 'script' || tag === 'iframe' || tag === 'source' || tag === 'video') {
+            addLink($(el).attr('src') || '', 'resource', '', $(el).attr('alt') || '', tag);
+          }
+        });
+        $('link[href]').each((i, el) => {
+          const rel = ($(el).attr('rel') || '').toLowerCase();
+          if (rel.includes('canonical') || rel.includes('alternate')) return;
+          addLink($(el).attr('href') || '', 'resource', rel, rel, 'link');
         });
 
-        // 2-7. Resource Links
-        $('link, form, iframe, img, script, area').each((i, el) => {
-          const href = $(el).attr('href') || $(el).attr('src') || $(el).attr('action') || $(el).attr('data-src') || '';
-          if (href) processUrl(href, $(el).attr('rel') || '', 'resource', '');
-        });
-
-        // Schema JSON-LD & Date Extraction from Schema
+        // JSON-LD & Schema Types
         const schemas: string[] = [];
         const schemaTypes: string[] = [];
         let schemaDatePublished = '';
@@ -893,7 +783,7 @@ export async function POST(req: NextRequest) {
                   const typeArray = Array.isArray(type) ? type : [type];
                   schemaTypes.push(...typeArray);
                   
-                  // BƯỚC 1: Ràng buộc phạm vi Schema
+                  // BÆ¯á»šC 1: RÃ ng buá»™c pháº¡m vi Schema
                   const validTypes = ['Article', 'NewsArticle', 'BlogPosting', 'WebPage'];
                   const isTypeValid = typeArray.some((t: string) => validTypes.includes(t));
                   
@@ -901,7 +791,7 @@ export async function POST(req: NextRequest) {
                     if (obj.datePublished && !schemaDatePublished) schemaDatePublished = obj.datePublished;
                     if (obj.dateModified && !schemaDateModified) schemaDateModified = obj.dateModified;
                     
-                    // Vùng ưu tiên 3 (Dữ liệu cấu trúc) - Từ khoá
+                    // VÃ¹ng Æ°u tiÃªn 3 (Dá»¯ liá»‡u cáº¥u trÃºc) - Tá»« khoÃ¡
                     if (obj.keywords && !schemaKeywords) {
                         schemaKeywords = Array.isArray(obj.keywords) ? obj.keywords.join(', ') : obj.keywords;
                     } else if (obj.about && !schemaKeywords) {
@@ -935,14 +825,14 @@ export async function POST(req: NextRequest) {
           hreflangs.push({ lang: $(el).attr('hreflang') || '', href: $(el).attr('href') || '' });
         });
 
-        // CLEAN TEXT FOR ANALYSIS (GỌT VỎ - LẤY HẠT)
+        // CLEAN TEXT FOR ANALYSIS (Gá»ŒT Vá»Ž - Láº¤Y Háº T)
         // ---------------------------------------------------------
         const cleanContent = cheerio.load(html);
         let totalWordsForDensity = 0;
         let cleanWords: string[] = [];
         let cleanBodyText = '';
 
-        // BƯỚC 1: Chọn đúng vùng chứa bài viết (Scope)
+        // BÆ¯á»šC 1: Chá»n Ä‘Ãºng vÃ¹ng chá»©a bÃ i viáº¿t (Scope)
         let mainContent = cleanContent('.entry-content');
         if (mainContent.length === 0) mainContent = cleanContent('article');
         if (mainContent.length === 0) mainContent = cleanContent('.post-content');
@@ -955,7 +845,7 @@ export async function POST(req: NextRequest) {
         }
 
         if (mainContent.length > 0) {
-            // Loại bỏ rác
+            // Loáº¡i bá» rÃ¡c
             let trashTags = ['script', 'style', 'noscript', 'iframe', 'nav', 'footer', 'aside', 'form', 'svg'];
             if (isFallbackToBody) {
                 trashTags = [...trashTags, '.sidebar', '#sidebar', '.widget', '.comments', '#comments', '.related-posts'];
@@ -970,7 +860,7 @@ export async function POST(req: NextRequest) {
                 }
             });
 
-            // Lấy text sạch
+            // Láº¥y text sáº¡ch
             mainContent.find('*').append(' '); 
             const rawText = mainContent.text().trim();
             cleanWords = rawText.match(/[\p{L}\p{N}_]+/gu) || [];
@@ -978,7 +868,7 @@ export async function POST(req: NextRequest) {
             cleanBodyText = rawText.replace(/\s+/g, ' ');
         }
 
-        // Đảm bảo textPreview có dữ liệu kể cả khi scrubbing thất bại
+        // Äáº£m báº£o textPreview cÃ³ dá»¯ liá»‡u ká»ƒ cáº£ khi scrubbing tháº¥t báº¡i
         const bodyTextRaw = $('body').text().trim();
         // Identification (Group 1) - MOVE UP to support Keyword logic
 
@@ -986,15 +876,15 @@ export async function POST(req: NextRequest) {
         const pathSegments = urlObj.pathname.replace(/\/$/, '').split('/').filter(p => p);
         const urlDepth = pathSegments.length;
         
-        let contentType = 'Trang khác';
-        if (urlObj.pathname === '/' || urlObj.pathname === '') contentType = 'Trang chủ';
-        else if (urlObj.pathname.includes('product') || urlObj.pathname.includes('san-pham')) contentType = 'Sản phẩm';
-        else if (urlObj.pathname.includes('blog') || urlObj.pathname.includes('tin-tuc') || urlObj.pathname.includes('post')) contentType = 'Bài viết';
-        else if (urlObj.pathname.includes('category') || urlObj.pathname.includes('danh-muc')) contentType = 'Danh mục';
+        let contentType = 'Trang khÃ¡c';
+        if (urlObj.pathname === '/' || urlObj.pathname === '') contentType = 'Trang chá»§';
+        else if (urlObj.pathname.includes('product') || urlObj.pathname.includes('san-pham')) contentType = 'Sáº£n pháº©m';
+        else if (urlObj.pathname.includes('blog') || urlObj.pathname.includes('tin-tuc') || urlObj.pathname.includes('post')) contentType = 'BÃ i viáº¿t';
+        else if (urlObj.pathname.includes('category') || urlObj.pathname.includes('danh-muc')) contentType = 'Danh má»¥c';
         
         // Dynamic Content Type from Schema
-        if (schemaTypes.includes('Product')) contentType = 'Sản phẩm';
-        else if (schemaTypes.includes('Article') || schemaTypes.includes('BlogPosting')) contentType = 'Bài viết';
+        if (schemaTypes.includes('Product')) contentType = 'Sáº£n pháº©m';
+        else if (schemaTypes.includes('Article') || schemaTypes.includes('BlogPosting')) contentType = 'BÃ i viáº¿t';
 
         const textPreview = (cleanBodyText.length > 100 ? cleanBodyText : bodyTextRaw.replace(/\s+/g, ' ').trim()).slice(0, 1500);
 
@@ -1020,21 +910,21 @@ export async function POST(req: NextRequest) {
         let primaryKeyword = kwLocal.display;
         let densityCrawlPhrase = kwLocal.raw;
 
-        // BƯỚC 4 (AI FALLBACK): Nếu vẫn không tìm thấy, gọi AI làm việc
-        // Chỉ gọi AI cho các trang nội dung thực sự (tránh XML, PDF, 404 kỹ thuật)
-        const isContentPage = ['Bài viết', 'Sản phẩm', 'Trang chủ', 'Trang khác'].includes(contentType) && statusCode === 200;
+        // BÆ¯á»šC 4 (AI FALLBACK): Náº¿u váº«n khÃ´ng tÃ¬m tháº¥y, gá»i AI lÃ m viá»‡c
+        // Chá»‰ gá»i AI cho cÃ¡c trang ná»™i dung thá»±c sá»± (trÃ¡nh XML, PDF, 404 ká»¹ thuáº­t)
+        const isContentPage = ['BÃ i viáº¿t', 'Sáº£n pháº©m', 'Trang chá»§', 'Trang khÃ¡c'].includes(contentType) && statusCode === 200;
         const isNotInternalFile = !url.includes('.xml') && !url.includes('.txt') && !url.includes('.pdf');
 
         if (primaryKeyword === "Missing" && aiSettings && isContentPage && isNotInternalFile) {
            let aiResult = null;
            
-           // Ưu tiên 1: Phân tích toàn bộ sơ đồ Heading (H1-H6)
+           // Æ¯u tiÃªn 1: PhÃ¢n tÃ­ch toÃ n bá»™ sÆ¡ Ä‘á»“ Heading (H1-H6)
            const headingOutline = headings.map(h => `${h.tag.toUpperCase()}: ${h.text}`).join('\n').slice(0, 1000);
            if (headingOutline && headingOutline.length > 20) {
               aiResult = await extractKeywordAI(headingOutline, aiSettings);
            }
 
-           // Ưu tiên 2: Fallback H1 đơn lẻ
+           // Æ¯u tiÃªn 2: Fallback H1 Ä‘Æ¡n láº»
            if (!aiResult || aiResult.toLowerCase() === 'missing') {
               const h1Text = $('h1').first().text().trim();
               if (h1Text && h1Text.length > 5) {
@@ -1042,18 +932,18 @@ export async function POST(req: NextRequest) {
               }
            }
 
-           // Ưu tiên 3: Đọc nội dung bài viết
+           // Æ¯u tiÃªn 3: Äá»c ná»™i dung bÃ i viáº¿t
            if (!aiResult || aiResult.toLowerCase() === 'missing') {
               aiResult = await extractKeywordAI(textPreview, aiSettings);
            }
 
-           // LENGTH GUARD: Nếu AI trả về câu dài (giải thích) thay vì từ khóa, bỏ qua.
+           // LENGTH GUARD: Náº¿u AI tráº£ vá» cÃ¢u dÃ i (giáº£i thÃ­ch) thay vÃ¬ tá»« khÃ³a, bá» qua.
            if (aiResult) {
               const cleanedAi = aiResult.trim();
               const wordCount = cleanedAi.split(/\s+/).length;
-              const isTrash = cleanedAi.toLowerCase().includes('không tìm thấy') || 
-                              cleanedAi.toLowerCase().includes('xin lỗi') || 
-                              cleanedAi.toLowerCase().includes('về một dịch vụ');
+              const isTrash = cleanedAi.toLowerCase().includes('khÃ´ng tÃ¬m tháº¥y') || 
+                              cleanedAi.toLowerCase().includes('xin lá»—i') || 
+                              cleanedAi.toLowerCase().includes('vá» má»™t dá»‹ch vá»¥');
               
               if (wordCount <= 10 && !isTrash && cleanedAi.length < 100) {
                  primaryKeyword = formatKeyword(cleanedAi);
@@ -1072,7 +962,7 @@ export async function POST(req: NextRequest) {
         if (densityCrawlPhrase && totalWordsForDensity > 0) {
            try {
              const escapedKw = densityCrawlPhrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-             // Sử dụng ranh giới Unicode (?<=^|[^...]) để hỗ trợ tiếng Việt
+             // Sá»­ dá»¥ng ranh giá»›i Unicode (?<=^|[^...]) Ä‘á»ƒ há»— trá»£ tiáº¿ng Viá»‡t
              const regex = new RegExp(`(?<=^|[^\\p{L}\\p{N}])(${escapedKw})(?=[^\\p{L}\\p{N}]|$)`, 'gui');
              const matches = cleanBodyText.match(regex);
              keywordMatchCount = matches ? matches.length : 0;
@@ -1087,13 +977,12 @@ export async function POST(req: NextRequest) {
         let keywordsInMeta = 0;
 
         try {
-            const pythonEngineUrl = process.env.PYTHON_ENGINE_URL || 'http://localhost:8082';
-            const internalToken = requireInternalToken();
+            const pythonEngineUrl = getPythonEngineUrl();
             const pyRes = await fetch(`${pythonEngineUrl}/api/seo/extract-keywords`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-internal-token': internalToken
+                    ...internalTokenHeaders(),
                 },
                 body: JSON.stringify({ url, html, title, description }),
                 // Moderate timeout for keyword analysis
@@ -1114,7 +1003,7 @@ export async function POST(req: NextRequest) {
         }
 
         // --- Advanced Date Extraction (Meta + Schema) ---
-        // BƯỚC 2: Quét Meta Tags trong <head>
+        // BÆ¯á»šC 2: QuÃ©t Meta Tags trong <head>
         const metaPublished = $('head meta[property="article:published_time"]').attr('content') || 
                               $('head meta[name="publish_date"]').attr('content') ||
                               $('[itemprop="datePublished"]').attr('content') ||
@@ -1125,15 +1014,15 @@ export async function POST(req: NextRequest) {
                              $('[itemprop="dateModified"]').attr('content') ||
                              $('time[itemprop="dateModified"]').attr('datetime') || '';
 
-        // BƯỚC 3: Quét URL Pattern (/YYYY/MM/DD)
+        // BÆ¯á»šC 3: QuÃ©t URL Pattern (/YYYY/MM/DD)
         const urlMatch = url.match(/\/(\d{4})\/(\d{2})\/(\d{2})\//);
         const urlDate = urlMatch ? `${urlMatch[1]}-${urlMatch[2]}-${urlMatch[3]}` : '';
 
         const cleanDate = (dateStr: string) => {
           if (!dateStr) return 'N/A';
-          const isoDate = dateStr.split(/[T\s\+]/)[0]; // Trích xuất đoạn YYYY-MM-DD
+          const isoDate = dateStr.split(/[T\s\+]/)[0]; // TrÃ­ch xuáº¥t Ä‘oáº¡n YYYY-MM-DD
           const parts = isoDate.split('-');
-          // Định danh dữ liệu về định dạng NGÀY - THÁNG - NĂM (DD-MM-YYYY)
+          // Äá»‹nh danh dá»¯ liá»‡u vá» Ä‘á»‹nh dáº¡ng NGÃ€Y - THÃNG - NÄ‚M (DD-MM-YYYY)
           if (parts.length === 3) {
              return `${parts[2]}-${parts[1]}-${parts[0]}`;
           }
@@ -1308,13 +1197,12 @@ export async function POST(req: NextRequest) {
 
         // --- Persist to Database (Fire and Forget) ---
         try {
-            const pythonEngineUrl = process.env.PYTHON_ENGINE_URL || 'http://localhost:8082';
-            const internalToken = requireInternalToken();
+            const pythonEngineUrl = getPythonEngineUrl();
             fetch(`${pythonEngineUrl}/api/seo/save`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-internal-token': internalToken
+                    ...internalTokenHeaders(),
                 },
                 body: JSON.stringify(result)
             }).catch(err => logger.error(`Database save failed: ${err}`));
@@ -1326,8 +1214,8 @@ export async function POST(req: NextRequest) {
         return { 
           url, 
           statusCode: 500,
-          title: 'Lỗi truy cập',
-          description: error.message || 'Không thể cào dữ liệu từ trang này.',
+          title: 'Lá»—i truy cáº­p',
+          description: error.message || 'KhÃ´ng thá»ƒ cÃ o dá»¯ liá»‡u tá»« trang nÃ y.',
           h1: 'N/A',
           metaKeywords: 'N/A',
           metaKeywordsCount: 0,
@@ -1347,7 +1235,7 @@ export async function POST(req: NextRequest) {
           totalLinks: 0,
           wordCount: 0,
           urlDepth: 0,
-          contentType: 'Lỗi',
+          contentType: 'Lá»—i',
           lastModified: 'N/A',
           pageSizeKB: 0,
           responseTimeMs: 0,
@@ -1364,7 +1252,7 @@ export async function POST(req: NextRequest) {
               id: 'crawl-failed',
               severity: 'error',
               category: 'Crawler',
-              message: 'Không thể cào dữ liệu từ URL này.',
+              message: 'KhÃ´ng thá»ƒ cÃ o dá»¯ liá»‡u tá»« URL nÃ y.',
             },
           ],
           indexability: {
