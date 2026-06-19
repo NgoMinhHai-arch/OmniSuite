@@ -64,7 +64,41 @@ mkdir -p "${LEGACY_BU}"
 
 (cd "${BROWSER_USE}" && "${PIP}" "${PQ[@]}" -e .)
 
-"${PY}" -m playwright install chromium
+echo "[step] Playwright Chromium/headless shell"
+if [[ -z "${PLAYWRIGHT_BROWSERS_PATH:-}" ]]; then
+  case "$(uname -s)" in
+    Darwin*) export PLAYWRIGHT_BROWSERS_PATH="${HOME}/Library/Caches/ms-playwright" ;;
+    *) export PLAYWRIGHT_BROWSERS_PATH="${HOME}/.cache/ms-playwright" ;;
+  esac
+fi
+mkdir -p "${PLAYWRIGHT_BROWSERS_PATH}"
+export PYTHON_BIN="${PY}"
+INSTALLER_JS="${ROOT}/scripts/install-playwright-browser.js"
+PLAYWRIGHT_OK=0
+if command -v node >/dev/null 2>&1 && [[ -f "${INSTALLER_JS}" ]]; then
+  if node "${INSTALLER_JS}"; then
+    PLAYWRIGHT_OK=1
+  fi
+else
+  echo "[warn] Khong tim thay node hoac scripts/install-playwright-browser.js - dung Python fallback."
+fi
+unset PYTHON_BIN
+
+if [[ "${PLAYWRIGHT_OK}" != "1" ]]; then
+  if "${PY}" -m playwright install chromium-headless-shell; then
+    PLAYWRIGHT_OK=1
+  fi
+fi
+if [[ "${PLAYWRIGHT_OK}" != "1" ]]; then
+  if "${PY}" -m playwright install chromium; then
+    PLAYWRIGHT_OK=1
+  fi
+fi
+if [[ "${PLAYWRIGHT_OK}" != "1" ]]; then
+  echo "[error] Playwright browser install failed. Thu: npm run setup:repair -- --only=maps" >&2
+  exit 1
+fi
+
 if [[ -f "${REQ_EXTRA}" ]]; then
   "${PIP}" "${PQ[@]}" -r "${REQ_EXTRA}"
 fi

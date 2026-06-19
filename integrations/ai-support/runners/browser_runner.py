@@ -26,6 +26,7 @@ Tính chất tự bảo vệ:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import os
 import sys
 import time
@@ -46,6 +47,24 @@ from _runner_base import (  # noqa: E402
 )
 
 _BROWSER_USE_SUBMODULE = submodule_path("browser-use")
+_CHROMIUM_EXECUTABLE_ENV_KEYS = (
+    "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH",
+    "CHROMIUM_EXECUTABLE_PATH",
+    "CHROME_PATH",
+    "OMNISUITE_CHROME_PATH",
+)
+
+
+def playwright_setup_instructions() -> str:
+    return (
+        "Browser Use hoặc Playwright Chromium chưa sẵn sàng. Mở terminal trong thư mục dự án và chạy:\n"
+        "  npm run setup:repair -- --only=maps\n"
+        "Nếu đang cài runner Python riêng thì chạy:\n"
+        "  powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-runners-venv.ps1\n"
+        "Nếu mạng/proxy chặn tải Chromium, đặt PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH tới Chrome/Edge có sẵn rồi chạy lại.\n"
+        "Ví dụ Windows PowerShell:\n"
+        "  $env:PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=\"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\""
+    )
 
 
 def import_browser_use():
@@ -60,18 +79,7 @@ def import_browser_use():
             missing.append("playwright")
         if "browser_use" in msg.lower() or not missing:
             missing.append("browser_use")
-        fail_setup(
-            missing=missing,
-            instructions=(
-                "Browser Use chưa cài đặt trên máy. Mở terminal trong thư mục dự án và chạy:\n"
-                "  cd integrations/ai-support/submodules/browser-use\n"
-                "  python -m venv .venv\n"
-                "  .venv\\Scripts\\Activate.ps1   # Windows PowerShell\n"
-                "  pip install -e .\n"
-                "  python -m playwright install chromium\n"
-                "Sau đó chạy lại OmniSuite. (AI Hỗ trợ → /run <task>)"
-            ),
-        )
+        fail_setup(missing=missing, instructions=playwright_setup_instructions())
 
 
 def build_llm(provider: str, model: str | None, payload: dict[str, Any]):
@@ -99,6 +107,140 @@ def build_llm(provider: str, model: str | None, payload: dict[str, Any]):
     fail_error(f"Provider '{provider}' chưa hỗ trợ trong runner. Dùng: ollama | openai | gemini.")
 
 
+def _existing_file(value: str | None) -> str | None:
+    p = (value or "").strip().strip('"').strip("'")
+    if not p:
+        return None
+    try:
+        path = Path(p).expanduser()
+        return str(path) if path.is_file() else None
+    except OSError:
+        return None
+
+
+def _default_browser_candidates() -> list[str]:
+    if sys.platform == "win32":
+        roots = [
+            os.environ.get("LOCALAPPDATA"),
+            os.environ.get("PROGRAMFILES"),
+            os.environ.get("PROGRAMFILES(X86)"),
+        ]
+        out: list[str] = []
+        for root in [r for r in roots if r]:
+            out.extend([
+                str(Path(root) / "Google" / "Chrome" / "Application" / "chrome.exe"),
+                str(Path(root) / "Microsoft" / "Edge" / "Application" / "msedge.exe"),
+            ])
+        return out
+    if sys.platform == "darwin":
+        return [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        ]
+    return [
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/snap/bin/chromium",
+        "/usr/bin/microsoft-edge",
+    ]
+
+
+def find_existing_browser_executable() -> str | None:
+    for key in _CHROMIUM_EXECUTABLE_ENV_KEYS:
+        found = _existing_file(os.environ.get(key))
+        if found:
+            return found
+    for candidate in _default_browser_candidates():
+        found = _existing_file(candidate)
+        if found:
+            return found
+    return None
+
+
+def _supports_kw(callable_obj: Any, name: str) -> bool:
+    try:
+        sig = inspect.signature(callable_obj)
+    except (TypeError, ValueError):
+        return True
+    return any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()) or name in sig.parameters
+
+
+def _make_browser_profile(BrowserProfile: Any, headless: bool, executable_path: str | None):
+    attempts: list[dict[str, Any]] = []
+    if executable_path:
+        attempts.extend([
+            {"headless": headless, "executable_path": executable_path},
+            {"headless": headless, "browser_binary_path": executable_path},
+            {"headless": headless, "chrome_instance_path": executable_path},
+        ])
+    attempts.append({"headless": headless})
+
+    last_exc: Exception | None = None
+    for raw in attempts:
+        kwargs = {k: v for k, v in raw.items() if _supports_kw(BrowserProfile, k)}
+        try:
+            return BrowserProfile(**kwargs)
+        except Exception as exc:  # browser-use đổi API khá nhiều, nên thử lần lượt.
+            last_exc = exc
+    if last_exc:
+        raise last_exc
+    return BrowserProfile(headless=headless)
+
+
+def _make_browser_session(BrowserSession: Any, profile: Any):
+    attempts = [
+        {"profile": profile},
+        {"browser_profile": profile},
+    ]
+    last_exc: Exception | None = None
+    for raw in attempts:
+        kwargs = {k: v for k, v in raw.items() if _supports_kw(BrowserSession, k)}
+        try:
+            return BrowserSession(**kwargs)
+        except Exception as exc:
+            last_exc = exc
+    if last_exc:
+        raise last_exc
+    return BrowserSession(profile=profile)
+
+
+def _create_agent(Agent: Any, task: str, llm: Any, headless: bool):
+    executable_path = find_existing_browser_executable()
+    should_force_profile = executable_path is not None or headless is not True
+
+    if should_force_profile:
+        try:
+            from browser_use import BrowserProfile, BrowserSession  # type: ignore
+            profile = _make_browser_profile(BrowserProfile, headless, executable_path)
+            session = _make_browser_session(BrowserSession, profile)
+            if executable_path:
+                emit_log("info", f"Dùng Chrome/Edge có sẵn: {executable_path}")
+            return Agent(task=task, llm=llm, browser_session=session)
+        except TypeError:
+            # Agent/browser-use đời cũ không nhận browser_session.
+            pass
+        except Exception as exc:
+            emit_log("warn", f"Không dùng được BrowserProfile tùy chỉnh: {exc}")
+
+    return Agent(task=task, llm=llm)
+
+
+def _is_missing_playwright_browser_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    markers = (
+        "executable doesn't exist",
+        "please run the following command",
+        "playwright install",
+        "browserType.launch",
+        "chromium",
+        "chrome-headless-shell",
+    )
+    return any(m.lower() in msg for m in markers)
+
+
 async def run_agent(payload: dict[str, Any]) -> None:
     Agent = import_browser_use()
     llm = build_llm(payload.get("provider", "ollama"), payload.get("model"), payload)
@@ -123,18 +265,9 @@ async def run_agent(payload: dict[str, Any]) -> None:
     emit_log("info", f"Bắt đầu task: {task}")
 
     try:
-        agent = Agent(task=task, llm=llm)
-    except TypeError:
-        # Một số phiên bản browser-use yêu cầu thêm tham số headless qua BrowserProfile
-        try:
-            from browser_use import BrowserProfile, BrowserSession  # type: ignore
-            session = BrowserSession(profile=BrowserProfile(headless=headless))
-            agent = Agent(task=task, llm=llm, browser_session=session)
-        except Exception as exc:
-            fail_error(f"Không khởi tạo được Agent browser-use: {exc}")
-            return
+        agent = _create_agent(Agent, task, llm, headless)
     except Exception as exc:
-        fail_error(f"Khởi tạo Agent thất bại: {exc}")
+        fail_error(f"Không khởi tạo được Agent browser-use: {exc}")
         return
 
     step_counter = {"n": 0}
@@ -155,6 +288,9 @@ async def run_agent(payload: dict[str, Any]) -> None:
     except TypeError:
         history = await agent.run()
     except Exception as exc:
+        if _is_missing_playwright_browser_error(exc):
+            fail_setup(missing=["playwright_chromium"], instructions=playwright_setup_instructions())
+            return
         fail_error(f"Agent chạy lỗi: {exc}")
         return
 
