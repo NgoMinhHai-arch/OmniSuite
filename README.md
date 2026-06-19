@@ -11,7 +11,8 @@ This reflects **what is in this repository today**. **ZIP and `git clone` both s
 - Next.js 16 (App Router) dashboard and SEO tooling
 - Multi-provider AI (Gemini, OpenAI, Claude, Groq, DeepSeek, OpenRouter, **Ollama** local/tunnel, **[9Router](https://github.com/decolua/9router)** proxy)
 - Python **FastAPI** engine (`python_engine/`) with keyword, content, and job-related routes
-- **Launcher** (`node launcher.js` / `npm run app`) — starts the stack; optional browser open to localhost
+- **GO launcher** (`GO.cmd`, `GO.ps1`, `npm run go`, `npm run app`) — one-command startup, smart setup, `.env` repair, dependency caching, and browser auto-open
+- **Legacy launcher** (`npm run legacy:app`) — older full setup launcher kept as fallback
 - **AI support** UI (`/dashboard/ai-support`): chat, slash commands, planner
 - **Runner API** `/api/ai-support/run` — OpenManus `/run`, browser-use `/run-browser`, optional ApplyPilot / job-scraper (**disabled by default**; optional shared secret)
 - Integrations under `integrations/` (manifest + on-demand `integrations:fetch`; optional `integrations:sync:all` for devs)
@@ -81,7 +82,7 @@ This reflects **what is in this repository today**. **ZIP and `git clone` both s
 - `src/components/features/` — Feature modules
 - `python_engine/` — FastAPI services
 - `integrations/` — Git submodules (AI support stacks, benchmarks)
-- `scripts/` — Submodule sync, security scans, runner venv helpers
+- `scripts/` — One-click launcher, setup/repair, submodule sync, security scans, runner venv helpers
 
 ---
 
@@ -89,14 +90,75 @@ This reflects **what is in this repository today**. **ZIP and `git clone` both s
 
 ### Requirements
 
-Node.js 18+, Python 3.10+
+Node.js 18+, Python 3.10+, Git recommended.
 
-### Option 1 — Launcher (recommended)
+### Recommended — GO mode
+
+Use this when you just want OmniSuite to start.
+
+#### Windows
+
+Double-click:
+
+```powershell
+GO.cmd
+```
+
+Or from a terminal:
+
+```powershell
+.\GO.cmd
+```
+
+PowerShell alternative:
+
+```powershell
+.\GO.ps1
+```
+
+#### Cross-platform / npm
 
 ```bash
-node launcher.js
+npm run go
 # or
 npm run app
+```
+
+### What GO mode does
+
+The new GO launcher is designed for one-command startup:
+
+- creates/repairs `.env` when missing;
+- generates `INTERNAL_TOKEN`, `NEXTAUTH_SECRET`, and `NEXTAUTH_URL` automatically;
+- sets a safe local default for `PYTHON_ENGINE_URL`;
+- uses `DATABASE_URL=skip` by default so PostgreSQL is not required for local use;
+- checks Node.js and Python;
+- pulls new Git commits only when the working tree is clean;
+- runs full setup only on first run or when dependency files change;
+- skips `npm install`, `pip install`, and Playwright download on normal runs;
+- starts only the services that are not already running;
+- opens `http://localhost:3000` automatically.
+
+### Repair mode
+
+Use repair mode when dependencies are broken, Playwright is missing, or the app behaves strangely after an update.
+
+```powershell
+GO.cmd --repair
+```
+
+Or:
+
+```bash
+npm run repair
+```
+
+### Legacy launcher
+
+The old launcher is still available as a fallback:
+
+```bash
+npm run legacy:app
 ```
 
 Build a Windows executable:
@@ -107,7 +169,9 @@ npm run build:exe
 
 Then run `OmniSuite.exe`.
 
-### Option 2 — Manual
+### Manual development mode
+
+Manual mode is for development, not for normal users.
 
 ```bash
 npm install
@@ -119,6 +183,8 @@ Copy `.env.example` to `.env`, configure secrets locally, then:
 ```bash
 npm run dev
 ```
+
+Note: `npm run dev` does not perform the same smart `.env` and dependency repair as GO mode. For normal use, prefer `GO.cmd`, `npm run go`, or `npm run app`.
 
 ### Integrations (not bundled — ZIP or clone)
 
@@ -140,9 +206,15 @@ Docs: [`integrations/README.md`](integrations/README.md) · [`integrations/ai-su
 
 | Command | Description |
 | :--- | :--- |
-| `npm run app` | Run via launcher |
+| `GO.cmd` | One-click Windows launcher |
+| `GO.cmd --repair` | Force full setup/repair on Windows |
+| `GO.ps1` | PowerShell launcher |
+| `npm run go` | Smart one-command launcher |
+| `npm run app` | Same as `npm run go` |
+| `npm run repair` | Smart launcher in repair mode |
+| `npm run legacy:app` | Old launcher fallback |
 | `npm run build:exe` | Build `OmniSuite.exe` |
-| `npm run dev` | Dev mode (frontend + backends) |
+| `npm run dev` | Manual dev mode (frontend + Python engine only) |
 | `npm run integrations:fetch -- <id>` | Fetch one integration (on demand) |
 | `npm run integrations:sync:all` | Fetch all submodules (dev) |
 | `npm run integrations:verify` | Warn/fail if paths or runners are missing |
@@ -155,7 +227,7 @@ Docs: [`integrations/README.md`](integrations/README.md) · [`integrations/ai-su
 
 ### System requirements
 
-Node 18+, Python 3.10+, API keys in `.env` as needed, optional Ollama for local LLM inference.
+Node 18+, Python 3.10+, API keys in `.env` or Dashboard Settings as needed, optional Ollama for local LLM inference.
 
 ### API keys (Gemini / OpenAI / …)
 
@@ -194,25 +266,37 @@ Node 18+, Python 3.10+, API keys in `.env` as needed, optional Ollama for local 
 
 `browser-use` lives under `integrations/ai-support/submodules/browser-use`. **Disabled by default** — enable only on trusted machines.
 
-1. **Install dependencies (first time)**
+### Fast setup
 
-```bash
-cd integrations/ai-support/submodules/browser-use
-python -m venv .venv
-# Windows PowerShell:
-. .venv/Scripts/Activate.ps1
-pip install -e .
-python -m playwright install chromium
+From the repository root:
+
+```powershell
+.\scripts\setup-runners-venv.ps1
 ```
 
-2. **Repository root `.env`**
+Linux/macOS:
+
+```bash
+bash scripts/setup-runners-venv.sh
+```
+
+This creates `.venv-runners`, installs OpenManus/browser-use dependencies, and installs Playwright Chromium/headless shell with fallback repair.
+
+### Repository root `.env`
 
 ```
 AI_SUPPORT_RUNNER_ENABLED=true
+PYTHON_BIN=.venv-runners\Scripts\python.exe
 AI_SUPPORT_RUNNER_SECRET=your_runner_secret_here   # optional; if set, the UI sends x-internal-token with the same value
 ```
 
-3. Open **`/dashboard/ai-support`** and run **`/run <task>`** or **`/run-browser …`**.
+Linux/macOS `PYTHON_BIN` example:
+
+```
+PYTHON_BIN=.venv-runners/bin/python
+```
+
+Then open **`/dashboard/ai-support`** and run **`/run <task>`** or **`/run-browser …`**.
 
 Streaming NDJSON logs: `ready` → `step` → `done`. Preflight: `GET /api/ai-support/capabilities`.
 
@@ -222,7 +306,7 @@ Use **`/integrations`** in the AI support UI for the live registry.
 
 | Feature | Slash | Type | Setup hint |
 | :--- | :--- | :--- | :--- |
-| browser-use | `/run`, `/run-browser` | runner | `pip install -e …/browser-use && playwright install chromium` |
+| browser-use | `/run`, `/run-browser` | runner | `scripts/setup-runners-venv.ps1` or `scripts/setup-runners-venv.sh` |
 | ApplyPilot | `/apply …` | runner | Python deps per integration docs |
 | job-scraper | `/score` | runner | See `integrations/job-scraper` |
 | ai-resume-tailor | — | external Next | `npm install && npm run dev` in submodule |
@@ -245,4 +329,5 @@ Use **`/integrations`** in the AI support UI for the live registry.
 *Developed and maintained by NgoMinhHai.*
 
 **Note:** `OmniSuite.exe` is not included in the repository; run `npm run build:exe` after cloning.
- Invisible Potential: The true power of this framework lies beneath the surface. To unlock 200% of its performance, you are encouraged to explore the internal logic of our integrations and runners.
+
+Invisible Potential: The true power of this framework lies beneath the surface. To unlock 200% of its performance, you are encouraged to explore the internal logic of our integrations and runners.
