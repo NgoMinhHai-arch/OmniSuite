@@ -80,6 +80,14 @@ function Invoke-QuietPip {
     if ($LASTEXITCODE -ne 0) { throw "pip failed ($LASTEXITCODE): pip $($PipArguments -join ' ')" }
 }
 
+function Invoke-PlaywrightInstallFallback {
+    param([Parameter(Mandatory)] [string]$Target)
+    Write-Warn "Thu cai Playwright bang Python: $Target"
+    $out = & $Py -m playwright install $Target 2>&1
+    $out | ForEach-Object { Write-Host $_ }
+    return ($LASTEXITCODE -eq 0)
+}
+
 Write-Step 'pip upgrade + wheel + setuptools'
 $a = @('install') + $PipQuiet + @('--upgrade', 'pip', 'wheel', 'setuptools'); Invoke-QuietPip $a
 
@@ -145,10 +153,34 @@ finally {
     Pop-Location
 }
 
-Write-Step 'Playwright Chromium'
-$p = & $Py -m playwright install chromium 2>&1
-$p | ForEach-Object { Write-Host $_ }
-if ($LASTEXITCODE -ne 0) { throw 'playwright install chromium failed' }
+Write-Step 'Playwright Chromium/headless shell'
+if (-not $env:PLAYWRIGHT_BROWSERS_PATH -and $env:LOCALAPPDATA) {
+    $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $env:LOCALAPPDATA 'ms-playwright'
+}
+$env:PYTHON_BIN = $Py
+$InstallerJs = Join-Path $PSScriptRoot 'install-playwright-browser.js'
+$PlaywrightOk = $false
+try {
+    if ((Get-Command node -ErrorAction SilentlyContinue) -and (Test-Path $InstallerJs)) {
+        & node $InstallerJs
+        $PlaywrightOk = ($LASTEXITCODE -eq 0)
+    } else {
+        Write-Warn 'Khong tim thay node hoac scripts/install-playwright-browser.js - dung Python fallback.'
+    }
+
+    if (-not $PlaywrightOk) {
+        $PlaywrightOk = Invoke-PlaywrightInstallFallback 'chromium-headless-shell'
+    }
+    if (-not $PlaywrightOk) {
+        $PlaywrightOk = Invoke-PlaywrightInstallFallback 'chromium'
+    }
+    if (-not $PlaywrightOk) {
+        throw 'playwright browser install failed'
+    }
+}
+finally {
+    Remove-Item Env:PYTHON_BIN -ErrorAction SilentlyContinue
+}
 
 if (-not (Test-Path $ReqExtra)) {
     Write-Warn "Khong thay $ReqExtra - bo qua job-scraper deps."
