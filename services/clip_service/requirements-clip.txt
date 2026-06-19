@@ -1,0 +1,5 @@
+# Optional packages for Image CLIP (:8000).
+# Install this file only when image search is needed.
+-r requirements.txt
+torch>=2.2.0
+transformers>=4.46.0
