@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "app": "node scripts/quick-launcher.js",
-    "go": "node scripts/quick-launcher.js",
-    "repair": "node scripts/quick-launcher.js --repair",
+    "app": "node scripts/contract-go.js",
+    "go": "node scripts/contract-go.js",
+    "repair": "node scripts/contract-go.js --repair",
+    "quick:app": "node scripts/quick-launcher.js",
     "legacy:app": "node launcher.js",
     "build:exe": "npx pkg@latest launcher.js --targets node18-win-x64 -o OmniSuite.exe",
     "dev": "concurrently \"npm run dev:engine\" \"npm run dev:next-ipv4\"",
