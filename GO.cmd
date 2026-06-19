@@ -2,7 +2,7 @@
 setlocal
 cd /d "%~dp0"
 title OmniSuite GO
-node scripts\quick-launcher.js %*
+node scripts\contract-go.js %*
 if errorlevel 1 (
   echo.
   echo [LOI] OmniSuite chua khoi dong duoc. Thu chay: GO.cmd --repair
