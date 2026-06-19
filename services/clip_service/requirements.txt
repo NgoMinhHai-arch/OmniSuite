@@ -1,7 +1,6 @@
-# Image pipeline CLIP (:8000) — torch ~2GB; CPU wheel by default
+# Image pipeline CLIP (:8000) — light HTTP runtime only.
+# Heavy AI dependencies are opt-in: install requirements-heavy.txt when CLIP search is needed.
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
-torch>=2.2.0
-transformers>=4.46.0
 pillow>=10.0.0
 requests>=2.32.0
