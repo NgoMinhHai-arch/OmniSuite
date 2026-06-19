@@ -35,13 +35,13 @@ So:
 
 ## Quick start
 
-```bash
-git clone https://github.com/NgoMinhHai-arch/OmniSuite.git
-cd OmniSuite
-npm install
-```
+1. Download ZIP or clone the project.
+2. Open the project folder.
+3. Double-click `01_START_OMNISUITE.bat`.
 
-Then run OmniSuite.
+If something is broken, double-click `01_START_OMNISUITE.bat` again. It will self-repair and retry.
+
+Big Update checks are built into the Start button, so users do not need a separate repair/update button.
 
 For the core only, the important services are:
 

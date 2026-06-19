@@ -6,10 +6,16 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { resolvePythonExecutable, pythonEnvPatch } = require('./resolve-python');
+const {
+  resolvePythonExecutable,
+  pythonEnvPatch,
+  localPythonPackagesDir,
+  localPlaywrightBrowsersDir,
+} = require('./resolve-python');
 
 const PROJECT_DIR = process.env.OMNISUITE_ROOT || path.join(__dirname, '..');
 const GUARD_DIR = path.join(PROJECT_DIR, '.omnisuite');
+const PLAYWRIGHT_FAILURE_STATE = path.join(GUARD_DIR, 'playwright-download-failed.json');
 
 const PIP_REQS = [
   { rel: 'python_engine/requirements.txt', label: 'Python engine (8082)' },
@@ -21,6 +27,9 @@ const PYTHON_CHECKS = [
   { mod: 'uvicorn', label: 'uvicorn (8082)' },
   { mod: 'flask', label: 'flask (8081)' },
   { mod: 'fastapi', label: 'fastapi' },
+  { mod: 'pytrends', label: 'pytrends (Keyword Analyzer)' },
+  { mod: 'pandas', label: 'pandas (Keyword Trends)' },
+  { mod: 'sklearn', label: 'scikit-learn (Keyword clustering)' },
 ];
 
 function getPythonCmd() {
@@ -30,6 +39,106 @@ function getPythonCmd() {
 function skipPlaywrightSetup() {
   const v = (process.env.OMNISUITE_SKIP_PLAYWRIGHT || '').trim().toLowerCase();
   return v === '1' || v === 'true' || v === 'yes';
+}
+
+function forceSetupRequested() {
+  return (
+    process.argv.includes('--repair') ||
+    process.argv.includes('--setup') ||
+    process.env.OMNISUITE_FORCE_SETUP === '1'
+  );
+}
+
+const CHROMIUM_EXECUTABLE_ENV_KEYS = [
+  'PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH',
+  'CHROMIUM_EXECUTABLE_PATH',
+  'CHROME_PATH',
+  'OMNISUITE_CHROME_PATH',
+];
+
+function normalizeExecutable(candidate) {
+  const p = String(candidate || '').trim().replace(/^['"]|['"]$/g, '');
+  if (!p) return null;
+  try {
+    return fs.existsSync(p) && fs.statSync(p).isFile() ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+function defaultChromeCandidates() {
+  if (process.platform === 'win32') {
+    const roots = [process.env.LOCALAPPDATA, process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)']].filter(Boolean);
+    return roots.flatMap((root) => [
+      path.join(root, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      path.join(root, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    ]);
+  }
+  if (process.platform === 'darwin') {
+    return [
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    ];
+  }
+  return [
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/snap/bin/chromium',
+    '/usr/bin/microsoft-edge',
+  ];
+}
+
+function resolveSystemChromiumExecutable() {
+  for (const key of CHROMIUM_EXECUTABLE_ENV_KEYS) {
+    const found = normalizeExecutable(process.env[key]);
+    if (found) return found;
+  }
+  for (const candidate of defaultChromeCandidates()) {
+    const found = normalizeExecutable(candidate);
+    if (found) return found;
+  }
+  return null;
+}
+
+function readPlaywrightFailureState() {
+  try {
+    if (!fs.existsSync(PLAYWRIGHT_FAILURE_STATE)) return null;
+    return JSON.parse(fs.readFileSync(PLAYWRIGHT_FAILURE_STATE, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function writePlaywrightFailureState(reason) {
+  try {
+    fs.mkdirSync(GUARD_DIR, { recursive: true });
+    fs.writeFileSync(
+      PLAYWRIGHT_FAILURE_STATE,
+      JSON.stringify({ failedAt: new Date().toISOString(), reason: String(reason || 'unknown') }, null, 2),
+      'utf8',
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearPlaywrightFailureState() {
+  try {
+    if (fs.existsSync(PLAYWRIGHT_FAILURE_STATE)) fs.unlinkSync(PLAYWRIGHT_FAILURE_STATE);
+  } catch {
+    /* ignore */
+  }
+}
+
+function playwrightRetryBlocked() {
+  if (forceSetupRequested()) return false;
+  const state = readPlaywrightFailureState();
+  if (!state?.failedAt) return false;
+  const ageMs = Date.now() - Date.parse(state.failedAt);
+  return Number.isFinite(ageMs) && ageMs < 24 * 60 * 60 * 1000;
 }
 
 const PLAYWRIGHT_BROWSERS_JSON = path.join(
@@ -42,7 +151,7 @@ const PLAYWRIGHT_BROWSERS_JSON = path.join(
 function msPlaywrightBase() {
   const explicit = (process.env.PLAYWRIGHT_BROWSERS_PATH || '').trim();
   if (explicit) return explicit;
-  return process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'ms-playwright') : '';
+  return localPlaywrightBrowsersDir();
 }
 
 function readPlaywrightRevisions() {
@@ -100,12 +209,13 @@ function chromiumHeadlessShellReady(base) {
 }
 
 /**
- * Node + Python Playwright dung chung %LOCALAPPDATA%\\ms-playwright.
+ * Node + Python Playwright dung chung .omnisuite/ms-playwright trong du an.
  * Playwright 1.59+: chromium.launch({ headless: true }) can chromium-headless-shell,
  * khong chi thu muc chromium-* (full browser).
  */
 function chromiumBrowserReady() {
   if (skipPlaywrightSetup()) return true;
+  if (resolveSystemChromiumExecutable()) return true;
   const base = msPlaywrightBase();
   if (!base || !fs.existsSync(base)) return false;
   return chromiumHeadlessShellReady(base);
@@ -126,6 +236,12 @@ function runCommand(cmd, args, options = {}) {
     });
     child.on('error', reject);
   });
+}
+
+function pipInstallArgs(args) {
+  const target = localPythonPackagesDir();
+  fs.mkdirSync(target, { recursive: true });
+  return ['-m', 'pip', 'install', '--upgrade', '--target', target, ...args];
 }
 
 const MS_PLAYWRIGHT_DIR = msPlaywrightBase;
@@ -460,7 +576,16 @@ async function runPlaywrightInstall(cmd, args, logFn) {
 
 /** Cai chromium-headless-shell (Playwright 1.59+ headless: true). */
 async function installPlaywrightBrowsers(logFn) {
-  if (chromiumBrowserReady()) return true;
+  const systemBrowser = resolveSystemChromiumExecutable();
+  if (systemBrowser) {
+    clearPlaywrightFailureState();
+    logFn('ok', `  Dung Chrome/Edge co san: ${systemBrowser}`);
+    return true;
+  }
+  if (chromiumBrowserReady()) {
+    clearPlaywrightFailureState();
+    return true;
+  }
 
   preparePlaywrightInstall(logFn);
 
@@ -481,9 +606,13 @@ async function installPlaywrightBrowsers(logFn) {
 
     for (const target of PLAYWRIGHT_BROWSER_TARGETS) {
       try {
-        if (await runTarget(target, force)) return true;
+        if (await runTarget(target, force)) {
+          clearPlaywrightFailureState();
+          return true;
+        }
       } catch (e) {
         logFn('warn', `  ${target}: ${e.message}`);
+        writePlaywrightFailureState(e.message);
         preparePlaywrightInstall(logFn, { aggressive: true });
       }
     }
@@ -505,14 +634,21 @@ async function installPlaywrightBrowsers(logFn) {
       if (force) args.push('--force');
       try {
         await runPlaywrightInstall(py, args, logFn);
-        if (chromiumBrowserReady()) return true;
+        if (chromiumBrowserReady()) {
+          clearPlaywrightFailureState();
+          return true;
+        }
       } catch (e) {
         logFn('warn', `  Python ${target}: ${e.message}`);
+        writePlaywrightFailureState(e.message);
       }
     }
   }
 
-  return chromiumBrowserReady();
+  const ready = chromiumBrowserReady();
+  if (ready) clearPlaywrightFailureState();
+  else writePlaywrightFailureState('Playwright Chromium/headless shell download failed');
+  return ready;
 }
 
 function fileHash(filePath) {
@@ -523,6 +659,7 @@ function fileHash(filePath) {
 function needsPlaywrightReinstall() {
   if (skipPlaywrightSetup()) return false;
   if (chromiumBrowserReady()) return false;
+  if (playwrightRetryBlocked()) return false;
 
   const marker = path.join(GUARD_DIR, 'setup-state.json');
   const lockHash = fileHash(path.join(PROJECT_DIR, 'package-lock.json'));
@@ -594,9 +731,9 @@ async function runFullSetup(log = () => {}) {
     return false;
   }
 
-  logFn('step', 'Buoc 2/5: Python — pip install requirements (8081/8082/8000)');
+  logFn('step', 'Buoc 2/5: Python - pip install requirements vao .omnisuite/python-packages');
   try {
-    await runCommand(py, ['-m', 'pip', 'install', '-q', '--upgrade', 'pip', 'wheel'], {
+    await runCommand(py, pipInstallArgs(['-q', 'wheel', 'setuptools']), {
       silent: true,
       ignoreError: true,
     });
@@ -616,8 +753,8 @@ async function runFullSetup(log = () => {}) {
     logFn('step', `  pip: ${label}...`);
     try {
       const pipArgs = heavy
-        ? ['-m', 'pip', 'install', '-r', rel]
-        : ['-m', 'pip', 'install', '-q', '-r', rel];
+        ? pipInstallArgs(['-r', rel])
+        : pipInstallArgs(['-q', '-r', rel]);
       const pipRun = runCommand(py, pipArgs, { silent: heavy ? false : true, ignoreError: true });
       if (heavy) {
         await runWithWaitIndicator(pipRun, logFn, [
@@ -641,7 +778,7 @@ async function runFullSetup(log = () => {}) {
     else {
       logFn('warn', `  Thieu ${label} — thu cai lai requirements.txt`);
       try {
-        await runCommand(py, ['-m', 'pip', 'install', '-q', '-r', 'requirements.txt'], {
+        await runCommand(py, pipInstallArgs(['-q', '-r', 'requirements.txt']), {
           ignoreError: true,
         });
       } catch {
@@ -656,19 +793,28 @@ async function runFullSetup(log = () => {}) {
   if (skipPlaywrightSetup()) {
     logFn('info', 'Buoc 4/5: Bo qua Playwright (OMNISUITE_SKIP_PLAYWRIGHT=1)');
     playwrightOk = true;
+  } else if (!playwrightOk && playwrightRetryBlocked()) {
+    const state = readPlaywrightFailureState();
+    logFn(
+      'warn',
+      `Buoc 4/5: Bo qua tai Playwright de tranh lap vo han. Lan tai truoc loi: ${state?.reason || 'unknown'}`,
+    );
+    logFn('info', '  Neu can thu lai, bam lai 01_START_OMNISUITE.bat hoac dat Chrome/Edge co san.');
   } else if (installBrowsers) {
     logFn('step', 'Buoc 4/5: Playwright — chromium-headless-shell (~90MB, che do headless)');
     logFn('info', '  % cap nhat moi 3s — neu dung >90s tai 56%, script tu don lock va thu lai.');
     try {
       playwrightOk = await installPlaywrightBrowsers(logFn);
       if (playwrightOk) logFn('ok', '  Playwright headless shell — xong');
-      else logFn('warn', '  Headless shell chua san sang — thu: npm run setup:repair');
+      else logFn('warn', '  Headless shell chua san sang — bam lai 01_START_OMNISUITE.bat');
     } catch (e) {
       playwrightOk = false;
       logFn('warn', `  Playwright: ${e.message}`);
     }
   } else {
-    logFn('ok', 'Buoc 4/5: Playwright headless shell da co — bo qua');
+    const systemBrowser = resolveSystemChromiumExecutable();
+    if (systemBrowser) logFn('ok', `Buoc 4/5: Dung Chrome/Edge co san — bo qua tai Chromium (${systemBrowser})`);
+    else logFn('ok', 'Buoc 4/5: Playwright headless shell da co — bo qua');
   }
 
   logFn('step', 'Buoc 5/5: Git security hooks (neu co .git)');
@@ -698,7 +844,7 @@ async function runFullSetup(log = () => {}) {
     logFn('ok', 'Tim hinh anh: Loi AI san sang');
   }
   if (!verifyResult.mapsReady) {
-    logFn('warn', 'Quet ban do: Thieu Chromium Playwright — chay lai 01_START hoac npm run setup:repair');
+    logFn('warn', 'Quet ban do: Thieu Chromium Playwright — bam lai 01_START_OMNISUITE.bat.');
   } else {
     logFn('ok', 'Quet ban do: Playwright san sang');
   }
@@ -732,4 +878,6 @@ module.exports = {
   runPlaywrightInstall,
   installPlaywrightBrowsers,
   preparePlaywrightInstall,
+  playwrightRetryBlocked,
+  resolveSystemChromiumExecutable,
 };

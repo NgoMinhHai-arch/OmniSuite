@@ -7,6 +7,10 @@ const path = require('path');
 
 const PROJECT_DIR = process.env.OMNISUITE_ROOT || path.join(__dirname, '..');
 const RUNTIME_JSON = path.join(PROJECT_DIR, '.omnisuite', 'runtime.json');
+const OMNISUITE_DIR = path.join(PROJECT_DIR, '.omnisuite');
+const LOCAL_PACKAGES_DIR = path.join(OMNISUITE_DIR, 'python-packages');
+const CACHE_DIR = path.join(OMNISUITE_DIR, 'cache');
+const PLAYWRIGHT_DIR = path.join(OMNISUITE_DIR, 'ms-playwright');
 
 function readRuntimeJson() {
   try {
@@ -23,6 +27,55 @@ function bundledPythonWin() {
 
 function bundledPythonUnix() {
   return path.join(PROJECT_DIR, '.omnisuite', 'python', 'bin', 'python3');
+}
+
+function localPythonPackagesDir() {
+  return LOCAL_PACKAGES_DIR;
+}
+
+function localPlaywrightBrowsersDir() {
+  return PLAYWRIGHT_DIR;
+}
+
+function ensureLocalRuntimeDirs() {
+  for (const dir of [
+    OMNISUITE_DIR,
+    LOCAL_PACKAGES_DIR,
+    CACHE_DIR,
+    path.join(CACHE_DIR, 'pip'),
+    path.join(CACHE_DIR, 'torch'),
+    path.join(CACHE_DIR, 'huggingface'),
+    path.join(CACHE_DIR, 'puppeteer'),
+    PLAYWRIGHT_DIR,
+  ]) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function absolutizeMaybe(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return raw;
+  return path.isAbsolute(raw) ? raw : path.join(PROJECT_DIR, raw);
+}
+
+function prependPathList(current, entries) {
+  const sep = path.delimiter;
+  const existing = String(current || '')
+    .split(sep)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const next = [];
+  for (const entry of entries) {
+    if (entry && !next.includes(entry)) next.push(entry);
+  }
+  for (const entry of existing) {
+    if (entry && !next.includes(entry)) next.push(entry);
+  }
+  return next.join(sep);
 }
 
 function resolvePythonExecutable() {
@@ -53,6 +106,22 @@ function resolvePythonExecutable() {
 function pythonEnvPatch(extra = {}) {
   const py = resolvePythonExecutable();
   const patch = { ...process.env, ...extra, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' };
+  ensureLocalRuntimeDirs();
+
+  patch.PYTHONPATH = prependPathList(patch.PYTHONPATH, [LOCAL_PACKAGES_DIR]);
+  patch.PIP_CACHE_DIR = absolutizeMaybe(patch.PIP_CACHE_DIR || path.join(CACHE_DIR, 'pip'));
+  patch.TORCH_HOME = absolutizeMaybe(patch.TORCH_HOME || path.join(CACHE_DIR, 'torch'));
+  patch.HF_HOME = absolutizeMaybe(patch.HF_HOME || path.join(CACHE_DIR, 'huggingface'));
+  patch.HUGGINGFACE_HUB_CACHE = absolutizeMaybe(
+    patch.HUGGINGFACE_HUB_CACHE || path.join(CACHE_DIR, 'huggingface', 'hub'),
+  );
+  patch.TRANSFORMERS_CACHE = absolutizeMaybe(
+    patch.TRANSFORMERS_CACHE || path.join(CACHE_DIR, 'huggingface', 'transformers'),
+  );
+  patch.PLAYWRIGHT_BROWSERS_PATH = absolutizeMaybe(patch.PLAYWRIGHT_BROWSERS_PATH || PLAYWRIGHT_DIR);
+  patch.PUPPETEER_CACHE_DIR = absolutizeMaybe(patch.PUPPETEER_CACHE_DIR || path.join(CACHE_DIR, 'puppeteer'));
+  patch.XDG_CACHE_HOME = absolutizeMaybe(patch.XDG_CACHE_HOME || CACHE_DIR);
+
   if (process.platform !== 'win32' || !py.includes(path.sep)) {
     return patch;
   }
@@ -91,6 +160,8 @@ module.exports = {
   RUNTIME_JSON,
   resolvePythonExecutable,
   pythonEnvPatch,
+  localPythonPackagesDir,
+  localPlaywrightBrowsersDir,
   readRuntimeJson,
   writeRuntimeJson,
   bundledPythonWin,

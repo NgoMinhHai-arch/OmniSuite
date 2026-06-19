@@ -28,6 +28,15 @@ $VenvDir = Join-Path $RepoRoot '.venv-runners'
 $BrowserUse = Join-Path $RepoRoot 'integrations\ai-support\submodules\browser-use'
 $OpenManus = Join-Path $RepoRoot 'integrations\ai-support\submodules\open-manus'
 $ReqExtra = Join-Path $RepoRoot 'scripts\requirements-runners.txt'
+$OmniCache = Join-Path $RepoRoot '.omnisuite\cache'
+$env:PIP_CACHE_DIR = Join-Path $OmniCache 'pip'
+$env:TORCH_HOME = Join-Path $OmniCache 'torch'
+$env:HF_HOME = Join-Path $OmniCache 'huggingface'
+$env:HUGGINGFACE_HUB_CACHE = Join-Path $OmniCache 'huggingface\hub'
+$env:TRANSFORMERS_CACHE = Join-Path $OmniCache 'huggingface\transformers'
+$env:PUPPETEER_CACHE_DIR = Join-Path $OmniCache 'puppeteer'
+$env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $RepoRoot '.omnisuite\ms-playwright'
+New-Item -ItemType Directory -Force -Path $env:PIP_CACHE_DIR, $env:TORCH_HOME, $env:HF_HOME, $env:HUGGINGFACE_HUB_CACHE, $env:TRANSFORMERS_CACHE, $env:PUPPETEER_CACHE_DIR, $env:PLAYWRIGHT_BROWSERS_PATH | Out-Null
 
 function Write-Step([string]$m) { Write-Host "[*] $m" -ForegroundColor Cyan }
 function Write-Ok([string]$m) { Write-Host "[OK] $m" -ForegroundColor Green }
@@ -154,9 +163,6 @@ finally {
 }
 
 Write-Step 'Playwright Chromium/headless shell'
-if (-not $env:PLAYWRIGHT_BROWSERS_PATH -and $env:LOCALAPPDATA) {
-    $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $env:LOCALAPPDATA 'ms-playwright'
-}
 $env:PYTHON_BIN = $Py
 $InstallerJs = Join-Path $PSScriptRoot 'install-playwright-browser.js'
 $PlaywrightOk = $false

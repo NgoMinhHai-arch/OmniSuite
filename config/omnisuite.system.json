@@ -5,6 +5,29 @@
     "mode": "go",
     "dashboardUrl": "http://localhost:3000"
   },
+  "bigUpdate": {
+    "name": "System Spine",
+    "version": "2026.06.19",
+    "goal": "Mot khung xuong chung de bam-la-chay, tu kiem tra, tu sua va giam lenh nguoi dung phai go.",
+    "principles": [
+      "one_click_start",
+      "one_click_repair",
+      "local_runtime_only",
+      "contract_driven_services",
+      "doctor_before_start",
+      "single_dependency_signature"
+    ],
+    "entrypoints": {
+      "windowsStart": "01_START_OMNISUITE.bat",
+      "windowsStop": "02_STOP_OMNISUITE.bat",
+      "windowsUninstall": "03_UNINSTALL_OMNISUITE.bat"
+    }
+  },
+  "entrypoints": {
+    "windowsStart": "01_START_OMNISUITE.bat",
+    "windowsStop": "02_STOP_OMNISUITE.bat",
+    "windowsUninstall": "03_UNINSTALL_OMNISUITE.bat"
+  },
   "envDefaults": {
     "NEXTAUTH_URL": "http://localhost:3000",
     "PYTHON_ENGINE_URL": "http://127.0.0.1:8082",
@@ -64,13 +87,24 @@
       "config/omnisuite.system.json"
     ],
     "requiredNodeModules": ["next", "playwright"],
-    "requiredPythonModules": ["fastapi", "uvicorn", "flask", "httpx", "bs4", "playwright"]
+    "requiredPythonModules": [
+      "fastapi",
+      "uvicorn",
+      "flask",
+      "httpx",
+      "bs4",
+      "playwright",
+      "pytrends",
+      "pandas",
+      "numpy",
+      "sklearn"
+    ]
   },
   "commands": {
-    "start": "GO.cmd",
-    "startNpm": "npm run go",
-    "repair": "GO.cmd --repair",
-    "repairNpm": "npm run repair",
-    "legacy": "npm run legacy:app"
+    "start": "01_START_OMNISUITE.bat",
+    "repair": "01_START_OMNISUITE.bat",
+    "bigUpdate": "01_START_OMNISUITE.bat",
+    "stop": "02_STOP_OMNISUITE.bat",
+    "uninstall": "03_UNINSTALL_OMNISUITE.bat"
   }
 }

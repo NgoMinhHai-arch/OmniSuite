@@ -52,7 +52,7 @@ export async function scrapeImages(
       throw new Error(
         detail
           ? `Không thể khởi động Lõi AI (port 8000): ${detail}`
-          : 'Không thể khởi động Lõi AI (port 8000). Chạy launcher (01_START) hoặc npm run setup:all, rồi thử lại.',
+          : 'Không thể khởi động Lõi AI (port 8000). Bấm lại 01_START_OMNISUITE.bat, rồi thử lại.',
       );
     }
 

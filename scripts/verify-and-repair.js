@@ -13,6 +13,7 @@ const NEEDS_FULL_PYTHON = path.join(GUARD_DIR, 'needs-full-python');
 const {
   resolvePythonExecutable,
   pythonEnvPatch,
+  localPythonPackagesDir,
   writeRuntimeJson,
 } = require('./resolve-python');
 
@@ -20,6 +21,11 @@ const PIP_TARGETS = {
   flask: { req: 'requirements.txt', mod: 'flask' },
   clip: { req: 'services/clip_service/requirements.txt', mod: 'torch', also: ['uvicorn', 'fastapi'] },
   engine: { req: 'python_engine/requirements.txt', mod: 'uvicorn' },
+  keywords: {
+    req: 'python_engine/requirements.txt',
+    mod: 'pytrends',
+    also: ['httpx', 'bs4', 'playwright', 'pandas', 'numpy', 'sklearn'],
+  },
 };
 
 function parseArgs(argv) {
@@ -77,7 +83,12 @@ async function pipInstallReq(py, rel, log) {
   if (!fs.existsSync(reqPath)) return false;
   logMsg(log, 'step', `  pip install -r ${rel}...`);
   try {
-    await runCommand(py, ['-m', 'pip', 'install', '-r', rel], { ignoreError: false });
+    fs.mkdirSync(localPythonPackagesDir(), { recursive: true });
+    await runCommand(
+      py,
+      ['-m', 'pip', 'install', '--upgrade', '--target', localPythonPackagesDir(), '-r', rel],
+      { ignoreError: false },
+    );
     return true;
   } catch (e) {
     logMsg(log, 'warn', `  pip that bai: ${e.message}`);
@@ -109,7 +120,15 @@ async function repairPythonModules(scope, log) {
   const errors = [];
 
   const scopes =
-    scope === 'all' ? ['flask', 'engine', 'clip'] : scope === 'clip' ? ['clip'] : scope === 'flask' ? ['flask'] : [scope];
+    scope === 'all'
+      ? ['flask', 'engine', 'keywords', 'clip']
+      : scope === 'clip'
+        ? ['clip']
+        : scope === 'flask'
+          ? ['flask']
+          : scope === 'keywords'
+            ? ['keywords']
+            : [scope];
 
   for (const key of scopes) {
     const target = PIP_TARGETS[key];
@@ -213,6 +232,7 @@ async function verifyAndRepair(opts = {}) {
   const needClip = only === 'all' || only === 'clip';
   const needMaps = only === 'all' || only === 'maps';
   const needFlask = only === 'all' || only === 'flask';
+  const needKeywords = only === 'all' || only === 'keywords';
 
   if (needFlask || only === 'all') {
     if (!canImport(py, 'flask')) {
@@ -236,6 +256,21 @@ async function verifyAndRepair(opts = {}) {
         result.errors.push(...r.errors);
       } else {
         result.errors.push(`Thieu: ${missing.join(', ')}`);
+      }
+    }
+  }
+
+  if (needKeywords) {
+    const missing = ['pytrends', 'playwright', 'bs4', 'httpx', 'pandas', 'sklearn'].filter(
+      (m) => !canImport(py, m),
+    );
+    if (missing.length) {
+      if (repair) {
+        const r = await repairPythonModules('keywords', log);
+        result.repairs.push(...r.repairs);
+        result.errors.push(...r.errors);
+      } else {
+        result.errors.push(`Keyword tool thieu: ${missing.join(', ')}`);
       }
     }
   }

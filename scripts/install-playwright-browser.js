@@ -18,18 +18,12 @@ const {
   installPlaywrightBrowsers,
   skipPlaywrightSetup,
 } = require('./setup-all-tools');
+const { localPlaywrightBrowsersDir } = require('./resolve-python');
 
 function ensureSharedBrowsersPath() {
   if ((process.env.PLAYWRIGHT_BROWSERS_PATH || '').trim()) return;
 
-  let base = '';
-  if (process.platform === 'win32' && process.env.LOCALAPPDATA) {
-    base = path.join(process.env.LOCALAPPDATA, 'ms-playwright');
-  } else if (process.platform === 'darwin' && process.env.HOME) {
-    base = path.join(process.env.HOME, 'Library', 'Caches', 'ms-playwright');
-  } else if (process.env.HOME) {
-    base = path.join(process.env.HOME, '.cache', 'ms-playwright');
-  }
+  const base = localPlaywrightBrowsersDir();
 
   if (base) {
     fs.mkdirSync(base, { recursive: true });
@@ -44,7 +38,7 @@ function log(type, msg) {
 
 function printFallbackHint() {
   log('warn', 'Khong cai duoc Playwright Chromium/headless shell. Day thuong la loi mang, proxy, antivirus hoac thu muc ms-playwright bi khoa.');
-  log('info', 'Thu chay lai: npm run setup:repair -- --only=maps');
+  log('info', 'Thu bam lai: 01_START_OMNISUITE.bat');
   log('info', 'Neu mang chan tai, co the dat PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH toi Chrome/Edge co san roi chay lai.');
   if (process.platform === 'win32') {
     log('info', 'Vi du PowerShell: $env:PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"');
@@ -74,8 +68,12 @@ async function main() {
   log('ok', 'Playwright Chromium/headless shell san sang.');
 }
 
-main().catch((err) => {
-  log('err', err && err.message ? err.message : String(err));
-  printFallbackHint();
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    log('err', err && err.message ? err.message : String(err));
+    printFallbackHint();
+    process.exit(1);
+  });
+}
+
+module.exports = { ensureSharedBrowsersPath };

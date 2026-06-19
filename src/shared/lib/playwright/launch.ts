@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { chromium, type Browser, type LaunchOptions } from 'playwright';
 import { PLAYWRIGHT_HEADLESS, PLAYWRIGHT_LAUNCH_ARGS } from './config';
+import { localPlaywrightBrowsersDir } from '@/shared/lib/python/resolve-python';
 
 const CHROMIUM_EXECUTABLE_ENV_KEYS = [
   'PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH',
@@ -11,13 +12,11 @@ const CHROMIUM_EXECUTABLE_ENV_KEYS = [
 ];
 
 export const PLAYWRIGHT_INSTALL_HINT_VI =
-  'Chạy trong thư mục dự án: npx playwright install chromium-headless-shell (hoặc khởi động lại launcher / npm run setup:repair để tự cài). Nếu mạng chặn tải, đặt PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH tới chrome.exe/msedge.exe có sẵn rồi chạy lại.';
+  'Bam lai 01_START_OMNISUITE.bat de tu cai Playwright Chromium. Neu mang chan tai, dat PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH toi chrome.exe/msedge.exe co san roi chay lai.';
 
 function ensureBrowsersPath(): void {
   if (process.env.PLAYWRIGHT_BROWSERS_PATH?.trim()) return;
-  const base = process.env.LOCALAPPDATA
-    ? path.join(process.env.LOCALAPPDATA, 'ms-playwright')
-    : '';
+  const base = localPlaywrightBrowsersDir();
   if (base && fs.existsSync(base)) {
     process.env.PLAYWRIGHT_BROWSERS_PATH = base;
   }

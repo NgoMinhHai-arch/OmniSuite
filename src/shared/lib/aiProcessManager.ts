@@ -2,7 +2,7 @@ import { spawn, exec } from 'child_process';
 import path from 'path';
 import axios from 'axios';
 import fs from 'fs';
-import { resolvePythonExecutable } from '@/shared/lib/python/resolve-python';
+import { pythonEnvPatch, resolvePythonExecutable } from '@/shared/lib/python/resolve-python';
 import { redactSecrets } from '@/shared/lib/server/secret-redact';
 
 const HEALTH_URL = 'http://127.0.0.1:8000/api/v1/health';
@@ -94,10 +94,7 @@ class AiProcessManager {
 
       console.log(`[AiProcessManager] Khởi động Python tại: ${pythonDir} (${pythonExe})`);
 
-      const childEnv: NodeJS.ProcessEnv = {
-        ...process.env,
-        PYTHONIOENCODING: 'utf-8',
-      };
+      const childEnv: NodeJS.ProcessEnv = pythonEnvPatch();
       const token = (process.env.INTERNAL_TOKEN || '').trim();
       if (token) childEnv.INTERNAL_TOKEN = token;
 
@@ -114,13 +111,13 @@ class AiProcessManager {
           const tail = redactSecrets(tailLogFile(logFile));
           this.lastStartError =
             tail ||
-            `Lõi AI thoát với mã ${code}. Chạy: npm run setup:all (cài torch/fastapi cho services/clip_service).`;
+            `Lõi AI thoát với mã ${code}. Bấm lại 01_START_OMNISUITE.bat để hệ thống tự sửa thư viện AI.`;
         }
         this.isReady = false;
         this.childProcess = null;
       });
       this.childProcess.on('error', (err) => {
-        this.lastStartError = `Không chạy được Python (${pythonExe}): ${err.message}. Chạy npm run setup:all hoặc khởi động bằng launcher (01_START).`;
+        this.lastStartError = `Không chạy được Python (${pythonExe}): ${err.message}. Bấm lại 01_START_OMNISUITE.bat để hệ thống tự sửa.`;
         this.isReady = false;
       });
 

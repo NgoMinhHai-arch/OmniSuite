@@ -239,7 +239,7 @@ export default function SystemHealthPage() {
                 Trạng thái hệ thống
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-7" style={{ color: 'var(--text-secondary)' }}>
-                Một chỗ để xem OmniSuite đang thiếu gì, service nào đang sống, API key nào đã cấu hình, và nên chạy lệnh nào để sửa. Cuối cùng cũng có một bảng điện, thay vì nghe tiếng nổ rồi đoán cầu chì nào cháy.
+                Một chỗ để xem OmniSuite đang thiếu gì, service nào đang sống, API key nào đã cấu hình, và file nào cần bấm để hệ thống tự sửa.
               </p>
             </div>
           </div>
@@ -273,7 +273,7 @@ export default function SystemHealthPage() {
                 <h2 className="text-lg font-black" style={{ color: 'var(--text-primary)' }}>Không đọc được trạng thái</h2>
                 <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>{error}</p>
                 <div className="mt-4 max-w-md">
-                  <CommandButton command="GO.cmd --repair" />
+                  <CommandButton command="01_START_OMNISUITE.bat" />
                 </div>
               </div>
             </div>
@@ -366,15 +366,12 @@ export default function SystemHealthPage() {
               <div className="mb-5 flex items-center gap-3">
                 <Terminal className="text-indigo-400" size={22} />
                 <div>
-                  <h2 className="text-xl font-black" style={{ color: 'var(--text-primary)' }}>Lệnh sửa nhanh</h2>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Copy rồi chạy ở repo root</p>
+                  <h2 className="text-xl font-black" style={{ color: 'var(--text-primary)' }}>Nút chạy chính</h2>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Bấm file này để khởi động, kiểm tra và tự sửa</p>
                 </div>
               </div>
               <div className="space-y-3">
-                <CommandButton command={commands.repair || 'GO.cmd --repair'} />
-                <CommandButton command={commands.repairNpm || 'npm run repair'} />
-                <CommandButton command={commands.start || 'GO.cmd'} />
-                <CommandButton command={commands.startNpm || 'npm run go'} />
+                <CommandButton command={commands.start || commands.repair || '01_START_OMNISUITE.bat'} />
               </div>
             </Card>
 
@@ -431,10 +428,10 @@ export default function SystemHealthPage() {
               <div className="space-y-3">
                 <h2 className="text-xl font-black" style={{ color: 'var(--text-primary)' }}>Có service bắt buộc đang chết</h2>
                 <p className="text-sm leading-7" style={{ color: 'var(--text-secondary)' }}>
-                  Chạy repair trước. Nếu vẫn lỗi, nhìn log phía terminal. Đúng, terminal lại xuất hiện, vì đời chưa đủ khổ.
+                  Bấm lại 01_START_OMNISUITE.bat để hệ thống tự kiểm tra, sửa lỗi và thử khởi động lại.
                 </p>
                 <div className="max-w-md">
-                  <CommandButton command={commands.repair || 'GO.cmd --repair'} />
+                  <CommandButton command={commands.start || commands.repair || '01_START_OMNISUITE.bat'} />
                 </div>
               </div>
             </div>

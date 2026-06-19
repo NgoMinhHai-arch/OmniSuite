@@ -11,8 +11,8 @@ This reflects **what is in this repository today**. **ZIP and `git clone` both s
 - Next.js 16 (App Router) dashboard and SEO tooling
 - Multi-provider AI (Gemini, OpenAI, Claude, Groq, DeepSeek, OpenRouter, **Ollama** local/tunnel, **[9Router](https://github.com/decolua/9router)** proxy)
 - Python **FastAPI** engine (`python_engine/`) with keyword, content, and job-related routes
-- **GO launcher** (`GO.cmd`, `GO.ps1`, `npm run go`, `npm run app`) — one-command startup, smart setup, `.env` repair, dependency caching, and browser auto-open
-- **Legacy launcher** (`npm run legacy:app`) — older full setup launcher kept as fallback
+- **One-click launcher** (`01_START_OMNISUITE.bat`) — smart setup, Big Update checks, `.env` repair, dependency caching, and browser auto-open
+- **Developer fallback launcher** — older full setup path kept internally
 - **AI support** UI (`/dashboard/ai-support`): chat, slash commands, planner
 - **Runner API** `/api/ai-support/run` — OpenManus `/run`, browser-use `/run-browser`, optional ApplyPilot / job-scraper (**disabled by default**; optional shared secret)
 - Integrations under `integrations/` (manifest + on-demand `integrations:fetch`; optional `integrations:sync:all` for devs)
@@ -92,7 +92,7 @@ This reflects **what is in this repository today**. **ZIP and `git clone` both s
 
 Node.js 18+, Python 3.10+, Git recommended.
 
-### Recommended — GO mode
+### Recommended - Start mode
 
 Use this when you just want OmniSuite to start.
 
@@ -101,37 +101,26 @@ Use this when you just want OmniSuite to start.
 Double-click:
 
 ```powershell
-GO.cmd
+01_START_OMNISUITE.bat
 ```
 
-Or from a terminal:
+The only user-facing Windows buttons are:
 
-```powershell
-.\GO.cmd
-```
+- `01_START_OMNISUITE.bat`
+- `02_STOP_OMNISUITE.bat`
+- `03_UNINSTALL_OMNISUITE.bat`
 
-PowerShell alternative:
+### What Start mode does
 
-```powershell
-.\GO.ps1
-```
+The new Start launcher is designed for one-click startup:
 
-#### Cross-platform / npm
-
-```bash
-npm run go
-# or
-npm run app
-```
-
-### What GO mode does
-
-The new GO launcher is designed for one-command startup:
-
+- uses the System Spine contract in `config/omnisuite.system.json` as the shared skeleton;
+- runs a doctor check before startup so file/service/dependency drift is caught early;
 - creates/repairs `.env` when missing;
 - generates `INTERNAL_TOKEN`, `NEXTAUTH_SECRET`, and `NEXTAUTH_URL` automatically;
 - sets a safe local default for `PYTHON_ENGINE_URL`;
 - uses `DATABASE_URL=skip` by default so PostgreSQL is not required for local use;
+- keeps Python packages and large caches under `.omnisuite/` in the project folder;
 - checks Node.js and Python;
 - pulls new Git commits only when the working tree is clean;
 - runs full setup only on first run or when dependency files change;
@@ -139,21 +128,31 @@ The new GO launcher is designed for one-command startup:
 - starts only the services that are not already running;
 - opens `http://localhost:3000` automatically.
 
+### Big Update mode
+
+Use this when you want to refresh the system skeleton, re-check file links, rewrite the runtime snapshot, and repair important runtime dependencies without manually typing setup commands.
+
+For normal Windows users, Big Update runs inside `01_START_OMNISUITE.bat`.
+
+Developer equivalent:
+
+```bash
+npm run big:update
+```
+
 ### Repair mode
 
 Use repair mode when dependencies are broken, Playwright is missing, or the app behaves strangely after an update.
 
-```powershell
-GO.cmd --repair
-```
+For normal Windows users, double-click `01_START_OMNISUITE.bat` again. It self-repairs and retries.
 
-Or:
+Developer equivalent:
 
 ```bash
 npm run repair
 ```
 
-### Legacy launcher
+### Legacy launcher (developer fallback)
 
 The old launcher is still available as a fallback:
 
@@ -175,16 +174,16 @@ Manual mode is for development, not for normal users.
 
 ```bash
 npm install
-pip install -r requirements.txt
+python -m pip install --upgrade --target .omnisuite/python-packages -r requirements.txt
 ```
 
-Copy `.env.example` to `.env`, configure secrets locally, then:
+Start mode creates `.env` automatically. In manual mode, copy `.env.example` to `.env`, configure secrets locally, then:
 
 ```bash
 npm run dev
 ```
 
-Note: `npm run dev` does not perform the same smart `.env` and dependency repair as GO mode. For normal use, prefer `GO.cmd`, `npm run go`, or `npm run app`.
+Note: `npm run dev` does not perform the same smart `.env` and dependency repair as Start mode. For normal use, prefer `01_START_OMNISUITE.bat`.
 
 ### Integrations (not bundled — ZIP or clone)
 
@@ -202,16 +201,22 @@ Dev (fetch everything): `npm run integrations:sync:all`
 Verify: `npm run integrations:verify`  
 Docs: [`integrations/README.md`](integrations/README.md) · [`integrations/ai-support/README.md`](integrations/ai-support/README.md) · [README_Simple.md](README_Simple.md)
 
-### Useful commands
+### User-facing Windows buttons
 
 | Command | Description |
 | :--- | :--- |
-| `GO.cmd` | One-click Windows launcher |
-| `GO.cmd --repair` | Force full setup/repair on Windows |
-| `GO.ps1` | PowerShell launcher |
-| `npm run go` | Smart one-command launcher |
+| `01_START_OMNISUITE.bat` | One-click start, self-check, Big Update, repair, and retry |
+| `02_STOP_OMNISUITE.bat` | Stop running OmniSuite services |
+| `03_UNINSTALL_OMNISUITE.bat` | Clean uninstall |
+
+### Developer commands
+
+| Command | Description |
+| :--- | :--- |
+| `npm run go` | Internal smart launcher |
 | `npm run app` | Same as `npm run go` |
-| `npm run repair` | Smart launcher in repair mode |
+| `npm run repair` | Internal repair mode |
+| `npm run big:update` | Big Update from terminal |
 | `npm run legacy:app` | Old launcher fallback |
 | `npm run build:exe` | Build `OmniSuite.exe` |
 | `npm run dev` | Manual dev mode (frontend + Python engine only) |

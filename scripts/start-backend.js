@@ -74,7 +74,7 @@ async function preflightImport(moduleName, label, repairScope) {
   }
 
   console.error(`[LOI] Thieu Python module "${moduleName}" cho ${label}.`);
-  console.error('      Chay lai: 01_START_OMNISUITE.bat hoac npm run setup:repair');
+  console.error('      Bam lai: 01_START_OMNISUITE.bat');
   return false;
 }
 
@@ -91,7 +91,7 @@ function scheduleRestart(state, startFn, serviceLabel, code) {
     console.error(
       `[LOI] ${serviceLabel} da thu khoi dong ${MAX_CONSECUTIVE_FAILURES} lan — dung auto-restart.`,
     );
-    console.error('      Chay: scripts\\setup_deps.bat (hoac pip install -r requirements.txt)');
+    console.error('      Bam lai: 01_START_OMNISUITE.bat de tu cai/sua dependency.');
     return;
   }
 

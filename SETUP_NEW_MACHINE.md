@@ -1,20 +1,19 @@
-# New Machine Setup (2 minutes)
+# New Machine Setup
 
-No programming knowledge required, just follow these 3 steps:
+No programming knowledge required.
 
-1. Create the `.env` file from `.env.example`
-- On Windows: copy `.env.example` and rename the copy to `.env`.
-
-2. Open `.env` and add this line (or edit it if it already exists):
-`INTERNAL_TOKEN=abc123_xyz_2026_private`
-
-3. Run the project as usual.
+1. Extract the ZIP or clone the project.
+2. Double-click `01_START_OMNISUITE.bat` on Windows.
+3. The launcher creates `.env` automatically, fills local secrets, and keeps Python packages/caches under `.omnisuite/` inside the project folder.
+4. Repair and Big Update checks run inside the Start button automatically.
 
 ## Important Notes
-- `INTERNAL_TOKEN` is a custom token you define (completely free).
-- Do not share this token publicly.
-- Do not push your `.env` file to Git.
+
+- Do not share your `.env` file publicly.
+- Do not push `.env` to Git.
+- If you want to edit API keys, open `.env` after the first run.
 
 ## Troubleshooting
-- If you see "Missing INTERNAL_TOKEN environment variable":
-  Double check that your `.env` file exists and contains the line `INTERNAL_TOKEN=...`.
+
+- If something is broken, double-click `01_START_OMNISUITE.bat` again. It will self-repair and retry.
+- If image AI dependencies are missing, the repair launcher downloads PyTorch into `.omnisuite/` in this project.

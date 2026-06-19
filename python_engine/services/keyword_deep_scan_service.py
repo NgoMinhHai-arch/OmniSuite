@@ -6,7 +6,11 @@ from urllib.parse import quote_plus
 
 import httpx
 from bs4 import BeautifulSoup
-from playwright.async_api import async_playwright
+
+try:
+    from playwright.async_api import async_playwright
+except ImportError:
+    async_playwright = None
 
 from python_engine.schemas.keyword_schemas import (
     KeywordDeepScanResponse,
@@ -107,8 +111,15 @@ def resolve_chromium_executable_path() -> str | None:
 
 def _install_hint() -> str:
     return (
-        "Playwright Chromium chưa sẵn sàng. Chạy: npm run setup:repair -- --only=maps. "
+        "Playwright Chromium chưa sẵn sàng. Bấm lại 01_START_OMNISUITE.bat để hệ thống tự sửa. "
         "Nếu mạng chặn tải Chromium, đặt PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH tới chrome.exe hoặc msedge.exe có sẵn."
+    )
+
+
+def _install_hint() -> str:
+    return (
+        "Playwright Chromium chua san sang. Bam lai 01_START_OMNISUITE.bat de tu cai lai. "
+        "Neu mang chan tai Chromium, dat PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH toi chrome.exe hoac msedge.exe co san."
     )
 
 
@@ -119,6 +130,7 @@ def _looks_like_missing_browser_error(exc: Exception) -> bool:
         for marker in (
             "executable doesn't exist",
             "playwright install",
+            "playwright chromium",
             "chrome-headless-shell",
             "browserType.launch".lower(),
             "host system is missing dependencies",
@@ -145,6 +157,9 @@ async def _fetch_google_html_httpx(keyword: str) -> str:
 
 
 async def _fetch_google_html_playwright(keyword: str) -> str:
+    if async_playwright is None:
+        raise RuntimeError(_install_hint())
+
     executable_path = resolve_chromium_executable_path()
     launch_options: dict = {"headless": PLAYWRIGHT_HEADLESS}
     if executable_path:

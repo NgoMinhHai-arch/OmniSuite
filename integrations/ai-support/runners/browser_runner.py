@@ -57,8 +57,7 @@ _CHROMIUM_EXECUTABLE_ENV_KEYS = (
 
 def playwright_setup_instructions() -> str:
     return (
-        "Browser Use hoặc Playwright Chromium chưa sẵn sàng. Mở terminal trong thư mục dự án và chạy:\n"
-        "  npm run setup:repair -- --only=maps\n"
+        "Browser Use hoặc Playwright Chromium chưa sẵn sàng. Bấm lại file 01_START_OMNISUITE.bat để hệ thống tự sửa.\n"
         "Nếu đang cài runner Python riêng thì chạy:\n"
         "  powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-runners-venv.ps1\n"
         "Nếu mạng/proxy chặn tải Chromium, đặt PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH tới Chrome/Edge có sẵn rồi chạy lại.\n"

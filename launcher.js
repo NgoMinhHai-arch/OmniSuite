@@ -11,7 +11,13 @@ const path = require('path');
 const readline = require('readline');
 const crypto = require('crypto');
 const net = require('net');
-const { resolvePythonExecutable, pythonEnvPatch, writeRuntimeJson } = require('./scripts/resolve-python');
+const {
+  resolvePythonExecutable,
+  pythonEnvPatch,
+  writeRuntimeJson,
+  localPythonPackagesDir,
+  localPlaywrightBrowsersDir,
+} = require('./scripts/resolve-python');
 
 const PROJECT_DIR = __dirname;
 const LOGS_DIR = path.join(PROJECT_DIR, 'logs');
@@ -390,7 +396,7 @@ function ensureEnvTokens() {
   const tokenMatch = envContent.match(tokenRegex);
   let token = tokenMatch ? (tokenMatch[1] || '').trim() : '';
 
-  if (!token) {
+  if (!token || /^your[-_].*[-_]here$/i.test(token) || /^changeme$/i.test(token)) {
     token = `omni_${crypto.randomBytes(32).toString('hex')}`;
     if (tokenMatch) {
       envContent = envContent.replace(tokenRegex, `INTERNAL_TOKEN=${token}`);
@@ -405,6 +411,14 @@ function ensureEnvTokens() {
     ['OMNISUITE_STRICT_SECURITY', '1'],
     ['OMNISUITE_LOCALHOST_ONLY', '1'],
     ['OMNISUITE_ANTI_CLONE', '1'],
+    ['PYTHONPATH', localPythonPackagesDir()],
+    ['PIP_CACHE_DIR', path.join(PROJECT_DIR, '.omnisuite', 'cache', 'pip')],
+    ['TORCH_HOME', path.join(PROJECT_DIR, '.omnisuite', 'cache', 'torch')],
+    ['HF_HOME', path.join(PROJECT_DIR, '.omnisuite', 'cache', 'huggingface')],
+    ['HUGGINGFACE_HUB_CACHE', path.join(PROJECT_DIR, '.omnisuite', 'cache', 'huggingface', 'hub')],
+    ['TRANSFORMERS_CACHE', path.join(PROJECT_DIR, '.omnisuite', 'cache', 'huggingface', 'transformers')],
+    ['PLAYWRIGHT_BROWSERS_PATH', localPlaywrightBrowsersDir()],
+    ['PUPPETEER_CACHE_DIR', path.join(PROJECT_DIR, '.omnisuite', 'cache', 'puppeteer')],
   ];
   for (const [key, val] of securityDefaults) {
     const re = new RegExp(`^${key}=(.*)$`, 'm');
@@ -421,7 +435,7 @@ function ensureEnvTokens() {
   const existingSecret = secretMatch ? (secretMatch[1] || '').trim() : '';
   let secret = existingSecret;
 
-  if (!secret) {
+  if (!secret || /^your[-_].*[-_]here$/i.test(secret) || /^changeme$/i.test(secret)) {
     secret = `omnisuite_${crypto.randomBytes(32).toString('hex')}`;
     if (secretMatch) {
       envContent = envContent.replace(secretRegex, `NEXTAUTH_SECRET=${secret}`);
@@ -575,7 +589,7 @@ async function main() {
     );
     log(
       'info',
-      `Quet ban do: ${toolStatus.mapsReady ? 'San sang (Playwright)' : 'Thieu Chromium — chay lai 01_START hoac npm run setup:repair'}`,
+      `Quet ban do: ${toolStatus.mapsReady ? 'San sang (Playwright)' : 'Thieu Chromium — bam lai 01_START_OMNISUITE.bat'}`,
     );
   }, 12000);
 
@@ -618,4 +632,3 @@ main().catch(err => {
   log('err', `Loi khong mong muon: ${err.message}`);
   process.exit(1);
 });
-

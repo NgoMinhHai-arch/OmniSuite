@@ -5,6 +5,16 @@ title OMNISUITE AI - Dependency Setup
 echo [+] Starting Python dependency setup...
 cd /d "%~dp0.."
 
+set "OMNI_PY_PKGS=%CD%\.omnisuite\python-packages"
+set "PIP_CACHE_DIR=%CD%\.omnisuite\cache\pip"
+set "TORCH_HOME=%CD%\.omnisuite\cache\torch"
+set "HF_HOME=%CD%\.omnisuite\cache\huggingface"
+set "HUGGINGFACE_HUB_CACHE=%CD%\.omnisuite\cache\huggingface\hub"
+set "TRANSFORMERS_CACHE=%CD%\.omnisuite\cache\huggingface\transformers"
+set "PLAYWRIGHT_BROWSERS_PATH=%CD%\.omnisuite\ms-playwright"
+set "PYTHONPATH=%OMNI_PY_PKGS%;%PYTHONPATH%"
+if not exist "%OMNI_PY_PKGS%" mkdir "%OMNI_PY_PKGS%"
+
 :: Check if Python is installed
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
@@ -14,7 +24,7 @@ if %errorlevel% neq 0 (
 )
 
 echo [+] Installing dependencies from python_engine/requirements.txt...
-python -m pip install -r python_engine/requirements.txt
+python -m pip install --upgrade --target "%OMNI_PY_PKGS%" -r python_engine/requirements.txt
 
 if %errorlevel% neq 0 (
     echo [!] ERROR: Failed to install some dependencies.

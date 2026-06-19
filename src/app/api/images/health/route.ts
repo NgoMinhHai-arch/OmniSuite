@@ -15,7 +15,7 @@ export async function GET() {
     ...(lastStartError ? { detail: lastStartError, lastStartError } : {}),
     hint:
       status === 'stopped' || status === 'error'
-        ? 'Chạy lại 01_START_OMNISUITE.bat hoặc npm run setup:repair để cài Lõi AI (Python + CLIP port 8000).'
+        ? 'Bam lai 01_START_OMNISUITE.bat de cai Loi AI (Python + CLIP port 8000).'
         : undefined,
   });
 }

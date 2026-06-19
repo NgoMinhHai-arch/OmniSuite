@@ -17,11 +17,23 @@ async def keyword_health_endpoint():
     pytrends và browser executable fallback.
     """
     try:
+        import importlib.util
+
         from python_engine.services.keyword_deep_scan_service import resolve_chromium_executable_path
 
+        modules = {
+            "httpx": importlib.util.find_spec("httpx") is not None,
+            "bs4": importlib.util.find_spec("bs4") is not None,
+            "playwright": importlib.util.find_spec("playwright") is not None,
+            "pytrends": importlib.util.find_spec("pytrends") is not None,
+            "pandas": importlib.util.find_spec("pandas") is not None,
+            "sklearn": importlib.util.find_spec("sklearn") is not None,
+        }
         return {
-            "status": "ok",
-            "playwright_import": True,
+            "status": "ok" if all(modules.values()) else "missing_optional_dependency",
+            "modules": modules,
+            "missing": [name for name, ok in modules.items() if not ok],
+            "playwright_import": modules["playwright"],
             "pytrends_import": keyword_service.TrendReq is not None,
             "browser_fallback": resolve_chromium_executable_path(),
         }

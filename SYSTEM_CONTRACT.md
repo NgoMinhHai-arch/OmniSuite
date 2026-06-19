@@ -42,7 +42,7 @@ The endpoint returns:
 - effective API key flags when the dashboard sends local settings;
 - service health from `config/omnisuite.system.json`;
 - setup state from `.omnisuite/quick-start-state.json`;
-- command hints such as `GO.cmd`, `npm run go`, and repair commands.
+- command hints such as `01_START_OMNISUITE.bat`, stop, and uninstall.
 
 ## Rule
 
@@ -53,7 +53,7 @@ Do not hard-code a new port or startup assumption in a random file unless the co
 ## Intended flow
 
 ```text
-GO.cmd / npm run go
+01_START_OMNISUITE.bat
         ↓
 config/omnisuite.system.json
         ↓

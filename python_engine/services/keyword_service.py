@@ -8,7 +8,6 @@ from urllib.parse import quote_plus
 
 import httpx
 from bs4 import BeautifulSoup
-from playwright.async_api import async_playwright
 from python_engine.core.config import get_settings
 from python_engine.schemas.keyword_schemas import (
     BadgeInfo,
@@ -19,6 +18,11 @@ from python_engine.schemas.keyword_schemas import (
     Top10Item,
     TrendInfo,
 )
+
+try:
+    from playwright.async_api import async_playwright
+except ImportError:
+    async_playwright = None
 
 try:
     from pytrends.request import TrendReq
@@ -829,6 +833,9 @@ async def analyze_keywords_advanced(
 async def deep_scan_keyword(keyword: str) -> KeywordDeepScanResponse:
     """Quét chuyên sâu: Top 10, PAA, và chỉ số KD thực tế"""
     print(f"🔍 Deep Scanning: {keyword}")
+
+    if async_playwright is None:
+        raise RuntimeError("Thieu thu vien Playwright. Bam lai 01_START_OMNISUITE.bat de tu cai lai.")
 
     async with async_playwright() as p:
         # Sử dụng trình duyệt thật để tránh block và lấy được PAA (render bằng JS)

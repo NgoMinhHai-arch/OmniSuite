@@ -3,6 +3,13 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PYTHONUTF8=1 PYTHONIOENCODING=utf-8
+export PIP_CACHE_DIR="${ROOT}/.omnisuite/cache/pip"
+export TORCH_HOME="${ROOT}/.omnisuite/cache/torch"
+export HF_HOME="${ROOT}/.omnisuite/cache/huggingface"
+export HUGGINGFACE_HUB_CACHE="${ROOT}/.omnisuite/cache/huggingface/hub"
+export TRANSFORMERS_CACHE="${ROOT}/.omnisuite/cache/huggingface/transformers"
+export PUPPETEER_CACHE_DIR="${ROOT}/.omnisuite/cache/puppeteer"
+export PLAYWRIGHT_BROWSERS_PATH="${ROOT}/.omnisuite/ms-playwright"
 VENV="${ROOT}/.venv-runners"
 BROWSER_USE="${ROOT}/integrations/ai-support/submodules/browser-use"
 OPEN_MANUS="${ROOT}/integrations/ai-support/submodules/open-manus"
@@ -65,12 +72,6 @@ mkdir -p "${LEGACY_BU}"
 (cd "${BROWSER_USE}" && "${PIP}" "${PQ[@]}" -e .)
 
 echo "[step] Playwright Chromium/headless shell"
-if [[ -z "${PLAYWRIGHT_BROWSERS_PATH:-}" ]]; then
-  case "$(uname -s)" in
-    Darwin*) export PLAYWRIGHT_BROWSERS_PATH="${HOME}/Library/Caches/ms-playwright" ;;
-    *) export PLAYWRIGHT_BROWSERS_PATH="${HOME}/.cache/ms-playwright" ;;
-  esac
-fi
 mkdir -p "${PLAYWRIGHT_BROWSERS_PATH}"
 export PYTHON_BIN="${PY}"
 INSTALLER_JS="${ROOT}/scripts/install-playwright-browser.js"
@@ -95,7 +96,7 @@ if [[ "${PLAYWRIGHT_OK}" != "1" ]]; then
   fi
 fi
 if [[ "${PLAYWRIGHT_OK}" != "1" ]]; then
-  echo "[error] Playwright browser install failed. Thu: npm run setup:repair -- --only=maps" >&2
+  echo "[error] Playwright browser install failed. Thu bam lai 01_START_OMNISUITE.bat" >&2
   exit 1
 fi
 

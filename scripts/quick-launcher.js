@@ -16,7 +16,20 @@ const net = require('net');
 const util = require('util');
 
 const execAsync = util.promisify(exec);
-const { resolvePythonExecutable, pythonEnvPatch, writeRuntimeJson } = require('./resolve-python');
+const {
+  resolvePythonExecutable,
+  pythonEnvPatch,
+  writeRuntimeJson,
+  localPythonPackagesDir,
+  localPlaywrightBrowsersDir,
+} = require('./resolve-python');
+const {
+  dependencySignature,
+  readContract,
+  requiredNodeModules,
+  requiredPythonModules,
+  runnableServices,
+} = require('./system-spine');
 
 const PROJECT_DIR = path.join(__dirname, '..');
 const ENV_PATH = path.join(PROJECT_DIR, '.env');
@@ -71,7 +84,8 @@ function ensureLine(content, key, valueFactory) {
   const re = new RegExp(`^${key}=(.*)$`, 'm');
   const match = content.match(re);
   const current = match ? (match[1] || '').trim() : '';
-  if (current) return { content, value: current, changed: false };
+  const isPlaceholder = /^your[-_].*[-_]here$/i.test(current) || /^changeme$/i.test(current);
+  if (current && !isPlaceholder) return { content, value: current, changed: false };
   const nextValue = typeof valueFactory === 'function' ? valueFactory() : valueFactory;
   if (match) {
     return { content: content.replace(re, `${key}=${nextValue}`), value: nextValue, changed: true };
@@ -111,6 +125,14 @@ function ensureEnv() {
   apply('OMNISUITE_STRICT_SECURITY', '1');
   apply('OMNISUITE_LOCALHOST_ONLY', '1');
   apply('DATABASE_URL', 'skip');
+  apply('PYTHONPATH', localPythonPackagesDir());
+  apply('PIP_CACHE_DIR', path.join(PROJECT_DIR, '.omnisuite', 'cache', 'pip'));
+  apply('TORCH_HOME', path.join(PROJECT_DIR, '.omnisuite', 'cache', 'torch'));
+  apply('HF_HOME', path.join(PROJECT_DIR, '.omnisuite', 'cache', 'huggingface'));
+  apply('HUGGINGFACE_HUB_CACHE', path.join(PROJECT_DIR, '.omnisuite', 'cache', 'huggingface', 'hub'));
+  apply('TRANSFORMERS_CACHE', path.join(PROJECT_DIR, '.omnisuite', 'cache', 'huggingface', 'transformers'));
+  apply('PLAYWRIGHT_BROWSERS_PATH', localPlaywrightBrowsersDir());
+  apply('PUPPETEER_CACHE_DIR', path.join(PROJECT_DIR, '.omnisuite', 'cache', 'puppeteer'));
 
   const py = resolvePythonExecutable();
   if (py.includes(path.sep)) apply('PYTHON_BIN', py);
@@ -173,13 +195,7 @@ function fileHash(rel) {
 }
 
 function depsSignature() {
-  return [
-    fileHash('package-lock.json'),
-    fileHash('package.json'),
-    fileHash('requirements.txt'),
-    fileHash('python_engine/requirements.txt'),
-    fileHash('services/clip_service/requirements.txt'),
-  ].join(':');
+  return dependencySignature(readContract({}));
 }
 
 function canImport(mod) {
@@ -198,12 +214,11 @@ function canImport(mod) {
 }
 
 function nodeReady() {
-  return fs.existsSync(path.join(PROJECT_DIR, 'node_modules', 'next')) && fs.existsSync(path.join(PROJECT_DIR, 'node_modules', 'playwright'));
+  return requiredNodeModules(readContract({})).every((mod) => fs.existsSync(path.join(PROJECT_DIR, 'node_modules', mod)));
 }
 
 function pythonReady() {
-  const required = ['fastapi', 'uvicorn', 'flask', 'httpx', 'bs4', 'playwright'];
-  return required.every(canImport);
+  return requiredPythonModules(readContract({})).every(canImport);
 }
 
 function playwrightReady() {
@@ -243,9 +258,14 @@ async function smartSetup() {
   if (!force && setupLooksFresh()) {
     log('ok', 'Smart setup: dependency da san sang — bo qua npm install/pip install.');
     if (!playwrightReady()) {
-      log('warn', 'Playwright Chromium chua san sang — chi sua rieng Playwright.');
-      const { installPlaywrightBrowsers } = require('./setup-all-tools');
-      await installPlaywrightBrowsers((type, msg) => log(type, msg));
+      const { installPlaywrightBrowsers, playwrightRetryBlocked } = require('./setup-all-tools');
+      if (playwrightRetryBlocked()) {
+        log('warn', 'Playwright Chromium vua tai loi gan day — bo qua de tranh lap tai vo han.');
+        log('info', 'Neu can thu lai, bam lai 01_START_OMNISUITE.bat.');
+      } else {
+        log('warn', 'Playwright Chromium chua san sang — chi sua rieng Playwright.');
+        await installPlaywrightBrowsers((type, msg) => log(type, msg));
+      }
     }
     return true;
   }
@@ -309,6 +329,23 @@ async function startService(name, cmd, args, port = null) {
   return child;
 }
 
+async function startContractServices() {
+  const services = runnableServices(readContract({}));
+  if (!services.length) {
+    return [
+      await startService('Python Backend + Image Pipeline (8081/8000)', 'node', ['scripts/start-backend.js'], null),
+      await startService('Python Engine (8082)', resolvePythonExecutable(), ['-m', 'uvicorn', 'python_engine.main:app', '--host', '127.0.0.1', '--port', '8082', '--reload'], 8082),
+      await startService('Next.js Frontend (3000)', 'node', ['scripts/run-next-dev.js'], 3000),
+    ];
+  }
+
+  const started = [];
+  for (const svc of services) {
+    started.push(await startService(svc.label, svc.command, svc.args, svc.port));
+  }
+  return started;
+}
+
 function openBrowser() {
   const url = 'http://localhost:3000';
   if (process.argv.includes('--no-open')) return;
@@ -319,13 +356,13 @@ function openBrowser() {
 async function main() {
   console.clear();
   console.log(`${colors.bold}${colors.cyan}========================================`);
-  console.log('   OMNISUITE — GO MODE');
+  console.log('   OMNISUITE - START MODE');
   console.log(`========================================${colors.reset}`);
 
   ensureEnv();
 
   if (!(await checkCommand('node'))) {
-    log('err', 'Chua co Node.js. Cai Node.js truoc, roi chay lai GO.cmd.');
+    log('err', 'Chua co Node.js. Cai Node.js truoc, roi bam lai 01_START_OMNISUITE.bat.');
     process.exit(1);
   }
 
@@ -342,19 +379,16 @@ async function main() {
 
   const ok = await smartSetup();
   if (!ok) {
-    log('err', 'Setup chua xong. Thu chay: GO.cmd --repair');
+    log('err', 'Setup chua xong. Bam lai 01_START_OMNISUITE.bat de tu sua.');
     process.exit(1);
   }
 
-  const services = [];
-  services.push(await startService('Python Backend + Image Pipeline (8081/8000)', 'node', ['scripts/start-backend.js'], null));
-  services.push(await startService('Python Engine (8082)', resolvePythonExecutable(), ['-m', 'uvicorn', 'python_engine.main:app', '--host', '127.0.0.1', '--port', '8082', '--reload'], 8082));
-  services.push(await startService('Next.js Frontend (3000)', 'node', ['scripts/run-next-dev.js'], 3000));
+  const services = await startContractServices();
 
   setTimeout(openBrowser, 800);
 
   console.log(`\n${colors.green}${colors.bold}SAN SANG: http://localhost:3000${colors.reset}`);
-  console.log('Nhan Ctrl+C de dung. Lan sau chi can chay GO.cmd hoac npm run go.\n');
+  console.log('Nhan Ctrl+C de dung. Lan sau chi can bam 01_START_OMNISUITE.bat.\n');
 
   let shuttingDown = false;
   const shutdown = () => {

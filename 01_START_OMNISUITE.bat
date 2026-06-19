@@ -14,6 +14,11 @@ cd /d "%~dp0"
 set "OMNISUITE_ROOT=%~dp0"
 if "%OMNISUITE_ROOT:~-1%"=="\" set "OMNISUITE_ROOT=%OMNISUITE_ROOT:~0,-1%"
 
+if not exist "%~dp0.env" (
+    echo [*] Tao file .env cho lan chay dau...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$root=(Get-Location).Path; $envPath=Join-Path $root '.env'; $example=Join-Path $root '.env.example'; if (Test-Path $example) { Copy-Item -LiteralPath $example -Destination $envPath -Force } else { Set-Content -LiteralPath $envPath -Value '' -Encoding UTF8 }"
+)
+
 echo.
 echo ========================================
 echo   OMNISUITE AI - KHOI DONG TU DONG
@@ -86,11 +91,25 @@ if errorlevel 1 (
 echo [*] Step 2/3: Tu dong cai dat va sua loi (Node + Python + Playwright + CLIP)...
 echo.
 
-:: Run launcher: Git sync + full setup + verify/repair + start server
+echo [*] Big Update: kiem tra khung xuong he thong...
+node scripts\big-update.js
+if errorlevel 1 (
+    echo.
+    echo [WARNING] Big Update check gap loi - dang tu sua...
+    node scripts\big-update.js --repair
+)
+
+:: Run contract launcher: Git sync + full setup + verify/repair + start server
 echo [*] Step 3/3: Khoi dong OmniSuite AI...
-echo [*] Executing: node launcher.js
+echo [*] Executing: node scripts\contract-go.js
 echo.
-node launcher.js
+node scripts\contract-go.js
+if errorlevel 1 (
+    echo.
+    echo [WARNING] Khoi dong lan dau chua thanh cong - dang tu sua va thu lai...
+    node scripts\big-update.js --repair
+    node scripts\contract-go.js --repair
+)
 
 :: End
 echo.
