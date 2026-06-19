@@ -28,7 +28,6 @@ const KEYWORD_TOOL_SLUGS = new Set([
 ]);
 
 const KNOWN_TOOL_DESTINATIONS: Record<string, string> = {
-  scraper: '/dashboard/scraper',
   'keyword-analyzer': '/dashboard/keywords',
 };
 
