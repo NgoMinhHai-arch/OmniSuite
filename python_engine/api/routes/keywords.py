@@ -5,18 +5,38 @@ from python_engine.schemas.keyword_schemas import (
     KeywordDeepScanResponse,
 )
 from python_engine.services import keyword_service
+from python_engine.services.keyword_deep_scan_service import deep_scan_keyword
 
 router = APIRouter()
+
+
+@router.get("/health")
+async def keyword_health_endpoint():
+    """
+    Kiểm tra nhanh các phần hay làm tool từ khóa lỗi: Python Engine, Playwright,
+    pytrends và browser executable fallback.
+    """
+    try:
+        from python_engine.services.keyword_deep_scan_service import resolve_chromium_executable_path
+
+        return {
+            "status": "ok",
+            "playwright_import": True,
+            "pytrends_import": keyword_service.TrendReq is not None,
+            "browser_fallback": resolve_chromium_executable_path(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Keyword health check lỗi: {str(e)}") from e
 
 
 @router.post("/deep-scan", response_model=KeywordDeepScanResponse)
 async def keyword_deep_scan_endpoint(request: KeywordDeepScanRequest):
     """
     Endpoint thực hiện phân tích từ khóa chuyên sâu.
-    Xử lý bất đồng bộ hoàn toàn với Playwright.
+    Có fallback HTTP nếu Playwright/Chromium chưa sẵn sàng.
     """
     try:
-        result = await keyword_service.deep_scan_keyword(request.keyword)
+        result = await deep_scan_keyword(request.keyword)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi phân tích từ khóa: {str(e)}") from e
