@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "app": {
+    "name": "OmniSuite AI",
+    "mode": "go",
+    "dashboardUrl": "http://localhost:3000"
+  },
+  "envDefaults": {
+    "NEXTAUTH_URL": "http://localhost:3000",
+    "PYTHON_ENGINE_URL": "http://127.0.0.1:8082",
+    "OMNISUITE_STRICT_SECURITY": "1",
+    "OMNISUITE_LOCALHOST_ONLY": "1",
+    "DATABASE_URL": "skip"
+  },
+  "services": [
+    {
+      "id": "python-backend",
+      "label": "Python Backend",
+      "port": 8081,
+      "required": false,
+      "command": "node",
+      "args": ["scripts/start-backend.js"],
+      "healthUrl": "http://127.0.0.1:8081/health",
+      "group": "backend"
+    },
+    {
+      "id": "image-pipeline",
+      "label": "Image Pipeline / CLIP",
+      "port": 8000,
+      "required": false,
+      "managedBy": "python-backend",
+      "healthUrl": "http://127.0.0.1:8000/api/v1/health",
+      "group": "media"
+    },
+    {
+      "id": "python-engine",
+      "label": "Python Engine",
+      "port": 8082,
+      "required": true,
+      "command": "python",
+      "args": ["-m", "uvicorn", "python_engine.main:app", "--host", "127.0.0.1", "--port", "8082", "--reload"],
+      "healthUrl": "http://127.0.0.1:8082/",
+      "group": "backend"
+    },
+    {
+      "id": "next-frontend",
+      "label": "Next.js Frontend",
+      "port": 3000,
+      "required": true,
+      "command": "node",
+      "args": ["scripts/run-next-dev.js"],
+      "healthUrl": "http://127.0.0.1:3000/",
+      "group": "frontend"
+    }
+  ],
+  "setup": {
+    "stateFile": ".omnisuite/quick-start-state.json",
+    "signatureFiles": [
+      "package-lock.json",
+      "package.json",
+      "requirements.txt",
+      "python_engine/requirements.txt",
+      "services/clip_service/requirements.txt",
+      "config/omnisuite.system.json"
+    ],
+    "requiredNodeModules": ["next", "playwright"],
+    "requiredPythonModules": ["fastapi", "uvicorn", "flask", "httpx", "bs4", "playwright"]
+  },
+  "commands": {
+    "start": "GO.cmd",
+    "startNpm": "npm run go",
+    "repair": "GO.cmd --repair",
+    "repairNpm": "npm run repair",
+    "legacy": "npm run legacy:app"
+  }
+}
