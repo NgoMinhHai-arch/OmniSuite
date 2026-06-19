@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { NextResponse } from 'next/server';
 import { getSystemConfig, type SystemConfig } from '@/shared/lib/config';
 
@@ -6,7 +8,51 @@ export type SystemStatusPayload = {
   merged: Record<string, boolean>;
   /** Chỉ từ .env / biến môi trường (không tính key nhập trên dashboard) */
   envOnly: Record<string, boolean>;
+  /** Nhịp tim dịch vụ lấy từ config/omnisuite.system.json */
+  runtime?: RuntimeStatus;
 };
+
+type ServiceDef = {
+  id: string;
+  label?: string;
+  port?: number;
+  required?: boolean;
+  managedBy?: string;
+  healthUrl?: string;
+  group?: string;
+};
+
+type SystemContract = {
+  version?: number;
+  app?: {
+    name?: string;
+    mode?: string;
+    dashboardUrl?: string;
+  };
+  services?: ServiceDef[];
+  commands?: Record<string, string>;
+  setup?: {
+    stateFile?: string;
+    signatureFiles?: string[];
+  };
+};
+
+type RuntimeStatus = {
+  ok: boolean;
+  app: SystemContract['app'];
+  contractVersion: number;
+  commands: Record<string, string>;
+  setup: {
+    state: unknown;
+    signatureFiles: string[];
+  };
+  services: Array<ServiceDef & { status: string; httpStatus?: number; message?: string }>;
+  requiredDown: Array<ServiceDef & { status: string; httpStatus?: number; message?: string }>;
+  generatedAt: string;
+};
+
+const ROOT = process.cwd();
+const CONFIG_PATH = path.join(ROOT, 'config', 'omnisuite.system.json');
 
 function envConfiguredFlags(config: SystemConfig): Record<string, boolean> {
   const status: Record<string, boolean> = {};
@@ -38,11 +84,84 @@ function effectiveFlags(
   return merged;
 }
 
-/** Không có body: chỉ báo .env — dùng khi không muốn gửi snapshot dashboard */
+function readJson<T>(filePath: string, fallback: T): T {
+  try {
+    if (!fs.existsSync(filePath)) return fallback;
+    return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function readSetupState(contract: SystemContract) {
+  const rel = contract.setup?.stateFile || '.omnisuite/quick-start-state.json';
+  return readJson(path.join(ROOT, rel), null);
+}
+
+async function probeService(service: ServiceDef) {
+  if (service.managedBy) {
+    return {
+      ...service,
+      status: 'managed',
+      message: `Managed by ${service.managedBy}`,
+    };
+  }
+
+  if (!service.healthUrl) {
+    return {
+      ...service,
+      status: 'unknown',
+      message: 'No healthUrl configured',
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2000);
+  try {
+    const response = await fetch(service.healthUrl, {
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    return {
+      ...service,
+      status: response.ok ? 'online' : 'degraded',
+      httpStatus: response.status,
+    };
+  } catch {
+    clearTimeout(timeout);
+    return {
+      ...service,
+      status: service.required ? 'offline' : 'optional-offline',
+    };
+  }
+}
+
+async function runtimeStatus(): Promise<RuntimeStatus> {
+  const contract = readJson<SystemContract>(CONFIG_PATH, { services: [] });
+  const services = await Promise.all((contract.services || []).map(probeService));
+  const requiredDown = services.filter((service) => service.required && service.status !== 'online');
+
+  return {
+    ok: requiredDown.length === 0,
+    app: contract.app || { name: 'OmniSuite AI' },
+    contractVersion: contract.version || 1,
+    commands: contract.commands || {},
+    setup: {
+      state: readSetupState(contract),
+      signatureFiles: contract.setup?.signatureFiles || [],
+    },
+    services,
+    requiredDown,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+/** Không có body: báo .env + nhịp tim service */
 export async function GET() {
   const sys = getSystemConfig();
   const envOnly = envConfiguredFlags(sys);
-  const payload: SystemStatusPayload = { merged: envOnly, envOnly };
+  const payload: SystemStatusPayload = { merged: envOnly, envOnly, runtime: await runtimeStatus() };
   return NextResponse.json(payload);
 }
 
@@ -54,7 +173,7 @@ export async function POST(req: Request) {
     const sys = getSystemConfig();
     const envOnly = envConfiguredFlags(sys);
     const merged = effectiveFlags(envOnly, client);
-    const payload: SystemStatusPayload = { merged, envOnly };
+    const payload: SystemStatusPayload = { merged, envOnly, runtime: await runtimeStatus() };
     return NextResponse.json(payload);
   } catch {
     return NextResponse.json({ merged: {}, envOnly: {} } satisfies SystemStatusPayload, { status: 400 });
